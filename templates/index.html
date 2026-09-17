@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FiniSpeak</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <main class="hero">
+        <div class="hero-content">
+            <span class="eyebrow">Human translation, when you need it</span>
+            <h1>Speak naturally.<br>Understand each other.</h1>
+            <p>
+                Call another person and bring a human translator into the conversation
+                when you need help communicating across languages.
+            </p>
+            <div class="actions">
+                <button id="startCall" type="button">Start a Call</button>
+                <button class="secondary" type="button">Become a Translator</button>
+            </div>
+            <p id="status" class="status" aria-live="polite"></p>
+        </div>
+    </main>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
