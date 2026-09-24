@@ -115,7 +115,11 @@ function bindUI() {
     $("directoryAvailable").addEventListener("change", filterInterpreterDirectory);
     $("backToDirectory").onclick = openInterpreterDirectory;
     $("profileStartCall").onclick = () => {
-        if (!currentUser) return openAuth(false, "customer");
+        if (!currentUser) {
+            openAuth(false, "customer");
+            $("authStatus").textContent = "Log in when you are ready to start a call with an interpreter.";
+            return;
+        }
         show("dashboardView");
         openDashboardPanel("home");
         $("receiverEmail")?.focus();
@@ -124,8 +128,9 @@ function bindUI() {
 
 function openInterpreterDirectory() {
     if (!currentUser) {
-        openAuth(false, "customer");
-        $("authStatus").textContent = "Log in to search the complete interpreter directory.";
+        show("heroView");
+        loadFeaturedProfiles();
+        window.requestAnimationFrame(() => $("featuredProfiles").scrollIntoView({ behavior: "smooth", block: "start" }));
         return;
     }
     show("dashboardView");
@@ -300,7 +305,7 @@ async function loadFeaturedProfiles() {
     try {
         const profiles = await fetchPublicProfiles();
         profiles.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0));
-        renderFeaturedProfiles(profiles.slice(0, 3));
+        renderFeaturedProfiles(profiles);
     } catch (error) {
         console.error("Featured profiles failed:", error);
         container.innerHTML = '<div class="directory-empty">Featured profiles are temporarily unavailable.</div>';
@@ -323,13 +328,10 @@ function renderFeaturedProfiles(profiles) {
                 <div class="interpreter-card-header"><div><h3>${escapeHtml(profile.displayName)}</h3>${ratingMarkup(profile.rating, profile.ratingCount)}</div><span class="availability-dot${profile.availability?.availableNow ? " available" : ""}" title="${profile.availability?.availableNow ? "Available now" : "Currently unavailable"}"></span></div>
                 <p class="card-bio">${escapeHtml(profile.bio || "Professional FiniSpeak interpreter profile.")}</p>
                 <div class="directory-tags">${tags.map(tag => `<span class="directory-tag">${escapeHtml(tag)}</span>`).join("")}</div>
-                <button class="text-button featured-profile-login" type="button">Log in to view profile</button>
+                <button class="text-button featured-profile-login" type="button">View profile</button>
             </div>`;
         setProfileAvatar(card.querySelector(".directory-avatar"), profile);
-        card.querySelector(".featured-profile-login").onclick = () => {
-            openAuth(false, "customer");
-            $("authStatus").textContent = "Log in to view complete interpreter profiles.";
-        };
+        card.querySelector(".featured-profile-login").onclick = () => openPublicProfile(profile);
         return card;
     }));
 }
@@ -423,7 +425,7 @@ async function openPublicProfile(profile) {
         ? `${availability.days.map(day => day.slice(0, 3).replace(/^./, value => value.toUpperCase())).join(", ")}${availability.start && availability.end ? ` · ${availability.start}–${availability.end}` : ""}`
         : "Schedule not listed";
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
-    $("publicProfileReviews").innerHTML = "<p>Sign in to see detailed community feedback and start a call.</p>";
+    $("publicProfileReviews").innerHTML = "<p>Detailed community feedback will appear here as reviews are added.</p>";
     show("profileView");
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
