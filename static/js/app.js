@@ -4,12 +4,13 @@ import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, a
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-storage.js";
 
 const $ = (id) => document.getElementById(id);
-const views = ["heroView", "authView", "dashboardView", "callView"];
+const views = ["heroView", "authView", "dashboardView", "profileView", "callView"];
 const show = (id) => views.forEach(v => $(v).classList.toggle("hidden", v !== id));
 let auth, db, storage, currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map();
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, currentCallRole = null;
 let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
+let directoryProfiles = [], activeDirectoryProfile = null;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
 const taxonomySuggestionIndex = { languages: -1, dialects: -1, specialties: -1 };
@@ -35,7 +36,9 @@ async function boot() {
         const config = await response.json();
         if (!response.ok) throw new Error(config.error || "Firebase configuration missing");
         const firebaseApp = initializeApp(config);
-        auth = getAuth(firebaseApp); db = getFirestore(firebaseApp); storage = getStorage(firebaseApp);
+        auth = getAuth(firebaseApp);
+        db = getFirestore(firebaseApp);
+        storage = config.storageEnabled ? getStorage(firebaseApp) : null;
         bindUI();
         onAuthStateChanged(auth, handleAuthState);
     } catch (error) {
@@ -45,8 +48,16 @@ async function boot() {
 }
 
 function bindUI() {
-    $("startCall").onclick = () => currentUser ? show("dashboardView") : openAuth(false, "customer");
+    $("startCall").onclick = () => {
+        if (!currentUser) return openAuth(false, "customer");
+        show("dashboardView");
+        openDashboardPanel("home");
+    };
+    $("landingCta").onclick = () => openAuth(true, "customer");
     $("translatorSignup").onclick = () => openAuth(true, "translator");
+    $("homeNav").onclick = () => show("heroView");
+    $("browseNav").onclick = openInterpreterDirectory;
+    $("browseHero").onclick = openInterpreterDirectory;
     $("authNav").onclick = async () => currentUser ? signOut(auth) : openAuth(false, "customer");
     $("authToggle").onclick = () => setAuthMode(!signupMode);
     $("authForm").onsubmit = submitAuth;
@@ -93,6 +104,22 @@ function bindUI() {
     document.querySelectorAll("[data-add-tag]").forEach(button => button.addEventListener("click", () => addTagFromInput(button.dataset.addTag)));
     $("dashboardAvailableNow").onchange = updateDashboardAvailability;
     $("settingsSignOut").onclick = async () => signOut(auth);
+    $("directorySearch").addEventListener("input", filterInterpreterDirectory);
+    $("directoryRating").addEventListener("change", filterInterpreterDirectory);
+    $("directorySort").addEventListener("change", filterInterpreterDirectory);
+    $("directoryAvailable").addEventListener("change", filterInterpreterDirectory);
+    $("backToDirectory").onclick = () => { show("dashboardView"); openDashboardPanel("directory"); };
+    $("profileStartCall").onclick = () => { show("dashboardView"); openDashboardPanel("home"); $("receiverEmail")?.focus(); };
+}
+
+function openInterpreterDirectory() {
+    if (!currentUser) {
+        openAuth(false, "customer");
+        $("authStatus").textContent = "Log in to browse interpreter profiles.";
+        return;
+    }
+    show("dashboardView");
+    openDashboardPanel("directory");
 }
 
 function openAuth(signup, role) { setAuthMode(signup); $("role").value = role; show("authView"); }
@@ -133,7 +160,7 @@ async function submitAuth(e) {
 
 async function handleAuthState(user) {
     currentUser = user;
-    $("authNav").textContent = user ? "Sign out" : "Sign in";
+    $("authNav").textContent = user ? "Log out" : "Log in";
     if (!user) {
         currentProfile = null;
         currentInterpreterProfile = null;
@@ -241,13 +268,180 @@ function hydrateDashboardProfile() {
 }
 
 function openDashboardPanel(panel) {
-    const ids = { home: "dashboardHome", profile: "dashboardProfile", interpreter: "dashboardInterpreter", settings: "dashboardSettings" };
+    const ids = { home: "dashboardHome", directory: "dashboardDirectory", profile: "dashboardProfile", interpreter: "dashboardInterpreter", settings: "dashboardSettings" };
     Object.entries(ids).forEach(([key, id]) => $(id).classList.toggle("hidden", key !== panel));
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => {
         const active = button.dataset.dashboardPanel === panel;
         button.classList.toggle("active", active);
         if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
     });
+    if (panel === "directory") loadInterpreterDirectory();
+}
+
+async function loadInterpreterDirectory() {
+    const container = $("interpreterDirectory");
+    container.innerHTML = '<div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div>';
+    $("directoryResultCount").textContent = "Loading interpreters…";
+    try {
+        const snapshot = await getDocs(collection(db, "translators"));
+        directoryProfiles = snapshot.docs
+            .map(document => ({ id: document.id, ...document.data() }))
+            .filter(profile => profile.displayName);
+        filterInterpreterDirectory();
+    } catch (error) {
+        console.error("Interpreter directory failed:", error);
+        $("directoryResultCount").textContent = "Directory unavailable";
+        container.innerHTML = `<div class="directory-empty">Could not load interpreter profiles: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function filterInterpreterDirectory() {
+    const search = normalizeTaxonomyValue($("directorySearch").value || "");
+    const minimumRating = Number($("directoryRating").value || 0);
+    const availableOnly = $("directoryAvailable").checked;
+    const sort = $("directorySort").value;
+    const profiles = directoryProfiles.filter(profile => {
+        const searchable = [
+            profile.displayName, profile.bio,
+            ...(profile.languages || []), ...(profile.dialects || []), ...(profile.specialties || [])
+        ].filter(Boolean).join(" ").toLocaleLowerCase();
+        const matchesSearch = !search || searchable.includes(search);
+        const matchesRating = Number(profile.rating || 0) >= minimumRating;
+        const matchesAvailability = !availableOnly || Boolean(profile.availability?.availableNow);
+        return matchesSearch && matchesRating && matchesAvailability;
+    });
+
+    profiles.sort((a, b) => {
+        if (sort === "recent-review") return latestReviewMillis(b) - latestReviewMillis(a) || Number(b.rating || 0) - Number(a.rating || 0);
+        if (sort === "newest") return profileTimestampMillis(b.updatedAt || b.createdAt) - profileTimestampMillis(a.updatedAt || a.createdAt);
+        if (sort === "experience") return Number(b.yearsExperience || 0) - Number(a.yearsExperience || 0);
+        return Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0);
+    });
+    renderInterpreterDirectory(profiles);
+}
+
+function renderInterpreterDirectory(profiles) {
+    const container = $("interpreterDirectory");
+    $("directoryResultCount").textContent = `${profiles.length} interpreter${profiles.length === 1 ? "" : "s"} found`;
+    if (!profiles.length) {
+        container.innerHTML = '<div class="directory-empty">No profiles match these filters. Try broadening your search.</div>';
+        return;
+    }
+    container.replaceChildren(...profiles.map(profile => {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "interpreter-card";
+        card.setAttribute("aria-label", `View ${profile.displayName}'s interpreter profile`);
+        const languages = [...(profile.languages || []), ...(profile.dialects || [])].slice(0, 3);
+        const specialties = (profile.specialties || []).slice(0, 2);
+        const tags = [...languages, ...specialties];
+        card.innerHTML = `
+            <div class="directory-avatar">${escapeHtml(profileInitials(profile.displayName))}</div>
+            <div>
+                <div class="interpreter-card-header"><div><h3>${escapeHtml(profile.displayName)}</h3>${ratingMarkup(profile.rating, profile.ratingCount)}</div><span class="availability-dot${profile.availability?.availableNow ? " available" : ""}" title="${profile.availability?.availableNow ? "Available now" : "Currently unavailable"}"></span></div>
+                <p class="card-bio">${escapeHtml(profile.bio || "Professional FiniSpeak interpreter profile.")}</p>
+                <div class="directory-tags">${tags.map(tag => `<span class="directory-tag">${escapeHtml(tag)}</span>`).join("")}</div>
+                <div class="directory-meta"><span>${Number(profile.yearsExperience || 0)} years experience</span><span>${escapeHtml((profile.verificationStatus || "unverified").replace(/_/g, " "))}</span></div>
+            </div>`;
+        setProfileAvatar(card.querySelector(".directory-avatar"), profile);
+        card.onclick = () => openPublicProfile(profile);
+        return card;
+    }));
+}
+
+async function openPublicProfile(profile) {
+    activeDirectoryProfile = profile;
+    const available = Boolean(profile.availability?.availableNow);
+    $("publicProfileName").textContent = profile.displayName || "Interpreter";
+    $("publicProfileHeadline").textContent = profile.specialties?.length
+        ? `${profile.specialties.slice(0, 2).join(" · ")} interpreter`
+        : `${(profile.languages || []).slice(0, 2).join(" · ") || "Professional"} interpreter`;
+    $("publicProfileAvailability").textContent = available ? "Available now" : "Currently unavailable";
+    $("publicProfileAvailability").classList.toggle("available", available);
+    $("publicProfileRating").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
+    $("publicProfileBio").textContent = profile.bio || "This interpreter has not added a professional bio yet.";
+    setProfileAvatar($("publicProfileAvatar"), profile);
+    renderProfileTags($("publicProfileLanguages"), "Languages", [...(profile.languages || []), ...(profile.dialects || [])]);
+    renderProfileTags($("publicProfileSpecialties"), "Specialties", profile.specialties || []);
+    $("publicProfileExperience").textContent = `${Number(profile.yearsExperience || 0)} years`;
+    $("publicProfileCredentials").textContent = (profile.credentials || []).join(", ") || "Not listed";
+    $("publicProfileVerification").textContent = (profile.verificationStatus || "unverified").replace(/_/g, " ").replace(/^./, value => value.toUpperCase());
+    const availability = profile.availability || {};
+    $("publicProfileSchedule").textContent = (availability.days || []).length
+        ? `${availability.days.map(day => day.slice(0, 3).replace(/^./, value => value.toUpperCase())).join(", ")}${availability.start && availability.end ? ` · ${availability.start}–${availability.end}` : ""}`
+        : "Schedule not listed";
+    $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
+    $("publicProfileReviews").innerHTML = '<div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading reviews…</div>';
+    show("profileView");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    let reviews = Array.isArray(profile.recentReviews) ? [...profile.recentReviews] : [];
+    try {
+        const snapshot = await getDocs(collection(db, "translators", profile.id, "reviews"));
+        reviews = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
+    } catch (error) {
+        console.warn("Review collection unavailable; using embedded recent reviews:", error);
+    }
+    reviews.sort((a, b) => profileTimestampMillis(b.createdAt) - profileTimestampMillis(a.createdAt));
+    renderProfileReviews(reviews.slice(0, 6));
+}
+
+function renderProfileTags(container, label, values) {
+    const cleanValues = values.filter(Boolean);
+    container.innerHTML = `<strong>${escapeHtml(label)}</strong>${cleanValues.length ? cleanValues.map(value => `<span class="profile-tag">${escapeHtml(value)}</span>`).join("") : '<span class="profile-tag">Not listed</span>'}`;
+}
+
+function renderProfileReviews(reviews) {
+    const container = $("publicProfileReviews");
+    if (!reviews.length) {
+        container.innerHTML = "<p>No reviews yet. Completed customer reviews will appear here.</p>";
+        return;
+    }
+    container.innerHTML = reviews.map(review => {
+        const date = timestampDate(review.createdAt);
+        return `<article class="review-card"><div class="review-card-header"><div><strong>${escapeHtml(review.authorName || "FiniSpeak customer")}</strong><small>${escapeHtml(date ? date.toLocaleDateString() : "Recent review")}</small></div>${ratingMarkup(review.rating, 0, false)}</div><p>${escapeHtml(review.text || review.comment || "")}</p></article>`;
+    }).join("");
+}
+
+function ratingMarkup(rating, count = 0, includeCount = true) {
+    const value = Number(rating || 0);
+    const filled = value ? Math.max(1, Math.min(5, Math.round(value))) : 0;
+    const stars = `${"★".repeat(filled)}${"☆".repeat(5 - filled)}`;
+    const countText = includeCount ? ` <span>(${Number(count || 0)} review${Number(count || 0) === 1 ? "" : "s"})</span>` : "";
+    return `<div class="profile-rating" aria-label="${value ? `${value.toFixed(1)} out of 5 stars` : "Not yet rated"}"><span class="rating-stars" aria-hidden="true">${stars}</span><span class="rating-value">${value ? value.toFixed(1) : "New"}</span>${countText}</div>`;
+}
+
+function setProfileAvatar(element, profile) {
+    element.textContent = profileInitials(profile.displayName);
+    element.style.backgroundImage = "";
+    if (profile.photoUrl && /^https:\/\//i.test(profile.photoUrl)) {
+        element.style.backgroundImage = `url("${profile.photoUrl.replace(/"/g, "%22")}")`;
+        element.textContent = "";
+    }
+}
+
+function profileInitials(name = "") {
+    return name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "FS";
+}
+
+function profileTimestampMillis(value) {
+    if (!value) return 0;
+    if (typeof value.toMillis === "function") return value.toMillis();
+    if (typeof value === "number") return value;
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function timestampDate(value) {
+    if (!value) return null;
+    if (typeof value.toDate === "function") return value.toDate();
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function latestReviewMillis(profile) {
+    if (profile.latestReviewAt) return profileTimestampMillis(profile.latestReviewAt);
+    return Math.max(0, ...(profile.recentReviews || []).map(review => profileTimestampMillis(review.createdAt)));
 }
 
 async function saveProfile(e) {
@@ -567,6 +761,27 @@ function updateInterpreterCompletion(data = interpreterFormData()) {
     return pct;
 }
 
+function setInterpreterSaveLoading(loading, draft = false) {
+    const profileButton = $("saveInterpreterProfile");
+    const draftButton = $("saveInterpreterDraft");
+    const activeButton = draft ? draftButton : profileButton;
+    profileButton.disabled = loading;
+    draftButton.disabled = loading;
+    profileButton.setAttribute("aria-busy", String(loading && !draft));
+    draftButton.setAttribute("aria-busy", String(loading && draft));
+
+    if (loading) {
+        const spinner = document.createElement("span");
+        spinner.className = "button-spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        activeButton.replaceChildren(spinner, document.createTextNode(draft ? "Saving draft…" : "Saving profile…"));
+        return;
+    }
+
+    profileButton.textContent = "Save interpreter profile";
+    draftButton.textContent = "Save draft";
+}
+
 async function saveInterpreterProfile(e, draft = false) {
     e?.preventDefault?.();
     if (currentProfile?.role !== "translator") return;
@@ -575,14 +790,23 @@ async function saveInterpreterProfile(e, draft = false) {
     const completion = interpreterCompletion(data);
     if (!draft && completion < 100) { status.textContent = "Complete all required interpreter fields before finishing onboarding."; updateInterpreterCompletion(data); return; }
     status.textContent = "Saving interpreter profile…";
+    setInterpreterSaveLoading(true, draft);
     try {
         let photoUrl = currentInterpreterProfile?.photoUrl || "";
+        let photoUploadError = null;
         const file = $("interpreterPhoto").files?.[0];
         if (file) {
-            const extension = (file.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase();
-            const photoRef = storageRef(storage, `interpreter-profiles/${currentUser.uid}/profile.${extension}`);
-            await uploadBytes(photoRef, file, { contentType: file.type });
-            photoUrl = await getDownloadURL(photoRef);
+            if (!storage) {
+                photoUploadError = new Error("Firebase Storage is not configured");
+            } else try {
+                const extension = (file.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase();
+                const photoRef = storageRef(storage, `interpreter-profiles/${currentUser.uid}/profile.${extension}`);
+                await uploadBytes(photoRef, file, { contentType: file.type });
+                photoUrl = await getDownloadURL(photoRef);
+            } catch (error) {
+                photoUploadError = error;
+                console.error("Interpreter photo upload failed:", error);
+            }
         }
         const payload = {
             ...data, uid: currentUser.uid, email: (currentProfile.email || currentUser.email || "").toLowerCase(), photoUrl,
@@ -601,12 +825,22 @@ async function saveInterpreterProfile(e, draft = false) {
             hydrateDashboardProfile();
         }
         currentInterpreterProfile = { ...currentInterpreterProfile, ...payload, photoUrl };
-        $("interpreterPhoto").value = "";
-        setInterpreterPhoto(photoUrl);
+        if (!photoUploadError) {
+            $("interpreterPhoto").value = "";
+            setInterpreterPhoto(photoUrl);
+        }
         updateInterpreterCompletion(data);
         renderTranslatorDashboard();
-        status.textContent = completion === 100 ? "Interpreter profile saved. Your onboarding information is complete." : "Draft saved. You can finish onboarding later.";
-    } catch (error) { status.textContent = `Could not save interpreter profile: ${error.message}`; }
+        if (photoUploadError) {
+            status.textContent = "Profile saved, but the photo could not upload because Firebase Storage is not configured. Your selected photo is still here to retry later.";
+        } else {
+            status.textContent = completion === 100 ? "Interpreter profile saved. Your onboarding information is complete." : "Draft saved. You can finish onboarding later.";
+        }
+    } catch (error) {
+        status.textContent = `Could not save interpreter profile: ${error.message}`;
+    } finally {
+        setInterpreterSaveLoading(false, draft);
+    }
 }
 
 async function createCall(e) {

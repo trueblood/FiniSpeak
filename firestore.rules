@@ -41,6 +41,11 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == translatorId;
       allow delete: if signedIn() && request.auth.uid == translatorId;
+
+      match /reviews/{reviewId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
     }
 
     // Shared interpreter taxonomy. Any signed-in user can read it. Translators
