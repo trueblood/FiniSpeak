@@ -7,6 +7,7 @@ from routes.users import users_bp
 from routes.translators import translators_bp
 from routes.calls import calls_bp
 from routes.transcription import register_transcription_socket
+from routes.taxonomy import taxonomy_bp
 
 load_dotenv()
 
@@ -18,6 +19,7 @@ def create_app():
     app.register_blueprint(users_bp, url_prefix="/api/users")
     app.register_blueprint(translators_bp, url_prefix="/api/translators")
     app.register_blueprint(calls_bp, url_prefix="/api/calls")
+    app.register_blueprint(taxonomy_bp, url_prefix="/api/taxonomy")
 
     @app.route("/")
     def home():

@@ -124,20 +124,18 @@
                             <div class="tag-field" data-tag-field="languages">
                                 <label for="interpreterLanguages">Languages</label>
                                 <div id="interpreterLanguagesTags" class="tag-list" aria-live="polite"></div>
-                                <div class="tag-entry-row"><input id="interpreterLanguages" list="languagesOptions" placeholder="Search or add a language" autocomplete="off" aria-describedby="languagesHelp"><button class="secondary tag-add-button" type="button" data-add-tag="languages">Add</button></div>
-                                <datalist id="languagesOptions"></datalist><p id="languagesHelp" class="field-help">Choose a language from the database, or type a new one and press Enter/Add. New values are saved automatically.</p>
+                                <div class="tag-entry-row"><div class="tag-entry-input"><input id="interpreterLanguages" placeholder="Search or add a language" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="languagesOptions" aria-describedby="languagesHelp"><div id="languagesOptions" class="tag-suggestions hidden" role="listbox"></div></div><button class="secondary tag-add-button" type="button" data-add-tag="languages">Add</button></div>
+                                <p id="languagesHelp" class="field-help">Choose a language from the database, or type a new one and press Enter/Add. New values are saved automatically.</p>
                             </div>
                             <div class="tag-field" data-tag-field="dialects">
                                 <label for="interpreterDialects">Dialects / regions</label>
                                 <div id="interpreterDialectsTags" class="tag-list" aria-live="polite"></div>
-                                <div class="tag-entry-row"><input id="interpreterDialects" list="dialectsOptions" placeholder="Search or add a dialect / region" autocomplete="off"><button class="secondary tag-add-button" type="button" data-add-tag="dialects">Add</button></div>
-                                <datalist id="dialectsOptions"></datalist>
+                                <div class="tag-entry-row"><div class="tag-entry-input"><input id="interpreterDialects" placeholder="Search or add a dialect / region" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dialectsOptions"><div id="dialectsOptions" class="tag-suggestions hidden" role="listbox"></div></div><button class="secondary tag-add-button" type="button" data-add-tag="dialects">Add</button></div>
                             </div>
                             <div class="tag-field" data-tag-field="specialties">
                                 <label for="interpreterSpecialties">Specialties</label>
                                 <div id="interpreterSpecialtiesTags" class="tag-list" aria-live="polite"></div>
-                                <div class="tag-entry-row"><input id="interpreterSpecialties" list="specialtiesOptions" placeholder="Search or add a specialty" autocomplete="off"><button class="secondary tag-add-button" type="button" data-add-tag="specialties">Add</button></div>
-                                <datalist id="specialtiesOptions"></datalist>
+                                <div class="tag-entry-row"><div class="tag-entry-input"><input id="interpreterSpecialties" placeholder="Search or add a specialty" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="specialtiesOptions"><div id="specialtiesOptions" class="tag-suggestions hidden" role="listbox"></div></div><button class="secondary tag-add-button" type="button" data-add-tag="specialties">Add</button></div>
                             </div>
                         </div>
                         <div class="card form-section"><span class="eyebrow">3 · Experience & credentials</span><h3>Professional background</h3>
