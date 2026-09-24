@@ -18,6 +18,11 @@ const taxonomyUI = {
     dialects: { input: "interpreterDialects", tags: "interpreterDialectsTags", options: "dialectsOptions" },
     specialties: { input: "interpreterSpecialties", tags: "interpreterSpecialtiesTags", options: "specialtiesOptions" }
 };
+const taxonomyCollections = {
+    languages: "reference_languages",
+    dialects: "reference_dialects",
+    specialties: "reference_specialties"
+};
 const defaultTaxonomy = {
     languages: ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Mandarin Chinese", "Cantonese", "Arabic", "Hindi", "Bengali", "Urdu", "Punjabi", "Russian", "Ukrainian", "Japanese", "Korean", "Vietnamese", "Tagalog", "Haitian Creole", "American Sign Language"],
     dialects: ["Mexican Spanish", "Caribbean Spanish", "Castilian Spanish", "Latin American Spanish", "Brazilian Portuguese", "European Portuguese", "Modern Standard Arabic", "Egyptian Arabic", "Levantine Arabic", "Gulf Arabic", "Mandarin", "Cantonese"],
@@ -277,25 +282,16 @@ function taxonomyDocId(value) {
 
 async function loadTaxonomy() {
     try {
-        const response = await fetch("/api/taxonomy");
-
-        if (!response.ok) {
-            throw new Error(`Taxonomy API returned ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        Object.keys(taxonomyUI).forEach(kind => {
-            const values = Array.isArray(data[kind]) && data[kind].length
-                ? data[kind]
-                : defaultTaxonomy[kind];
-
-            taxonomy[kind] = [...values].sort((a, b) =>
-                a.localeCompare(b)
-            );
-
+        await Promise.all(Object.keys(taxonomyUI).map(async kind => {
+            const snapshot = await getDocs(collection(db, taxonomyCollections[kind]));
+            const values = snapshot.docs
+                .map(document => document.data())
+                .filter(item => item.active !== false && item.name)
+                .map(item => item.name);
+            taxonomy[kind] = (values.length ? values : defaultTaxonomy[kind])
+                .sort((a, b) => a.localeCompare(b));
             renderTaxonomyOptions(kind);
-        });
+        }));
 
         console.log("FiniSpeak taxonomy loaded:", taxonomy);
     } catch (error) {
@@ -390,39 +386,45 @@ function renderTags(kind) {
 
 async function addTagFromInput(kind) {
     const input = $(taxonomyUI[kind].input);
+    const addButton = document.querySelector(`[data-add-tag="${kind}"]`);
     const raw = input.value.replace(/,$/, "").trim();
     if (!raw) return;
     const normalized = normalizeTaxonomyValue(raw);
     const existing = taxonomy[kind].find(name => normalizeTaxonomyValue(name) === normalized);
     const name = existing || raw.replace(/\b\w/g, c => c.toUpperCase());
-    if (!existing) {
-        const id = taxonomyDocId(name);
-        if (!id) return;
-        const referenceCollections = {
-            languages: "reference_languages",
-            dialects: "reference_dialects",
-            specialties: "reference_specialties"
-        };
-        const ref = doc(db, referenceCollections[kind], id);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) await setDoc(ref, {
-            name,
-            nameLower: normalized,
-            active: true,
-            seeded: false,
-            createdBy: currentUser.uid,
-            createdAt: serverTimestamp()
-        });
-        const stored = snap.exists() ? (snap.data().name || name) : name;
-        if (!taxonomy[kind].some(v => normalizeTaxonomyValue(v) === normalizeTaxonomyValue(stored))) taxonomy[kind].push(stored);
-        taxonomy[kind].sort((a,b) => a.localeCompare(b));
+    try {
+        addButton.disabled = true;
+        addButton.textContent = existing ? "Adding…" : "Saving…";
+        if (!existing) {
+            const id = taxonomyDocId(name);
+            if (!id) return;
+            const ref = doc(db, taxonomyCollections[kind], id);
+            const snap = await getDoc(ref);
+            if (!snap.exists()) await setDoc(ref, {
+                name,
+                nameLower: normalized,
+                active: true,
+                seeded: false,
+                createdBy: currentUser.uid,
+                createdAt: serverTimestamp()
+            });
+            const stored = snap.exists() ? (snap.data().name || name) : name;
+            if (!taxonomy[kind].some(v => normalizeTaxonomyValue(v) === normalizeTaxonomyValue(stored))) taxonomy[kind].push(stored);
+            taxonomy[kind].sort((a,b) => a.localeCompare(b));
+        }
+        const canonical = taxonomy[kind].find(v => normalizeTaxonomyValue(v) === normalized) || name;
+        if (!selectedTags[kind].some(v => normalizeTaxonomyValue(v) === normalized)) selectedTags[kind].push(canonical);
+        input.value = "";
+        renderTags(kind);
+        closeTaxonomySuggestions(kind);
+        updateInterpreterCompletion();
+    } catch (error) {
+        console.error(`Unable to add ${kind} value:`, error);
+        $("interpreterProfileStatus").textContent = `Could not add “${name}”. Please try again.`;
+    } finally {
+        addButton.disabled = false;
+        addButton.textContent = "Add";
     }
-    const canonical = taxonomy[kind].find(v => normalizeTaxonomyValue(v) === normalized) || name;
-    if (!selectedTags[kind].some(v => normalizeTaxonomyValue(v) === normalized)) selectedTags[kind].push(canonical);
-    input.value = "";
-    renderTags(kind);
-    closeTaxonomySuggestions(kind);
-    updateInterpreterCompletion();
 }
 
 function hydrateInterpreterProfile(profile = {}) {

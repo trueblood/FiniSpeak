@@ -2,6 +2,21 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function validReferenceItem() {
+      return signedIn()
+        && request.resource.data.keys().hasAll(['name', 'nameLower', 'active', 'seeded', 'createdBy', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['name', 'nameLower', 'active', 'seeded', 'createdBy', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.nameLower is string
+        && request.resource.data.nameLower.size() > 0
+        && request.resource.data.nameLower.size() <= 100
+        && request.resource.data.active == true
+        && request.resource.data.seeded == false
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+    }
     function isCallParticipant(callId) {
       let c = get(/databases/$(database)/documents/calls/$(callId)).data;
       return signedIn() && (request.auth.uid == c.callerId || request.auth.uid == c.receiverId || request.auth.uid == c.translatorId);
@@ -31,19 +46,19 @@ service cloud.firestore {
     // Shared interpreter taxonomy. Any signed-in user can read it. Translators
     // may add a missing value; existing canonical values cannot be overwritten
     // or deleted from the client. Admin moderation can be added later.
-    match /languages/{itemId} {
+    match /reference_languages/{itemId} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.name is string && request.resource.data.normalized is string;
+      allow create: if validReferenceItem();
       allow update, delete: if false;
     }
-    match /dialects/{itemId} {
+    match /reference_dialects/{itemId} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.name is string && request.resource.data.normalized is string;
+      allow create: if validReferenceItem();
       allow update, delete: if false;
     }
-    match /specialties/{itemId} {
+    match /reference_specialties/{itemId} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.name is string && request.resource.data.normalized is string;
+      allow create: if validReferenceItem();
       allow update, delete: if false;
     }
 
