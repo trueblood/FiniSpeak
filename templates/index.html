@@ -10,21 +10,44 @@
 <a class="skip-link" href="#mainContent">Skip to main content</a>
 <header class="site-header">
     <a class="brand" href="/" aria-label="FiniSpeak home"><span class="brand-mark">F</span><span>FiniSpeak</span></a>
-    <nav><button id="authNav" class="text-button" type="button">Sign in</button></nav>
+    <nav class="site-nav" aria-label="Main navigation">
+        <button id="homeNav" class="nav-link" type="button">Home</button>
+        <button id="browseNav" class="nav-link" type="button">Find an interpreter</button>
+        <button id="authNav" class="nav-login" type="button">Log in</button>
+    </nav>
 </header>
 
 <main id="mainContent" tabindex="-1">
-    <section id="heroView" class="hero">
-        <div class="hero-content">
-            <span class="eyebrow">Human translation, when you need it</span>
-            <h1>Speak naturally.<br>Understand each other.</h1>
-            <p>Call another person, then bring a human translator into the conversation when language gets in the way.</p>
-            <div class="actions">
-                <button id="startCall" type="button">Start a Call</button>
-                <button id="translatorSignup" class="secondary" type="button">Become a Translator</button>
+    <section id="heroView" class="landing-view">
+        <div class="landing-hero">
+            <div class="hero-content">
+                <span class="eyebrow">Live human interpretation, on demand</span>
+                <h1>Every conversation deserves to be understood.</h1>
+                <p class="hero-lead">Find skilled interpreters by language, specialty, experience, and community reviews—then bring the right person into your conversation.</p>
+                <div class="actions">
+                    <button id="startCall" type="button">Get started</button>
+                    <button id="browseHero" class="secondary" type="button">Browse interpreters</button>
+                    <button id="translatorSignup" class="text-button" type="button">Become an interpreter</button>
+                </div>
+                <div class="hero-trust" aria-label="FiniSpeak benefits"><span>✓ Human expertise</span><span>✓ Saved transcripts</span><span>✓ Built for three-way calls</span></div>
+                <p id="status" class="status" aria-live="polite"></p>
             </div>
-            <p id="status" class="status" aria-live="polite"></p>
+            <div class="hero-visual" aria-label="Live interpreted conversation preview">
+                <div class="hero-orbit hero-orbit-one"></div><div class="hero-orbit hero-orbit-two"></div>
+                <div class="hero-person hero-person-primary"><span>AM</span><strong>Amara</strong><small>English</small></div>
+                <div class="hero-person hero-person-secondary"><span>JL</span><strong>Javier</strong><small>Spanish</small></div>
+                <div class="hero-interpreter"><span class="live-dot"></span><div><strong>Interpreter connected</strong><small>Medical · Spanish</small></div></div>
+            </div>
         </div>
+        <div class="landing-section">
+            <div class="section-intro"><span class="eyebrow">How FiniSpeak works</span><h2>Clear communication in three simple steps</h2><p>Move from language barrier to meaningful conversation without changing how you connect.</p></div>
+            <div class="feature-grid">
+                <article class="feature-card"><span class="feature-number">01</span><h3>Find the right expert</h3><p>Search by language, specialty, rating, availability, and recent feedback.</p></article>
+                <article class="feature-card"><span class="feature-number">02</span><h3>Start your conversation</h3><p>Connect two customers in a secure browser-based video call.</p></article>
+                <article class="feature-card"><span class="feature-number">03</span><h3>Add human interpretation</h3><p>Invite an available interpreter into the live call whenever you need them.</p></article>
+            </div>
+        </div>
+        <div class="landing-cta"><div><span class="eyebrow">Ready when language gets in the way</span><h2>Make your next conversation easier.</h2></div><button id="landingCta" type="button">Create your account</button></div>
     </section>
 
     <section id="authView" class="panel hidden">
@@ -53,6 +76,7 @@
                 </div>
                 <nav class="dashboard-nav" aria-label="Dashboard sections">
                     <button class="dashboard-nav-item active" type="button" data-dashboard-panel="home" aria-current="page">Dashboard</button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="directory">Find Interpreters</button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="profile">Profile</button>
                     <button id="interpreterProfileNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="interpreter">Interpreter Profile</button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="settings">Settings</button>
@@ -110,6 +134,18 @@
                     </div>
                 </div>
 
+                <div id="dashboardDirectory" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search completed profiles and compare expertise, ratings, availability, and recent feedback.</p></div></div>
+                    <div class="directory-filters card" aria-label="Interpreter filters">
+                        <label class="directory-search" for="directorySearch">Search<input id="directorySearch" type="search" placeholder="Name, language, specialty, or keyword"></label>
+                        <label for="directoryRating">Minimum rating<select id="directoryRating"><option value="0">Any rating</option><option value="3">3+ stars</option><option value="4">4+ stars</option><option value="4.5">4.5+ stars</option></select></label>
+                        <label for="directorySort">Sort by<select id="directorySort"><option value="top-rated">Top rated</option><option value="recent-review">Most recent reviews</option><option value="newest">Newest profiles</option><option value="experience">Most experienced</option></select></label>
+                        <label class="directory-available"><input id="directoryAvailable" type="checkbox"> Available now</label>
+                    </div>
+                    <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p></div>
+                    <div id="interpreterDirectory" class="interpreter-directory" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div></div>
+                </div>
+
                 <div id="dashboardInterpreter" class="dashboard-panel hidden">
                     <div class="dashboard-heading"><div><span class="eyebrow">Interpreter onboarding</span><h2>Interpreter profile</h2><p>Complete your professional profile so FiniSpeak can match you with the right conversations.</p></div><span id="interpreterCompletionBadge" class="status-badge pending-badge">Not complete</span></div>
                     <div class="onboarding-progress" aria-label="Interpreter profile completion"><div id="interpreterProgressBar" class="onboarding-progress-bar"></div></div>
@@ -147,7 +183,7 @@
                             <div class="form-grid"><label for="availabilityStart">Available from<input id="availabilityStart" type="time"></label><label for="availabilityEnd">Available until<input id="availabilityEnd" type="time"></label></div>
                             <label class="inline-check"><input id="interpreterAvailableNow" type="checkbox"> Available for interpretation requests now</label>
                         </div>
-                        <div class="form-actions"><button type="submit">Save interpreter profile</button><button id="saveInterpreterDraft" class="secondary" type="button">Save draft</button></div>
+                        <div class="form-actions"><button id="saveInterpreterProfile" type="submit">Save interpreter profile</button><button id="saveInterpreterDraft" class="secondary" type="button">Save draft</button></div>
                     </form>
                     <p id="interpreterProfileStatus" class="status" aria-live="polite"></p>
                 </div>
@@ -161,6 +197,27 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <section id="profileView" class="panel profile-detail-view hidden">
+        <div class="profile-detail-shell">
+            <button id="backToDirectory" class="text-button profile-back" type="button">← Back to interpreters</button>
+            <article class="profile-detail-card">
+                <div class="profile-detail-hero">
+                    <div id="publicProfileAvatar" class="public-profile-avatar" aria-hidden="true">FS</div>
+                    <div class="profile-detail-heading"><span id="publicProfileAvailability" class="availability-pill">Availability unknown</span><h1 id="publicProfileName">Interpreter</h1><p id="publicProfileHeadline">Professional FiniSpeak interpreter</p><div id="publicProfileRating" class="profile-rating"></div></div>
+                    <button id="profileStartCall" type="button">Start a call</button>
+                </div>
+                <div class="profile-detail-grid">
+                    <div class="profile-main-content">
+                        <section><span class="eyebrow">About</span><h2>Meet your interpreter</h2><p id="publicProfileBio"></p></section>
+                        <section><span class="eyebrow">Expertise</span><h2>Languages and specialties</h2><div id="publicProfileLanguages" class="profile-tag-group"></div><div id="publicProfileSpecialties" class="profile-tag-group"></div></section>
+                        <section><div class="reviews-heading"><div><span class="eyebrow">Community feedback</span><h2>Most recent reviews</h2></div><div id="publicProfileReviewSummary" class="review-summary"></div></div><div id="publicProfileReviews" class="review-list"><p>No reviews yet.</p></div></section>
+                    </div>
+                    <aside class="profile-facts card"><h3>Profile details</h3><dl><div><dt>Experience</dt><dd id="publicProfileExperience">—</dd></div><div><dt>Credentials</dt><dd id="publicProfileCredentials">—</dd></div><div><dt>Schedule</dt><dd id="publicProfileSchedule">—</dd></div><div><dt>Verification</dt><dd id="publicProfileVerification">—</dd></div></dl></aside>
+                </div>
+            </article>
         </div>
     </section>
 
