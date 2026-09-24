@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isCallParticipant(callId) {
+      let c = get(/databases/$(database)/documents/calls/$(callId)).data;
+      return signedIn() && (request.auth.uid == c.callerId || request.auth.uid == c.receiverId || request.auth.uid == c.translatorId);
+    }
+
+    match /users/{userId} {
+      // Signed-in users may read basic MVP profiles so an older account can
+      // still be found by email even if it predates emailDirectory.
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == userId;
+    }
+
+    // Exact email lookup for signed-in FiniSpeak users.
+    // This keeps customer lookup separate from private user profile documents.
+    match /emailDirectory/{email} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /translators/{translatorId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == translatorId;
+      allow delete: if signedIn() && request.auth.uid == translatorId;
+    }
+
+    // Shared interpreter taxonomy. Any signed-in user can read it. Translators
+    // may add a missing value; existing canonical values cannot be overwritten
+    // or deleted from the client. Admin moderation can be added later.
+    match /languages/{itemId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.name is string && request.resource.data.normalized is string;
+      allow update, delete: if false;
+    }
+    match /dialects/{itemId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.name is string && request.resource.data.normalized is string;
+      allow update, delete: if false;
+    }
+    match /specialties/{itemId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.name is string && request.resource.data.normalized is string;
+      allow update, delete: if false;
+    }
+
+    match /calls/{callId} {
+      allow create: if signedIn() && request.resource.data.callerId == request.auth.uid;
+      allow read: if signedIn();
+      allow update: if signedIn(); // MVP only; tighten state transitions before production.
+      match /{subCollection}/{document=**} {
+        allow read, write: if isCallParticipant(callId);
+      }
+    }
+  }
+}

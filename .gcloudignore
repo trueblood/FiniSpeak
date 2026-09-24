@@ -1,0 +1,10 @@
+.gcloudignore
+.git
+.gitignore
+venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+Archive.zip
+FiniSpeak_Project_Plan.pdf
