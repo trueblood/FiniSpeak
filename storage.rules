@@ -2,10 +2,13 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /interpreter-profiles/{userId}/{fileName} {
-      allow read: if request.auth != null;
+      // Interpreter photos are public because they appear on the landing page
+      // and in the public-facing profile directory.
+      allow read: if true;
       allow write: if request.auth != null && request.auth.uid == userId
+                   && fileName.matches('profile\\.(jpg|png|webp)')
                    && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+                   && request.resource.contentType.matches('image/(jpeg|png|webp)');
     }
   }
 }

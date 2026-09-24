@@ -13,7 +13,7 @@ FiniSpeak is being built web-first with a shared Firebase/WebRTC architecture th
 - Three-person WebRTC mesh signaling through Firestore
 - Mute, camera, request translator, copy Call ID, and end-call controls
 - STUN configured for development; TURN is intentionally deferred
-- Firebase Storage and FCM are intentionally deferred
+- Firebase Storage for interpreter profile photos; FCM is intentionally deferred
 
 ## Run locally
 
@@ -34,6 +34,20 @@ Open http://127.0.0.1:5050
 3. Create Cloud Firestore.
 4. Copy the Firebase web configuration values into `.env`.
 5. Publish `firestore.rules` for MVP testing. The call update rule is deliberately broad for development and must be tightened before production.
+
+## Interpreter profile photos
+
+Create Firebase Storage in **production mode** and set `FIREBASE_STORAGE_BUCKET`
+to the bucket shown in Firebase. Profile photos are uploaded to
+`interpreter-profiles/{userId}/profile.{jpg|png|webp}` and the download URL is
+saved in the interpreter's Firestore profile. Uploads are limited to JPG, PNG,
+or WebP images smaller than 5 MB.
+
+Deploy both rule files after Storage is created:
+
+```bash
+firebase deploy --only firestore:rules,storage --project finispeak
+```
 
 For local testing, create three accounts in separate browser profiles/incognito contexts: Customer 1, Customer 2, and Translator. Customer 1 creates a call using Customer 2's email address. Customer 2 joins using the Call ID. Press Request Translator, then the Translator joins using the same Call ID.
 

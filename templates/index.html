@@ -47,6 +47,10 @@
                 <article class="feature-card"><span class="feature-number">03</span><h3>Add human interpretation</h3><p>Invite an available interpreter into the live call whenever you need them.</p></article>
             </div>
         </div>
+        <div id="featuredProfiles" class="landing-directory-section">
+            <div class="section-intro"><span class="eyebrow">Top-rated interpreters</span><h2>Trusted by the FiniSpeak community</h2><p>Meet three of the highest-rated interpreters on FiniSpeak. Log in to search the complete directory and view full profiles.</p></div>
+            <div id="featuredInterpreters" class="interpreter-directory featured-interpreter-grid" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading featured profiles…</div></div>
+        </div>
         <div class="landing-cta"><div><span class="eyebrow">Ready when language gets in the way</span><h2>Make your next conversation easier.</h2></div><button id="landingCta" type="button">Create your account</button></div>
     </section>
 
@@ -135,11 +139,11 @@
                 </div>
 
                 <div id="dashboardDirectory" class="dashboard-panel hidden">
-                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search completed profiles and compare expertise, ratings, availability, and recent feedback.</p></div></div>
+                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search profiles and compare expertise, ratings, and availability.</p></div></div>
                     <div class="directory-filters card" aria-label="Interpreter filters">
                         <label class="directory-search" for="directorySearch">Search<input id="directorySearch" type="search" placeholder="Name, language, specialty, or keyword"></label>
                         <label for="directoryRating">Minimum rating<select id="directoryRating"><option value="0">Any rating</option><option value="3">3+ stars</option><option value="4">4+ stars</option><option value="4.5">4.5+ stars</option></select></label>
-                        <label for="directorySort">Sort by<select id="directorySort"><option value="top-rated">Top rated</option><option value="recent-review">Most recent reviews</option><option value="newest">Newest profiles</option><option value="experience">Most experienced</option></select></label>
+                        <label for="directorySort">Sort by<select id="directorySort"><option value="top-rated">Top rated</option><option value="experience">Most experienced</option><option value="name">Name</option></select></label>
                         <label class="directory-available"><input id="directoryAvailable" type="checkbox"> Available now</label>
                     </div>
                     <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p></div>
