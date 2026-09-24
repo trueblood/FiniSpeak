@@ -37,7 +37,6 @@ def create_app():
             "measurementId": "FIREBASE_MEASUREMENT_ID",
         }
         config = {client_key: os.getenv(env_key, "") for client_key, env_key in keys.items()}
-        config["storageEnabled"] = os.getenv("FIREBASE_STORAGE_ENABLED", "false").lower() == "true"
         required = ("apiKey", "authDomain", "projectId", "appId")
         if any(not config[k] for k in required):
             return jsonify({"error": "Firebase web configuration is incomplete", "config": config}), 503

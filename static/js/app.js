@@ -29,8 +29,15 @@ const defaultTaxonomy = {
     dialects: ["Mexican Spanish", "Caribbean Spanish", "Castilian Spanish", "Latin American Spanish", "Brazilian Portuguese", "European Portuguese", "Modern Standard Arabic", "Egyptian Arabic", "Levantine Arabic", "Gulf Arabic", "Mandarin", "Cantonese"],
     specialties: ["Medical", "Education", "Legal", "Business", "Financial", "Government", "Social Services", "Mental Health", "Immigration", "Community", "Technical", "Conference"]
 };
+const profilePhotoTypes = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp"
+};
 
 async function boot() {
+    bindUI();
+    loadFeaturedProfiles();
     try {
         const response = await fetch("/api/firebase-config");
         const config = await response.json();
@@ -38,12 +45,10 @@ async function boot() {
         const firebaseApp = initializeApp(config);
         auth = getAuth(firebaseApp);
         db = getFirestore(firebaseApp);
-        storage = config.storageEnabled ? getStorage(firebaseApp) : null;
-        bindUI();
+        storage = config.storageBucket ? getStorage(firebaseApp) : null;
         onAuthStateChanged(auth, handleAuthState);
     } catch (error) {
         $("status").textContent = `${error.message}. Add the Firebase web values to .env.`;
-        bindUI();
     }
 }
 
@@ -108,14 +113,24 @@ function bindUI() {
     $("directoryRating").addEventListener("change", filterInterpreterDirectory);
     $("directorySort").addEventListener("change", filterInterpreterDirectory);
     $("directoryAvailable").addEventListener("change", filterInterpreterDirectory);
-    $("backToDirectory").onclick = () => { show("dashboardView"); openDashboardPanel("directory"); };
-    $("profileStartCall").onclick = () => { show("dashboardView"); openDashboardPanel("home"); $("receiverEmail")?.focus(); };
+    $("backToDirectory").onclick = openInterpreterDirectory;
+    $("profileStartCall").onclick = () => {
+        if (!currentUser) {
+            openAuth(false, "customer");
+            $("authStatus").textContent = "Log in when you are ready to start a call with an interpreter.";
+            return;
+        }
+        show("dashboardView");
+        openDashboardPanel("home");
+        $("receiverEmail")?.focus();
+    };
 }
 
 function openInterpreterDirectory() {
     if (!currentUser) {
-        openAuth(false, "customer");
-        $("authStatus").textContent = "Log in to browse interpreter profiles.";
+        show("heroView");
+        loadFeaturedProfiles();
+        window.requestAnimationFrame(() => $("featuredProfiles").scrollIntoView({ behavior: "smooth", block: "start" }));
         return;
     }
     show("dashboardView");
@@ -278,15 +293,55 @@ function openDashboardPanel(panel) {
     if (panel === "directory") loadInterpreterDirectory();
 }
 
+async function fetchPublicProfiles() {
+    const response = await fetch("/api/translators/");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Could not load interpreter profiles");
+    return payload.filter(profile => profile.displayName);
+}
+
+async function loadFeaturedProfiles() {
+    const container = $("featuredInterpreters");
+    try {
+        const profiles = await fetchPublicProfiles();
+        profiles.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0));
+        renderFeaturedProfiles(profiles);
+    } catch (error) {
+        console.error("Featured profiles failed:", error);
+        container.innerHTML = '<div class="directory-empty">Featured profiles are temporarily unavailable.</div>';
+    }
+}
+
+function renderFeaturedProfiles(profiles) {
+    const container = $("featuredInterpreters");
+    if (!profiles.length) {
+        container.innerHTML = '<div class="directory-empty">Featured interpreter profiles are coming soon.</div>';
+        return;
+    }
+    container.replaceChildren(...profiles.map(profile => {
+        const card = document.createElement("article");
+        card.className = "interpreter-card featured-interpreter-card";
+        const tags = [...(profile.languages || []), ...(profile.specialties || [])].slice(0, 3);
+        card.innerHTML = `
+            <div class="directory-avatar">${escapeHtml(profileInitials(profile.displayName))}</div>
+            <div>
+                <div class="interpreter-card-header"><div><h3>${escapeHtml(profile.displayName)}</h3>${ratingMarkup(profile.rating, profile.ratingCount)}</div><span class="availability-dot${profile.availability?.availableNow ? " available" : ""}" title="${profile.availability?.availableNow ? "Available now" : "Currently unavailable"}"></span></div>
+                <p class="card-bio">${escapeHtml(profile.bio || "Professional FiniSpeak interpreter profile.")}</p>
+                <div class="directory-tags">${tags.map(tag => `<span class="directory-tag">${escapeHtml(tag)}</span>`).join("")}</div>
+                <button class="text-button featured-profile-login" type="button">View profile</button>
+            </div>`;
+        setProfileAvatar(card.querySelector(".directory-avatar"), profile);
+        card.querySelector(".featured-profile-login").onclick = () => openPublicProfile(profile);
+        return card;
+    }));
+}
+
 async function loadInterpreterDirectory() {
     const container = $("interpreterDirectory");
     container.innerHTML = '<div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div>';
     $("directoryResultCount").textContent = "Loading interpreters…";
     try {
-        const snapshot = await getDocs(collection(db, "translators"));
-        directoryProfiles = snapshot.docs
-            .map(document => ({ id: document.id, ...document.data() }))
-            .filter(profile => profile.displayName);
+        directoryProfiles = await fetchPublicProfiles();
         filterInterpreterDirectory();
     } catch (error) {
         console.error("Interpreter directory failed:", error);
@@ -312,9 +367,8 @@ function filterInterpreterDirectory() {
     });
 
     profiles.sort((a, b) => {
-        if (sort === "recent-review") return latestReviewMillis(b) - latestReviewMillis(a) || Number(b.rating || 0) - Number(a.rating || 0);
-        if (sort === "newest") return profileTimestampMillis(b.updatedAt || b.createdAt) - profileTimestampMillis(a.updatedAt || a.createdAt);
         if (sort === "experience") return Number(b.yearsExperience || 0) - Number(a.yearsExperience || 0);
+        if (sort === "name") return String(a.displayName || "").localeCompare(String(b.displayName || ""));
         return Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0);
     });
     renderInterpreterDirectory(profiles);
@@ -371,19 +425,9 @@ async function openPublicProfile(profile) {
         ? `${availability.days.map(day => day.slice(0, 3).replace(/^./, value => value.toUpperCase())).join(", ")}${availability.start && availability.end ? ` · ${availability.start}–${availability.end}` : ""}`
         : "Schedule not listed";
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
-    $("publicProfileReviews").innerHTML = '<div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading reviews…</div>';
+    $("publicProfileReviews").innerHTML = "<p>Detailed community feedback will appear here as reviews are added.</p>";
     show("profileView");
     window.scrollTo({ top: 0, behavior: "smooth" });
-
-    let reviews = Array.isArray(profile.recentReviews) ? [...profile.recentReviews] : [];
-    try {
-        const snapshot = await getDocs(collection(db, "translators", profile.id, "reviews"));
-        reviews = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
-    } catch (error) {
-        console.warn("Review collection unavailable; using embedded recent reviews:", error);
-    }
-    reviews.sort((a, b) => profileTimestampMillis(b.createdAt) - profileTimestampMillis(a.createdAt));
-    renderProfileReviews(reviews.slice(0, 6));
 }
 
 function renderProfileTags(container, label, values) {
@@ -720,7 +764,7 @@ function setInterpreterPhoto(url) {
 function previewInterpreterPhoto() {
     const file = $("interpreterPhoto").files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) { $("interpreterProfileStatus").textContent = "Choose an image file."; return; }
+    if (!profilePhotoTypes[file.type]) { $("interpreterProfileStatus").textContent = "Choose a JPG, PNG, or WebP image."; $("interpreterPhoto").value = ""; return; }
     if (file.size > 5 * 1024 * 1024) { $("interpreterProfileStatus").textContent = "Profile photos must be under 5 MB."; $("interpreterPhoto").value = ""; return; }
     const reader = new FileReader();
     reader.onload = () => setInterpreterPhoto(reader.result);
@@ -799,9 +843,12 @@ async function saveInterpreterProfile(e, draft = false) {
             if (!storage) {
                 photoUploadError = new Error("Firebase Storage is not configured");
             } else try {
-                const extension = (file.name.split(".").pop() || "jpg").replace(/[^a-z0-9]/gi, "").toLowerCase();
+                const extension = profilePhotoTypes[file.type];
                 const photoRef = storageRef(storage, `interpreter-profiles/${currentUser.uid}/profile.${extension}`);
-                await uploadBytes(photoRef, file, { contentType: file.type });
+                await uploadBytes(photoRef, file, {
+                    contentType: file.type,
+                    cacheControl: "public,max-age=3600"
+                });
                 photoUrl = await getDownloadURL(photoRef);
             } catch (error) {
                 photoUploadError = error;
@@ -832,7 +879,7 @@ async function saveInterpreterProfile(e, draft = false) {
         updateInterpreterCompletion(data);
         renderTranslatorDashboard();
         if (photoUploadError) {
-            status.textContent = "Profile saved, but the photo could not upload because Firebase Storage is not configured. Your selected photo is still here to retry later.";
+            status.textContent = `Profile saved, but the photo could not upload: ${photoUploadError.message}. Your selected photo is still here to retry.`;
         } else {
             status.textContent = completion === 100 ? "Interpreter profile saved. Your onboarding information is complete." : "Draft saved. You can finish onboarding later.";
         }

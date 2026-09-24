@@ -4,6 +4,29 @@ from services.firebase_service import get_db
 
 translators_bp = Blueprint("translators", __name__)
 
+PUBLIC_TRANSLATOR_FIELDS = {
+    "bio",
+    "dialects",
+    "displayName",
+    "languages",
+    "photoUrl",
+    "rating",
+    "ratingCount",
+    "specialties",
+    "verificationStatus",
+    "yearsExperience",
+}
+
+
+def _public_translator(doc):
+    data = doc.to_dict()
+    profile = {key: data[key] for key in PUBLIC_TRANSLATOR_FIELDS if key in data}
+    profile["availability"] = {
+        "availableNow": bool(data.get("availability", {}).get("availableNow", False))
+    }
+    profile["id"] = doc.id
+    return profile
+
 
 @translators_bp.get("/")
 def get_translators():
@@ -12,9 +35,7 @@ def get_translators():
         translators = []
 
         for doc in db.collection("translators").stream():
-            translator = doc.to_dict()
-            translator["id"] = doc.id
-            translators.append(translator)
+            translators.append(_public_translator(doc))
 
         return jsonify(translators)
     except RuntimeError as exc:
