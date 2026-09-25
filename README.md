@@ -2,6 +2,24 @@
 
 FiniSpeak is being built web-first with a shared Firebase/WebRTC architecture that can later be reused by native iOS (SwiftUI) and Android (Kotlin/Compose) clients.
 
+## MVC architecture
+
+The Flask backend follows an MVC structure while keeping routing and external services explicit:
+
+- `models/` owns Firestore data access and public document serialization.
+- `controllers/` validates requests, coordinates models/services, and builds responses.
+- `views/templates/` contains server-rendered HTML views.
+- `views/static/` contains the view layer's CSS and browser JavaScript.
+- `routes/` maps URLs to controllers and contains no business or database logic.
+- `services/` integrates Firebase authentication, transcription, and other external systems.
+- `app.py` is the application factory and dependency-wiring entry point.
+
+Open `/api` or `/api/routes` while the app is running to see the current route catalog. Run the MVC regression tests with:
+
+```bash
+python -m unittest discover -s tests
+```
+
 ## Current MVP
 
 - Firebase Email/Password Authentication
