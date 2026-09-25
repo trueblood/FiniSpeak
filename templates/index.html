@@ -40,11 +40,26 @@
             </div>
         </div>
         <div class="landing-section">
-            <div class="section-intro"><span class="eyebrow">How FiniSpeak works</span><h2>Clear communication in three simple steps</h2><p>Move from language barrier to meaningful conversation without changing how you connect.</p></div>
-            <div class="feature-grid">
-                <article class="feature-card"><span class="feature-number">01</span><h3>Find the right expert</h3><p>Search by language, specialty, rating, availability, and recent feedback.</p></article>
-                <article class="feature-card"><span class="feature-number">02</span><h3>Start your conversation</h3><p>Connect two customers in a secure browser-based video call.</p></article>
-                <article class="feature-card"><span class="feature-number">03</span><h3>Add human interpretation</h3><p>Invite an available interpreter into the live call whenever you need them.</p></article>
+            <div class="section-intro"><span class="eyebrow">How FiniSpeak works</span><h2>Choose how you want to connect</h2><p>Start a new conversation, add an interpreter to a call already in progress, or plan a session for later.</p></div>
+            <div class="workflow-tabs" role="tablist" aria-label="Choose a FiniSpeak workflow">
+                <button id="startCallTab" class="workflow-tab active" type="button" role="tab" aria-selected="true" aria-controls="startCallSteps" tabindex="0"><span aria-hidden="true">📹</span> Start a Call</button>
+                <button id="addCallTab" class="workflow-tab" type="button" role="tab" aria-selected="false" aria-controls="addCallSteps" tabindex="-1"><span aria-hidden="true">📞</span> Add to My Call</button>
+                <button id="scheduleTab" class="workflow-tab" type="button" role="tab" aria-selected="false" aria-controls="scheduleSteps" tabindex="-1"><span aria-hidden="true">📅</span> Schedule</button>
+            </div>
+            <div id="startCallSteps" class="feature-grid workflow-panel" role="tabpanel" aria-labelledby="startCallTab">
+                <article class="feature-card"><span class="feature-number">01</span><h3>Find an interpreter</h3><p>Search by language, dialect, specialty, availability, rating, and feedback.</p></article>
+                <article class="feature-card"><span class="feature-number">02</span><h3>Start the call</h3><p>Start a secure browser-based call with the people who need to communicate.</p></article>
+                <article class="feature-card"><span class="feature-number">03</span><h3>Interpreter joins</h3><p>Your selected interpreter joins the live call to provide human interpretation.</p></article>
+            </div>
+            <div id="addCallSteps" class="feature-grid workflow-panel" role="tabpanel" aria-labelledby="addCallTab" hidden>
+                <article class="feature-card"><span class="feature-number">01</span><h3>Open FiniSpeak</h3><p>While your phone conversation is in progress, find an available interpreter in FiniSpeak.</p></article>
+                <article class="feature-card"><span class="feature-number">02</span><h3>Add the interpreter</h3><p>Call the interpreter and add them to your existing phone conversation.</p></article>
+                <article class="feature-card"><span class="feature-number">03</span><h3>Continue together</h3><p>Keep talking while the interpreter provides real-time interpretation for everyone on the call.</p></article>
+            </div>
+            <div id="scheduleSteps" class="feature-grid workflow-panel" role="tabpanel" aria-labelledby="scheduleTab" hidden>
+                <article class="feature-card"><span class="feature-number">01</span><h3>Choose a time</h3><p>Find an interpreter or tutor and choose an available date and time.</p></article>
+                <article class="feature-card"><span class="feature-number">02</span><h3>Book the session</h3><p>Confirm the interpreter, language, specialty, and session details.</p></article>
+                <article class="feature-card"><span class="feature-number">03</span><h3>Connect when it’s time</h3><p>Join the scheduled FiniSpeak session with your interpreter.</p></article>
             </div>
         </div>
         <div id="featuredProfiles" class="landing-directory-section">

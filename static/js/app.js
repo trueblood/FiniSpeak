@@ -53,6 +53,18 @@ async function boot() {
 }
 
 function bindUI() {
+    const workflowTabs = [...document.querySelectorAll(".workflow-tab")];
+    workflowTabs.forEach((tab, index) => {
+        tab.addEventListener("click", () => activateWorkflowTab(tab));
+        tab.addEventListener("keydown", (event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            let nextIndex = event.key === "Home" ? 0 : event.key === "End" ? workflowTabs.length - 1 : index + (event.key === "ArrowRight" ? 1 : -1);
+            nextIndex = (nextIndex + workflowTabs.length) % workflowTabs.length;
+            activateWorkflowTab(workflowTabs[nextIndex]);
+            workflowTabs[nextIndex].focus();
+        });
+    });
     $("startCall").onclick = () => {
         if (!currentUser) return openAuth(false, "customer");
         show("dashboardView");
@@ -124,6 +136,16 @@ function bindUI() {
         openDashboardPanel("home");
         $("receiverEmail")?.focus();
     };
+}
+
+function activateWorkflowTab(activeTab) {
+    document.querySelectorAll(".workflow-tab").forEach(tab => {
+        const isActive = tab === activeTab;
+        tab.classList.toggle("active", isActive);
+        tab.setAttribute("aria-selected", String(isActive));
+        tab.tabIndex = isActive ? 0 : -1;
+        $(tab.getAttribute("aria-controls")).hidden = !isActive;
+    });
 }
 
 function openInterpreterDirectory() {
@@ -419,11 +441,8 @@ async function openPublicProfile(profile) {
     renderProfileTags($("publicProfileSpecialties"), "Specialties", profile.specialties || []);
     $("publicProfileExperience").textContent = `${Number(profile.yearsExperience || 0)} years`;
     $("publicProfileCredentials").textContent = (profile.credentials || []).join(", ") || "Not listed";
-    $("publicProfileVerification").textContent = (profile.verificationStatus || "unverified").replace(/_/g, " ").replace(/^./, value => value.toUpperCase());
-    const availability = profile.availability || {};
-    $("publicProfileSchedule").textContent = (availability.days || []).length
-        ? `${availability.days.map(day => day.slice(0, 3).replace(/^./, value => value.toUpperCase())).join(", ")}${availability.start && availability.end ? ` · ${availability.start}–${availability.end}` : ""}`
-        : "Schedule not listed";
+    $("publicProfileVerification").textContent = profileVerificationLabel(profile);
+    $("publicProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
     $("publicProfileReviews").innerHTML = "<p>Detailed community feedback will appear here as reviews are added.</p>";
     show("profileView");
@@ -433,6 +452,31 @@ async function openPublicProfile(profile) {
 function renderProfileTags(container, label, values) {
     const cleanValues = values.filter(Boolean);
     container.innerHTML = `<strong>${escapeHtml(label)}</strong>${cleanValues.length ? cleanValues.map(value => `<span class="profile-tag">${escapeHtml(value)}</span>`).join("") : '<span class="profile-tag">Not listed</span>'}`;
+}
+
+function profileVerificationLabel(profile = {}) {
+    const verificationStatus = profile.verificationStatus || "unverified";
+    if (verificationStatus === "verified") return "Verified";
+    if (profile.credentialStatus === "submitted") return "Submitted for verification";
+    return verificationStatus.replace(/_/g, " ").replace(/^./, value => value.toUpperCase());
+}
+
+function formatAvailabilityTime(value) {
+    const [hourText, minuteText] = String(value || "").split(":");
+    const hour = Number(hourText);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !/^\d{2}$/.test(minuteText || "")) return value || "";
+    const suffix = hour >= 12 ? "PM" : "AM";
+    return `${hour % 12 || 12}:${minuteText} ${suffix}`;
+}
+
+function formatAvailabilitySchedule(availability = {}, fallback = "Add your availability schedule.") {
+    const days = Array.isArray(availability?.days) ? availability.days.filter(Boolean) : [];
+    if (!days.length) return fallback;
+    const dayLabel = days.map(day => day.slice(0, 3).replace(/^./, value => value.toUpperCase())).join(", ");
+    const timeLabel = availability.start && availability.end
+        ? ` · ${formatAvailabilityTime(availability.start)}–${formatAvailabilityTime(availability.end)}`
+        : "";
+    return `${dayLabel}${timeLabel}`;
 }
 
 function renderProfileReviews(reviews) {
@@ -723,15 +767,14 @@ function renderTranslatorDashboard() {
     const availability = p.availability || {};
     $("dashboardProfileCompletion").textContent = `${completion}%`;
     $("dashboardProfileCompletionText").textContent = completion === 100 ? "Profile complete" : "Finish onboarding";
-    $("dashboardVerification").textContent = (p.verificationStatus || "unverified").replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+    $("dashboardVerification").textContent = profileVerificationLabel(p);
     $("dashboardRating").textContent = p.rating == null ? "New" : Number(p.rating).toFixed(1);
     $("dashboardRatingCount").textContent = p.ratingCount ? `${p.ratingCount} review${p.ratingCount === 1 ? "" : "s"}` : "No reviews yet";
     $("dashboardExperience").textContent = `${Number(p.yearsExperience || 0)} yrs`;
     const languages = [...(p.languages || []), ...(p.dialects || [])];
     $("dashboardLanguages").textContent = languages.length ? languages.join(" · ") : "Add your languages and dialects.";
     $("dashboardSpecialties").textContent = (p.specialties || []).length ? p.specialties.join(" · ") : "Add your specialties.";
-    const days = availability.days || [];
-    $("dashboardSchedule").textContent = days.length ? `${days.map(d => d.slice(0,3).replace(/^./, c => c.toUpperCase())).join(", ")}${availability.start && availability.end ? ` · ${availability.start}–${availability.end}` : ""}` : "Add your availability schedule.";
+    $("dashboardSchedule").textContent = formatAvailabilitySchedule(availability);
     $("dashboardAvailableNow").checked = Boolean(availability.availableNow);
     $("dashboardAvailabilityLabel").textContent = availability.availableNow ? "Available now" : "Unavailable";
 }
