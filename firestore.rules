@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function validReferenceItem() {
+      return signedIn()
+        && request.resource.data.keys().hasAll(['name', 'nameLower', 'active', 'seeded', 'createdBy', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['name', 'nameLower', 'active', 'seeded', 'createdBy', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.nameLower is string
+        && request.resource.data.nameLower.size() > 0
+        && request.resource.data.nameLower.size() <= 100
+        && request.resource.data.active == true
+        && request.resource.data.seeded == false
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+    }
+    function isCallParticipant(callId) {
+      let c = get(/databases/$(database)/documents/calls/$(callId)).data;
+      return signedIn() && (request.auth.uid == c.callerId || request.auth.uid == c.receiverId || request.auth.uid == c.translatorId);
+    }
+
+    match /users/{userId} {
+      // Signed-in users may read basic MVP profiles so an older account can
+      // still be found by email even if it predates emailDirectory.
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == userId;
+    }
+
+    // Exact email lookup for signed-in FiniSpeak users.
+    // This keeps customer lookup separate from private user profile documents.
+    match /emailDirectory/{email} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /translators/{translatorId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == translatorId;
+      allow delete: if signedIn() && request.auth.uid == translatorId;
+
+      match /reviews/{reviewId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+
+    // Shared interpreter taxonomy. Any signed-in user can read it. Translators
+    // may add a missing value; existing canonical values cannot be overwritten
+    // or deleted from the client. Admin moderation can be added later.
+    match /reference_languages/{itemId} {
+      allow read: if signedIn();
+      allow create: if validReferenceItem();
+      allow update, delete: if false;
+    }
+    match /reference_dialects/{itemId} {
+      allow read: if signedIn();
+      allow create: if validReferenceItem();
+      allow update, delete: if false;
+    }
+    match /reference_specialties/{itemId} {
+      allow read: if signedIn();
+      allow create: if validReferenceItem();
+      allow update, delete: if false;
+    }
+
+    match /calls/{callId} {
+      allow create: if signedIn() && request.resource.data.callerId == request.auth.uid;
+      allow read: if signedIn();
+      allow update: if signedIn(); // MVP only; tighten state transitions before production.
+      match /{subCollection}/{document=**} {
+        allow read, write: if isCallParticipant(callId);
+      }
+    }
+  }
+}
