@@ -6,6 +6,8 @@ translators_bp = Blueprint("translators", __name__)
 
 PUBLIC_TRANSLATOR_FIELDS = {
     "bio",
+    "credentials",
+    "credentialStatus",
     "dialects",
     "displayName",
     "languages",
@@ -21,8 +23,12 @@ PUBLIC_TRANSLATOR_FIELDS = {
 def _public_translator(doc):
     data = doc.to_dict()
     profile = {key: data[key] for key in PUBLIC_TRANSLATOR_FIELDS if key in data}
+    availability = data.get("availability", {})
     profile["availability"] = {
-        "availableNow": bool(data.get("availability", {}).get("availableNow", False))
+        "availableNow": bool(availability.get("availableNow", False)),
+        "days": availability.get("days", []) if isinstance(availability.get("days", []), list) else [],
+        "start": availability.get("start", ""),
+        "end": availability.get("end", ""),
     }
     profile["id"] = doc.id
     return profile
