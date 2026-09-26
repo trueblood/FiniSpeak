@@ -10,7 +10,7 @@ let auth, db, storage, currentUser, currentProfile, currentInterpreterProfile, s
 let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map();
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, currentCallRole = null;
 let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
-let directoryProfiles = [], activeDirectoryProfile = null;
+let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterProfile = null;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
 const taxonomySuggestionIndex = { languages: -1, dialects: -1, specialties: -1 };
@@ -126,12 +126,15 @@ function bindUI() {
     $("directorySort").addEventListener("change", filterInterpreterDirectory);
     $("directoryAvailable").addEventListener("change", filterInterpreterDirectory);
     $("backToDirectory").onclick = openInterpreterDirectory;
+    $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
     $("profileStartCall").onclick = () => {
         if (!currentUser) {
+            selectInterpreterForCall(activeDirectoryProfile);
             openAuth(false, "customer");
             $("authStatus").textContent = "Log in when you are ready to start a call with an interpreter.";
             return;
         }
+        selectInterpreterForCall(activeDirectoryProfile);
         show("dashboardView");
         openDashboardPanel("home");
         $("receiverEmail")?.focus();
@@ -201,6 +204,7 @@ async function handleAuthState(user) {
     if (!user) {
         currentProfile = null;
         currentInterpreterProfile = null;
+        clearSelectedInterpreter();
         cleanupDashboardListeners();
         cleanupCall();
         show("heroView");
@@ -313,6 +317,29 @@ function openDashboardPanel(panel) {
         if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
     });
     if (panel === "directory") loadInterpreterDirectory();
+}
+
+function selectInterpreterForCall(profile) {
+    selectedInterpreterProfile = profile?.id ? profile : null;
+    renderSelectedInterpreter();
+}
+
+function clearSelectedInterpreter() {
+    selectedInterpreterProfile = null;
+    renderSelectedInterpreter();
+}
+
+function renderSelectedInterpreter() {
+    const selected = $("selectedInterpreter");
+    if (!selected) return;
+    const hasSelection = Boolean(selectedInterpreterProfile?.id);
+    selected.classList.toggle("hidden", !hasSelection);
+    $("selectedInterpreterName").textContent = hasSelection
+        ? selectedInterpreterProfile.displayName || "FiniSpeak interpreter"
+        : "";
+    $("callFormHelp").textContent = hasSelection
+        ? "Enter the other customer's FiniSpeak email address. Your selected interpreter will be requested when the call starts."
+        : "Enter the other customer's FiniSpeak email address. You can request a human interpreter after the call starts.";
 }
 
 async function fetchPublicProfiles() {
@@ -956,11 +983,16 @@ async function createCall(e) {
         if (!receiver) throw new Error("No FiniSpeak customer found with that email address.");
         if (receiver.role !== "customer") throw new Error("That email address is not registered to a customer account.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
+        const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
         const ref = await addDoc(collection(db, "calls"), {
-            callerId: currentUser.uid, receiverId: receiver.uid, translatorId: null,
-            status: "ringing", translationStatus: "not_requested", createdAt: serverTimestamp(), startedAt: null, endedAt: null,
+            callerId: currentUser.uid, receiverId: receiver.uid,
+            translatorId: selectedInterpreter?.id || null,
+            translatorName: selectedInterpreter?.displayName || null,
+            status: "ringing", translationStatus: selectedInterpreter ? "requested" : "not_requested",
+            createdAt: serverTimestamp(), startedAt: null, endedAt: null,
             callerName: currentProfile.displayName || currentProfile.email, receiverName: receiver.displayName || receiver.email || receiverEmail
         });
+        clearSelectedInterpreter();
         await joinCall(ref.id);
     } catch (error) { $("dashboardStatus").textContent = error.message; }
 }
@@ -1222,7 +1254,11 @@ function startDashboardListeners() {
     } else if (currentProfile.role === "translator") {
         const requests = query(collection(db, "calls"), where("translationStatus", "==", "requested"));
         dashboardUnsubs.push(onSnapshot(requests, snap => {
-            const callDoc = snap.docs.find(d => !d.data().translatorId && d.data().status !== "ended");
+            const callDoc = snap.docs.find(d => {
+                const call = d.data();
+                const isAvailableToThisInterpreter = !call.translatorId || call.translatorId === currentUser.uid;
+                return isAvailableToThisInterpreter && !["ended", "declined"].includes(call.status);
+            });
             if (!callDoc || activeCallId) { if (!pendingIncomingCall) $("incomingCallModal").classList.add("hidden"); return; }
             pendingIncomingCall = { id: callDoc.id, ...callDoc.data(), kind: "translator" };
             $("incomingCallEyebrow").textContent = "Interpretation request";
