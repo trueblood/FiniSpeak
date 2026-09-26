@@ -109,7 +109,11 @@
                         <div class="card">
                             <div id="customerTools">
                                 <span class="eyebrow">Connect</span><h3>Start a customer call</h3>
-                                <p>Enter the other customer's FiniSpeak email address. You can request a human interpreter after the call starts.</p>
+                                <p id="callFormHelp">Enter the other customer's FiniSpeak email address. You can request a human interpreter after the call starts.</p>
+                                <div id="selectedInterpreter" class="selected-interpreter hidden" aria-live="polite">
+                                    <div><span>Selected interpreter</span><strong id="selectedInterpreterName"></strong></div>
+                                    <button id="clearSelectedInterpreter" class="text-button" type="button">Change</button>
+                                </div>
                                 <form id="callForm"><label for="receiverEmail">Customer 2 email</label><input id="receiverEmail" type="email" autocomplete="email" placeholder="customer@example.com" required><button type="submit">Start call</button></form>
                             </div>
                             <div id="translatorTools" class="hidden translator-workspace">
