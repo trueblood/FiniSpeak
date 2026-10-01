@@ -117,6 +117,7 @@
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="directory">Find Interpreters</button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="profile">Profile</button>
                     <button id="interpreterProfileNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="interpreter">Interpreter Profile</button>
+                    <button id="adminNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="admin">Administration</button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="settings">Settings</button>
                 </nav>
             </aside>
@@ -220,6 +221,9 @@
                         <div class="card form-section"><span class="eyebrow">3 · Experience & credentials</span><h3>Professional background</h3>
                             <div class="form-grid"><label for="interpreterYears">Years of experience<input id="interpreterYears" type="number" min="0" max="80" step="1" required></label><label for="interpreterCredentialStatus">Credential status<select id="interpreterCredentialStatus"><option value="unsubmitted">Not submitted</option><option value="submitted">Submitted for verification</option></select></label></div>
                             <label for="interpreterCredentials">Credentials / certifications<textarea id="interpreterCredentials" rows="4" placeholder="One credential per line, for example: CCHI Certified Healthcare Interpreter"></textarea></label>
+                            <label for="interpreterCredentialFiles">Credential documents<input id="interpreterCredentialFiles" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" aria-describedby="credentialFilesHelp"></label>
+                            <p id="credentialFilesHelp" class="field-help">Upload PDF, JPG, PNG, or WebP evidence. Each private document must be under 10 MB and is visible only to you and administrators.</p>
+                            <div id="credentialDocumentList" class="credential-document-list" aria-live="polite"></div>
                         </div>
                         <div class="card form-section"><span class="eyebrow">4 · Availability</span><h3>When can you interpret?</h3>
                             <fieldset><legend>Available days</legend><div class="day-options"><label><input type="checkbox" name="availabilityDay" value="monday"> Monday</label><label><input type="checkbox" name="availabilityDay" value="tuesday"> Tuesday</label><label><input type="checkbox" name="availabilityDay" value="wednesday"> Wednesday</label><label><input type="checkbox" name="availabilityDay" value="thursday"> Thursday</label><label><input type="checkbox" name="availabilityDay" value="friday"> Friday</label><label><input type="checkbox" name="availabilityDay" value="saturday"> Saturday</label><label><input type="checkbox" name="availabilityDay" value="sunday"> Sunday</label></div></fieldset>
@@ -238,6 +242,39 @@
                         <div class="card"><h3>Accessibility</h3><p>FiniSpeak supports keyboard navigation, visible focus states, semantic form labels, and live status announcements.</p></div>
                         <div class="card"><h3>Privacy</h3><p>Finalized transcript text can be saved with a call. Raw microphone audio is not stored by FiniSpeak.</p></div>
                     </div>
+                </div>
+
+                <div id="dashboardAdmin" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Administration</span><h2>Platform oversight</h2><p>Review credentials, accounts, sessions, organizations, and moderation activity.</p></div><button id="refreshAdmin" class="secondary" type="button">Refresh</button></div>
+                    <div class="admin-metric-grid" aria-label="Platform activity">
+                        <article class="admin-metric"><span>Accounts</span><strong id="adminAccounts">—</strong><small id="adminActiveAccounts">— active</small></article>
+                        <article class="admin-metric"><span>Verified interpreters</span><strong id="adminVerified">—</strong><small id="adminPending">— awaiting review</small></article>
+                        <article class="admin-metric"><span>Sessions</span><strong id="adminSessions">—</strong><small id="adminActiveSessions">— active</small></article>
+                        <article class="admin-metric"><span>Organizations</span><strong id="adminOrganizations">—</strong><small>Managed accounts</small></article>
+                    </div>
+                    <section class="card admin-section" aria-labelledby="verificationQueueTitle">
+                        <div class="admin-section-heading"><div><span class="eyebrow">Credential verification</span><h3 id="verificationQueueTitle">Review queue</h3></div><span id="adminQueueStatus" class="status-badge pending-badge">Loading…</span></div>
+                        <div id="adminVerificationQueue" class="admin-review-list" aria-live="polite"><p>Loading verification requests…</p></div>
+                    </section>
+                    <div class="admin-operations-grid">
+                        <section class="card admin-section" aria-labelledby="accountManagementTitle">
+                            <div class="admin-section-heading"><div><span class="eyebrow">Users & interpreters</span><h3 id="accountManagementTitle">Account status</h3></div></div>
+                            <div id="adminAccountList" class="admin-list" aria-live="polite"><p>Loading accounts…</p></div>
+                        </section>
+                        <section class="card admin-section" aria-labelledby="sessionActivityTitle">
+                            <div class="admin-section-heading"><div><span class="eyebrow">Calls</span><h3 id="sessionActivityTitle">Session activity</h3></div></div>
+                            <div id="adminSessionList" class="admin-list" aria-live="polite"><p>Loading sessions…</p></div>
+                        </section>
+                        <section class="card admin-section" aria-labelledby="reviewModerationTitle">
+                            <div class="admin-section-heading"><div><span class="eyebrow">Safety & quality</span><h3 id="reviewModerationTitle">Review moderation</h3></div></div>
+                            <div id="adminReviewList" class="admin-list" aria-live="polite"><p>Loading reviews…</p></div>
+                        </section>
+                        <section class="card admin-section" aria-labelledby="organizationTitle">
+                            <div class="admin-section-heading"><div><span class="eyebrow">Commercial accounts</span><h3 id="organizationTitle">Organizations</h3></div></div>
+                            <div id="adminOrganizationList" class="admin-list" aria-live="polite"><p>Loading organizations…</p></div>
+                        </section>
+                    </div>
+                    <p id="adminStatus" class="status" role="status" aria-live="polite"></p>
                 </div>
             </div>
         </div>

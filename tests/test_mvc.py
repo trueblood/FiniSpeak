@@ -38,8 +38,10 @@ class MvcRouteTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    @patch("controllers.calls_controller.identity_or_response")
     @patch("controllers.calls_controller.CallModel.create", return_value="call-123")
-    def test_call_controller_uses_model(self, create_call):
+    def test_call_controller_uses_model(self, create_call, identity):
+        identity.return_value = ({"uid": "customer-a", "role": "customer"}, None)
         response = self.client.post(
             "/api/calls/",
             json={"callerId": "customer-a", "receiverId": "customer-b"},

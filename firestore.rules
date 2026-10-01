@@ -2,78 +2,85 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && request.auth.token.admin == true; }
+    function isActive() { return signedIn() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'suspended'); }
+    function userRole() { return isActive() ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role : null; }
+    function isTranslator() { return userRole() == 'translator'; }
+    function callData(callId) { return get(/databases/$(database)/documents/calls/$(callId)).data; }
+    function isCallParticipant(callId) {
+      let c = callData(callId);
+      return isActive() && (request.auth.uid == c.callerId || request.auth.uid == c.receiverId || request.auth.uid == c.translatorId);
+    }
     function validReferenceItem() {
-      return signedIn()
+      return isActive()
         && request.resource.data.keys().hasAll(['name', 'nameLower', 'active', 'seeded', 'createdBy', 'createdAt'])
         && request.resource.data.keys().hasOnly(['name', 'nameLower', 'active', 'seeded', 'createdBy', 'createdAt'])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() > 0
-        && request.resource.data.name.size() <= 100
-        && request.resource.data.nameLower is string
-        && request.resource.data.nameLower.size() > 0
-        && request.resource.data.nameLower.size() <= 100
-        && request.resource.data.active == true
-        && request.resource.data.seeded == false
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.createdAt == request.time;
-    }
-    function isCallParticipant(callId) {
-      let c = get(/databases/$(database)/documents/calls/$(callId)).data;
-      return signedIn() && (request.auth.uid == c.callerId || request.auth.uid == c.receiverId || request.auth.uid == c.translatorId);
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 100
+        && request.resource.data.nameLower is string && request.resource.data.nameLower.size() > 0 && request.resource.data.nameLower.size() <= 100
+        && request.resource.data.active == true && request.resource.data.seeded == false
+        && request.resource.data.createdBy == request.auth.uid && request.resource.data.createdAt == request.time;
     }
 
     match /users/{userId} {
-      // Signed-in users may read basic MVP profiles so an older account can
-      // still be found by email even if it predates emailDirectory.
-      allow read: if signedIn();
-      allow create, update: if signedIn() && request.auth.uid == userId;
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
+      allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role in ['customer', 'translator'];
+      allow update: if isAdmin() || (signedIn() && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'email', 'updatedAt']));
+      allow delete: if isAdmin();
     }
 
-    // Exact email lookup for signed-in FiniSpeak users.
-    // This keeps customer lookup separate from private user profile documents.
     match /emailDirectory/{email} {
-      allow read: if signedIn();
-      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow read: if isActive();
+      allow create, update: if isActive() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isAdmin() || (isActive() && resource.data.uid == request.auth.uid);
     }
 
     match /translators/{translatorId} {
-      allow read: if signedIn();
-      allow create, update: if signedIn() && request.auth.uid == translatorId;
-      allow delete: if signedIn() && request.auth.uid == translatorId;
+      allow read: if isActive();
+      allow create: if isActive() && request.auth.uid == translatorId && request.resource.data.verificationStatus == 'unverified';
+      allow update: if isAdmin() || (isActive() && request.auth.uid == translatorId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'email', 'phone', 'bio', 'languages', 'dialects', 'specialties',
+          'yearsExperience', 'credentials', 'credentialDocuments', 'credentialStatus', 'availability',
+          'photoUrl', 'onboardingStatus', 'updatedAt'
+        ]));
+      allow delete: if isAdmin() || (isActive() && request.auth.uid == translatorId);
 
       match /reviews/{reviewId} {
         allow read: if signedIn();
-        allow write: if false;
+        allow write: if isAdmin();
       }
     }
 
-    // Shared interpreter taxonomy. Any signed-in user can read it. Translators
-    // may add a missing value; existing canonical values cannot be overwritten
-    // or deleted from the client. Admin moderation can be added later.
-    match /reference_languages/{itemId} {
-      allow read: if signedIn();
-      allow create: if validReferenceItem();
-      allow update, delete: if false;
-    }
-    match /reference_dialects/{itemId} {
-      allow read: if signedIn();
-      allow create: if validReferenceItem();
-      allow update, delete: if false;
-    }
-    match /reference_specialties/{itemId} {
-      allow read: if signedIn();
-      allow create: if validReferenceItem();
-      allow update, delete: if false;
-    }
+    match /reference_languages/{itemId} { allow read: if true; allow create: if validReferenceItem(); allow update, delete: if isAdmin(); }
+    match /reference_dialects/{itemId} { allow read: if true; allow create: if validReferenceItem(); allow update, delete: if isAdmin(); }
+    match /reference_specialties/{itemId} { allow read: if true; allow create: if validReferenceItem(); allow update, delete: if isAdmin(); }
 
     match /calls/{callId} {
-      allow create: if signedIn() && request.resource.data.callerId == request.auth.uid;
-      allow read: if signedIn();
-      allow update: if signedIn(); // MVP only; tighten state transitions before production.
-      match /{subCollection}/{document=**} {
-        allow read, write: if isCallParticipant(callId);
+      allow create: if isActive() && request.resource.data.callerId == request.auth.uid;
+      allow read: if isAdmin() || isCallParticipant(callId) || (isTranslator() && resource.data.translationStatus == 'requested');
+      allow update: if isAdmin() || (isActive() && (
+          isCallParticipant(callId)
+          || (isTranslator() && resource.data.translationStatus == 'requested'
+            && (resource.data.translatorId == null || resource.data.translatorId == request.auth.uid))
+        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'translationStatus', 'translatorId', 'startedAt', 'endedAt',
+          'detectedLanguage', 'routingStatus', 'recommendedTranslatorIds'
+        ]));
+      allow delete: if isAdmin();
+
+      match /participants/{participantId} {
+        allow read: if isAdmin() || isCallParticipant(callId);
+        allow create, update, delete: if isAdmin() || (isCallParticipant(callId) && request.auth.uid == participantId);
+      }
+      match /connections/{connectionId}/{document=**} { allow read, write: if isAdmin() || isCallParticipant(callId); }
+      match /transcripts/{transcriptId} {
+        allow read: if isAdmin() || isCallParticipant(callId);
+        allow create: if isCallParticipant(callId) && request.resource.data.speakerId == request.auth.uid;
+        allow update, delete: if isAdmin();
       }
     }
+
+    match /organizations/{organizationId} { allow read, write: if isAdmin(); }
   }
 }
