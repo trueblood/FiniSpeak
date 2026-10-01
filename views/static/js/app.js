@@ -11,6 +11,8 @@ let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = 
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, currentCallRole = null;
 let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
 let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterProfile = null;
+let featuredProfilesData = [];
+let callAttemptSequence = 0;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
 const taxonomySuggestionIndex = { languages: -1, dialects: -1, specialties: -1 };
@@ -34,6 +36,21 @@ const profilePhotoTypes = {
     "image/png": "png",
     "image/webp": "webp"
 };
+
+function callLog(attemptId, stage, details = {}) {
+    console.info(`[FiniSpeak call][${attemptId}] ${stage}`, details);
+}
+
+function callErrorDetails(error, stage) {
+    return {
+        stage,
+        name: error?.name || "Error",
+        code: error?.code || null,
+        message: error?.message || String(error),
+        online: navigator.onLine,
+        secureContext: window.isSecureContext
+    };
+}
 
 async function boot() {
     bindUI();
@@ -125,6 +142,11 @@ function bindUI() {
     $("directoryRating").addEventListener("change", filterInterpreterDirectory);
     $("directorySort").addEventListener("change", filterInterpreterDirectory);
     $("directoryAvailable").addEventListener("change", filterInterpreterDirectory);
+    $("featuredSearch").addEventListener("input", filterFeaturedProfiles);
+    $("featuredLanguage").addEventListener("change", filterFeaturedProfiles);
+    $("featuredSpecialty").addEventListener("change", filterFeaturedProfiles);
+    $("featuredAvailable").addEventListener("change", filterFeaturedProfiles);
+    $("clearFeaturedFilters").onclick = clearFeaturedFilters;
     $("backToDirectory").onclick = openInterpreterDirectory;
     $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
     $("profileStartCall").onclick = () => {
@@ -237,16 +259,25 @@ async function handleAuthState(user) {
             ? translatorSnap.data()
             : null;
 
-        // Repair/migrate the signed-in user's basic profile when possible.
-        if (!userSnap.exists() || (currentProfile.role === "translator" && userSnap.data()?.role !== "translator")) {
-            await setDoc(userRef, {
+        // Repair/migrate the signed-in user's basic profile and email lookup.
+        // Older accounts may exist in Firebase Auth without either Firestore
+        // document, which otherwise makes them impossible for callers to find.
+        const profileNeedsRepair = !userSnap.exists() || (currentProfile.role === "translator" && userSnap.data()?.role !== "translator");
+        const profileRepair = profileNeedsRepair ? setDoc(userRef, {
                 uid: user.uid,
                 email: fallbackProfile.email,
                 displayName: currentProfile.displayName,
                 role: currentProfile.role,
                 updatedAt: serverTimestamp()
-            }, { merge: true }).catch(error => console.warn("Profile migration skipped:", error));
-        }
+            }, { merge: true }) : Promise.resolve();
+        const directoryRepair = fallbackProfile.email ? setDoc(doc(db, "emailDirectory", fallbackProfile.email), {
+            uid: user.uid,
+            email: fallbackProfile.email,
+            displayName: currentProfile.displayName,
+            role: currentProfile.role,
+            updatedAt: serverTimestamp()
+        }, { merge: true }) : Promise.resolve();
+        await Promise.all([profileRepair, directoryRepair]).catch(error => console.warn("Account lookup migration skipped:", error));
 
         hydrateDashboardProfile();
         const isTranslator = currentProfile.role === "translator";
@@ -290,6 +321,8 @@ async function handleAuthState(user) {
         show("dashboardView");
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;
         $("authStatus").textContent = "";
+        try { startDashboardListeners(); } catch (listenerError) { console.error("Dashboard listeners failed:", listenerError); }
+        loadConversationHistory().catch(historyError => console.error("History load failed:", historyError));
     }
 }
 
@@ -342,6 +375,13 @@ function renderSelectedInterpreter() {
         : "Enter the other customer's FiniSpeak email address. You can request a human interpreter after the call starts.";
 }
 
+function setCallFormStatus(message = "", isError = false) {
+    const status = $("callFormStatus");
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle("error", Boolean(message) && isError);
+}
+
 async function fetchPublicProfiles() {
     const response = await fetch("/api/translators/");
     const payload = await response.json();
@@ -352,31 +392,87 @@ async function fetchPublicProfiles() {
 async function loadFeaturedProfiles() {
     const container = $("featuredInterpreters");
     try {
-        const profiles = await fetchPublicProfiles();
-        profiles.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0));
-        renderFeaturedProfiles(profiles);
+        featuredProfilesData = await fetchPublicProfiles();
+        featuredProfilesData.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0));
+        hydrateFeaturedFilters();
+        filterFeaturedProfiles();
     } catch (error) {
         console.error("Featured profiles failed:", error);
+        $("featuredResultCount").textContent = "Directory unavailable";
+        $("featuredAvailableCount").textContent = "Availability unavailable";
         container.innerHTML = '<div class="directory-empty">Featured profiles are temporarily unavailable.</div>';
     }
+}
+
+function hydrateFeaturedFilters() {
+    const populate = (element, values) => {
+        const current = element.value;
+        element.replaceChildren(element.options[0], ...values.map(value => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            return option;
+        }));
+        element.value = current;
+    };
+    const languages = [...new Set(featuredProfilesData.flatMap(profile => profile.languages || []).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const specialties = [...new Set(featuredProfilesData.flatMap(profile => profile.specialties || []).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    populate($("featuredLanguage"), languages);
+    populate($("featuredSpecialty"), specialties);
+    const available = featuredProfilesData.filter(profile => profile.availability?.availableNow).length;
+    $("featuredAvailableCount").textContent = `${available} interpreter${available === 1 ? "" : "s"} available now`;
+}
+
+function filterFeaturedProfiles() {
+    const search = normalizeTaxonomyValue($("featuredSearch").value || "");
+    const language = normalizeTaxonomyValue($("featuredLanguage").value || "");
+    const specialty = normalizeTaxonomyValue($("featuredSpecialty").value || "");
+    const availableOnly = $("featuredAvailable").checked;
+    const profiles = featuredProfilesData.filter(profile => {
+        const searchable = [
+            profile.displayName, profile.bio,
+            ...(profile.languages || []), ...(profile.dialects || []), ...(profile.specialties || [])
+        ].filter(Boolean).join(" ").toLocaleLowerCase();
+        const languages = (profile.languages || []).map(normalizeTaxonomyValue);
+        const specialties = (profile.specialties || []).map(normalizeTaxonomyValue);
+        return (!search || searchable.includes(search))
+            && (!language || languages.includes(language))
+            && (!specialty || specialties.includes(specialty))
+            && (!availableOnly || Boolean(profile.availability?.availableNow));
+    });
+    $("featuredResultCount").textContent = `${profiles.length} interpreter${profiles.length === 1 ? "" : "s"} found`;
+    renderFeaturedProfiles(profiles);
+}
+
+function clearFeaturedFilters() {
+    $("featuredSearch").value = "";
+    $("featuredLanguage").value = "";
+    $("featuredSpecialty").value = "";
+    $("featuredAvailable").checked = false;
+    filterFeaturedProfiles();
+    $("featuredSearch").focus();
 }
 
 function renderFeaturedProfiles(profiles) {
     const container = $("featuredInterpreters");
     if (!profiles.length) {
-        container.innerHTML = '<div class="directory-empty">Featured interpreter profiles are coming soon.</div>';
+        container.innerHTML = '<div class="directory-empty"><div><strong>No exact matches yet.</strong><p>Try a different language, specialty, or availability filter.</p></div></div>';
         return;
     }
     container.replaceChildren(...profiles.map(profile => {
         const card = document.createElement("article");
         card.className = "interpreter-card featured-interpreter-card";
-        const tags = [...(profile.languages || []), ...(profile.specialties || [])].slice(0, 3);
+        const languages = [...(profile.languages || []), ...(profile.dialects || [])].slice(0, 2);
+        const specialties = (profile.specialties || []).slice(0, 2);
+        const tags = [...languages, ...specialties];
+        const available = Boolean(profile.availability?.availableNow);
         card.innerHTML = `
             <div class="directory-avatar">${escapeHtml(profileInitials(profile.displayName))}</div>
             <div>
-                <div class="interpreter-card-header"><div><h3>${escapeHtml(profile.displayName)}</h3>${ratingMarkup(profile.rating, profile.ratingCount)}</div><span class="availability-dot${profile.availability?.availableNow ? " available" : ""}" title="${profile.availability?.availableNow ? "Available now" : "Currently unavailable"}"></span></div>
+                <div class="interpreter-card-header"><div><h3>${escapeHtml(profile.displayName)}${profileVerificationLabel(profile) === "Verified" ? ' <span class="verified-mark" aria-label="Verified interpreter">✓</span>' : ""}</h3>${ratingMarkup(profile.rating, profile.ratingCount)}</div><span class="availability-pill${available ? " available" : ""}">${available ? "Available" : "View schedule"}</span></div>
                 <p class="card-bio">${escapeHtml(profile.bio || "Professional FiniSpeak interpreter profile.")}</p>
                 <div class="directory-tags">${tags.map(tag => `<span class="directory-tag">${escapeHtml(tag)}</span>`).join("")}</div>
+                <div class="directory-meta"><span>${Number(profile.yearsExperience || 0)} years experience</span><span>${escapeHtml(profileVerificationLabel(profile))}</span></div>
                 <button class="text-button featured-profile-login" type="button">View profile</button>
             </div>`;
         setProfileAvatar(card.querySelector(".directory-avatar"), profile);
@@ -961,29 +1057,66 @@ async function saveInterpreterProfile(e, draft = false) {
 }
 
 async function createCall(e) {
-    e.preventDefault(); $("dashboardStatus").textContent = "Finding customer…";
+    e.preventDefault();
+    const attemptId = `${Date.now().toString(36)}-${++callAttemptSequence}`;
+    let stage = "form-submit";
+    const submitButton = e.submitter || $("callForm").querySelector('button[type="submit"]');
+    const originalButtonText = submitButton.textContent;
+    submitButton.disabled = true;
+    submitButton.textContent = "Finding customer…";
+    $("dashboardStatus").textContent = "";
+    setCallFormStatus("Looking up Customer 2…");
+    callLog(attemptId, stage, {
+        authenticated: Boolean(currentUser),
+        profileRole: currentProfile?.role || null,
+        firestoreReady: Boolean(db),
+        online: navigator.onLine,
+        secureContext: window.isSecureContext,
+        mediaDevicesAvailable: Boolean(navigator.mediaDevices?.getUserMedia)
+    });
     try {
         const receiverEmail = $("receiverEmail").value.trim().toLowerCase();
         if (!receiverEmail) throw new Error("Enter Customer 2's FiniSpeak email.");
         // Prefer the lightweight email directory created by newer registrations.
         // Older FiniSpeak accounts may predate that collection, so fall back to
         // the users collection instead of incorrectly reporting that they do not exist.
+        stage = "customer-directory-lookup";
+        callLog(attemptId, stage, { emailProvided: true });
         const directorySnap = await getDoc(doc(db, "emailDirectory", receiverEmail));
         let receiver = directorySnap.exists() ? directorySnap.data() : null;
+        let lookupSource = receiver ? "emailDirectory" : null;
 
         if (!receiver) {
+            stage = "legacy-customer-lookup";
+            callLog(attemptId, stage);
             const usersQuery = query(
                 collection(db, "users"),
                 where("email", "==", receiverEmail)
             );
             const usersSnap = await getDocs(usersQuery);
-            if (!usersSnap.empty) receiver = usersSnap.docs[0].data();
+            if (!usersSnap.empty) {
+                receiver = usersSnap.docs[0].data();
+                lookupSource = "users";
+            }
         }
 
-        if (!receiver) throw new Error("No FiniSpeak customer found with that email address.");
+        stage = "customer-validation";
+        callLog(attemptId, stage, {
+            found: Boolean(receiver),
+            lookupSource,
+            receiverRole: receiver?.role || null,
+            receiverHasUid: Boolean(receiver?.uid)
+        });
+        if (!receiver) throw new Error("No FiniSpeak customer was found with that email. Ask them to sign in to FiniSpeak once, then try again.");
         if (receiver.role !== "customer") throw new Error("That email address is not registered to a customer account.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
         const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
+        submitButton.textContent = "Starting call…";
+        setCallFormStatus(selectedInterpreter
+            ? `Starting the call and requesting ${selectedInterpreter.displayName || "your selected interpreter"}…`
+            : "Starting the call…");
+        stage = "call-document-create";
+        callLog(attemptId, stage, { interpreterRequested: Boolean(selectedInterpreter) });
         const ref = await addDoc(collection(db, "calls"), {
             callerId: currentUser.uid, receiverId: receiver.uid,
             translatorId: selectedInterpreter?.id || null,
@@ -992,34 +1125,70 @@ async function createCall(e) {
             createdAt: serverTimestamp(), startedAt: null, endedAt: null,
             callerName: currentProfile.displayName || currentProfile.email, receiverName: receiver.displayName || receiver.email || receiverEmail
         });
+        callLog(attemptId, "call-document-created", { callId: ref.id });
         clearSelectedInterpreter();
-        await joinCall(ref.id);
-    } catch (error) { $("dashboardStatus").textContent = error.message; }
+        stage = "local-join";
+        await joinCall(ref.id, attemptId);
+        if (activeCallId) setCallFormStatus("");
+    } catch (error) {
+        console.error(`[FiniSpeak call][${attemptId}] start failed`, callErrorDetails(error, stage), error);
+        setCallFormStatus(error.message || "Could not start the call. Please try again.", true);
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = originalButtonText;
+        callLog(attemptId, "form-restored", { activeCall: Boolean(activeCallId) });
+    }
 }
 
-async function joinCall(callId) {
+async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
+    let stage = "call-document-read";
+    callLog(attemptId, stage, { callId });
     try {
         const callRef = doc(db, "calls", callId), snap = await getDoc(callRef);
         if (!snap.exists()) throw new Error("Call not found.");
         const call = snap.data();
         const role = currentProfile.role;
         const allowedCustomer = [call.callerId, call.receiverId].includes(currentUser.uid);
+        stage = "participant-validation";
+        callLog(attemptId, stage, {
+            callId,
+            profileRole: role,
+            allowedCustomer,
+            translatorAssigned: Boolean(call.translatorId)
+        });
         if (role !== "translator" && !allowedCustomer) throw new Error("You are not a participant in this call.");
         if (role === "translator") {
             if (call.translatorId && call.translatorId !== currentUser.uid) throw new Error("Another translator has already joined.");
+            stage = "translator-connect-update";
             await updateDoc(callRef, { translatorId: currentUser.uid, translationStatus: "connected" });
         }
         activeCallId = callId; show("callView"); $("callIdLabel").textContent = callId;
         $("requestTranslatorButton").classList.toggle("hidden", role === "translator");
+        $("requestTranslatorButton").disabled = false;
+        stage = "media-permission";
+        callLog(attemptId, stage, { audio: true, video: true });
         await startMedia();
+        callLog(attemptId, "media-ready", {
+            audioTracks: localStream?.getAudioTracks().length || 0,
+            videoTracks: localStream?.getVideoTracks().length || 0
+        });
         currentCallRole = role === "translator" ? "translator" : (currentUser.uid === call.callerId ? "caller" : "receiver");
+        stage = "participant-document-write";
         await setDoc(doc(db, "calls", callId, "participants", currentUser.uid), {
             uid: currentUser.uid, displayName: currentProfile.displayName || currentProfile.email,
             role: currentCallRole, joinedAt: serverTimestamp()
         });
+        stage = "call-watchers-start";
         watchCall(callId);
+        stage = "transcription-start";
         await startTranscription(callId);
-    } catch (error) { $("dashboardStatus").textContent = error.message; show("dashboardView"); }
+        callLog(attemptId, "join-complete", { callId, callRole: currentCallRole });
+    } catch (error) {
+        console.error(`[FiniSpeak call][${attemptId}] join failed`, callErrorDetails(error, stage), error);
+        $("dashboardStatus").textContent = error.message;
+        setCallFormStatus(error.message || "The call was created, but this device could not join it.", true);
+        show("dashboardView");
+    }
 }
 
 async function startMedia() {
@@ -1033,8 +1202,19 @@ function watchCall(callId) {
     callUnsubs.push(onSnapshot(doc(db, "calls", callId), snap => {
         if (!snap.exists()) return;
         const call = snap.data();
+        const translatorConnected = call.translationStatus === "connected";
         $("callTitle").textContent = call.status === "ended" ? "Call ended" : "Live conversation";
-        $("callStatus").textContent = call.status === "ringing" ? "Calling… waiting for the other customer to accept." : call.status === "declined" ? "Call declined." : call.translationStatus === "requested" ? "Waiting for a translator to join…" : call.translatorId ? "Translator connected" : "Customer call connected";
+        $("requestTranslatorButton").disabled = translatorConnected;
+        $("requestTranslatorButton").title = translatorConnected ? "A translator has joined this call" : "";
+        $("callStatus").textContent = call.status === "ringing"
+            ? "Calling… waiting for the other customer to accept."
+            : call.status === "declined"
+                ? "Call declined."
+                : call.translationStatus === "requested"
+                    ? "Waiting for a translator to join…"
+                    : translatorConnected
+                        ? ""
+                        : "Customer call connected";
         if (["ended", "declined"].includes(call.status)) { cleanupCall(); show("dashboardView"); loadConversationHistory(); }
     }));
     callUnsubs.push(onSnapshot(collection(db, "calls", callId, "participants"), snap => {
@@ -1059,7 +1239,7 @@ async function ensurePeer(callId, remoteUid, profile) {
     const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
     peerConnections.set(remoteUid, pc);
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-    pc.ontrack = e => attachRemoteVideo(remoteUid, profile.displayName || profile.role, e.streams[0]);
+    pc.ontrack = e => attachRemoteVideo(remoteUid, profile, e.streams[0]);
     const pairId = [currentUser.uid, remoteUid].sort().join("__");
     const pairRef = doc(db, "calls", callId, "connections", pairId);
     const myCandidates = collection(pairRef, `${currentUser.uid}_candidates`);
@@ -1083,14 +1263,25 @@ async function ensurePeer(callId, remoteUid, profile) {
     }
 }
 
-function attachRemoteVideo(uid, name, stream) {
+function participantRoleLabel(role) {
+    if (role === "translator") return "Translator";
+    if (role === "caller") return "Customer 1";
+    if (role === "receiver") return "Customer 2";
+    return "Guest";
+}
+
+function attachRemoteVideo(uid, profile, stream) {
     let card = document.querySelector(`[data-peer="${uid}"]`);
     if (!card) {
         card = document.createElement("article"); card.className = "video-card"; card.dataset.peer = uid;
-        card.innerHTML = `<video autoplay playsinline></video><div class="video-label"></div>`;
+        card.innerHTML = '<video autoplay playsinline></video><div class="video-label"><span class="video-role"></span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name"></span></div>';
         $("videoGrid").appendChild(card);
     }
-    card.querySelector("video").srcObject = stream; card.querySelector(".video-label").textContent = name;
+    const role = ["translator", "caller", "receiver"].includes(profile?.role) ? profile.role : "guest";
+    card.dataset.role = role;
+    card.querySelector("video").srcObject = stream;
+    card.querySelector(".video-role").textContent = participantRoleLabel(role);
+    card.querySelector(".video-name").textContent = profile?.displayName || "FiniSpeak guest";
 }
 function removeRemoteVideo(uid) { document.querySelector(`[data-peer="${uid}"]`)?.remove(); }
 
@@ -1225,6 +1416,8 @@ function cleanupCall(stopMedia = true) {
     document.querySelectorAll("[data-peer]").forEach(e => e.remove());
     if (stopMedia && localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; $("localVideo").srcObject = null; }
     activeCallId = null; currentCallRole = null;
+    $("requestTranslatorButton").disabled = false;
+    $("requestTranslatorButton").title = "";
 }
 
 
@@ -1235,22 +1428,54 @@ function cleanupDashboardListeners() {
     $("incomingCallModal")?.classList.add("hidden");
 }
 
+function clearPendingIncomingCall() {
+    pendingIncomingCall = null;
+    $("incomingCallModal")?.classList.add("hidden");
+}
+
+function newestPendingCall(snapshot) {
+    return snapshot.docs
+        .filter(callDoc => callDoc.data().status === "ringing")
+        .sort((left, right) => callMillis(right.data()) - callMillis(left.data()))[0] || null;
+}
+
+function handleDashboardListenerError(kind, error) {
+    console.error(`[FiniSpeak incoming][${kind}] listener failed`, {
+        code: error?.code || null,
+        message: error?.message || String(error),
+        online: navigator.onLine
+    }, error);
+    clearPendingIncomingCall();
+    $("dashboardStatus").textContent = `Could not check for pending calls: ${error?.message || "Please refresh and try again."}`;
+}
+
 function startDashboardListeners() {
     cleanupDashboardListeners();
     if (!currentUser || !currentProfile) return;
 
     if (currentProfile.role === "customer") {
-        const incoming = query(collection(db, "calls"), where("receiverId", "==", currentUser.uid), where("status", "==", "ringing"));
+        // Subscribe by receiver only and filter pending calls in the browser.
+        // This avoids a compound query/index failure and ensures the initial
+        // snapshot restores calls that were already ringing before page load.
+        const incoming = query(collection(db, "calls"), where("receiverId", "==", currentUser.uid));
         dashboardUnsubs.push(onSnapshot(incoming, snap => {
-            const callDoc = snap.docs[0];
-            if (!callDoc || activeCallId) { if (!pendingIncomingCall) $("incomingCallModal").classList.add("hidden"); return; }
+            const callDoc = newestPendingCall(snap);
+            console.info("[FiniSpeak incoming][customer] snapshot", {
+                matchingCalls: snap.size,
+                pendingCalls: snap.docs.filter(docSnapshot => docSnapshot.data().status === "ringing").length,
+                activeCall: Boolean(activeCallId)
+            });
+            if (!callDoc || activeCallId) {
+                clearPendingIncomingCall();
+                return;
+            }
             pendingIncomingCall = { id: callDoc.id, ...callDoc.data(), kind: "customer" };
             $("incomingCallEyebrow").textContent = "Incoming FiniSpeak call";
             $("incomingCallTitle").textContent = `${pendingIncomingCall.callerName || "A customer"} is calling you`;
             $("incomingCallDetails").textContent = "Accept to connect. Live transcription starts after you join the call.";
             $("acceptIncomingCall").textContent = "Accept";
             $("incomingCallModal").classList.remove("hidden");
-        }));
+        }, error => handleDashboardListenerError("customer", error)));
     } else if (currentProfile.role === "translator") {
         const requests = query(collection(db, "calls"), where("translationStatus", "==", "requested"));
         dashboardUnsubs.push(onSnapshot(requests, snap => {
@@ -1259,7 +1484,10 @@ function startDashboardListeners() {
                 const isAvailableToThisInterpreter = !call.translatorId || call.translatorId === currentUser.uid;
                 return isAvailableToThisInterpreter && !["ended", "declined"].includes(call.status);
             });
-            if (!callDoc || activeCallId) { if (!pendingIncomingCall) $("incomingCallModal").classList.add("hidden"); return; }
+            if (!callDoc || activeCallId) {
+                clearPendingIncomingCall();
+                return;
+            }
             pendingIncomingCall = { id: callDoc.id, ...callDoc.data(), kind: "translator" };
             $("incomingCallEyebrow").textContent = "Interpretation request";
             $("incomingCallTitle").textContent = "A call needs a translator";
@@ -1267,7 +1495,7 @@ function startDashboardListeners() {
             $("translatorRequestStatus").textContent = "New interpretation request waiting — open it to join the call.";
             $("acceptIncomingCall").textContent = "Join Call";
             $("incomingCallModal").classList.remove("hidden");
-        }));
+        }, error => handleDashboardListenerError("translator", error)));
     }
 }
 

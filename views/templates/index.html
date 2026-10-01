@@ -21,23 +21,46 @@
     <section id="heroView" class="landing-view">
         <div class="landing-hero">
             <div class="hero-content">
-                <span class="eyebrow">Live human interpretation, on demand</span>
-                <h1>Every conversation deserves to be understood.</h1>
-                <p class="hero-lead">Find skilled interpreters by language, specialty, experience, and community reviews—then bring the right person into your conversation.</p>
+                <span class="eyebrow">Live human interpretation</span>
+                <h1>Find the right voice for the moment.</h1>
+                <p class="hero-lead">Search verified interpreters by language, dialect, region, and specialty—then bring the right person into your conversation.</p>
                 <div class="actions">
-                    <button id="startCall" type="button">Get started</button>
-                    <button id="browseHero" class="secondary" type="button">Browse interpreters</button>
-                    <button id="translatorSignup" class="text-button" type="button">Become an interpreter</button>
+                    <button id="browseHero" type="button">Find an interpreter</button>
+                    <button id="startCall" class="secondary" type="button">Start a call</button>
+                    <button id="translatorSignup" class="text-button" type="button">Join as an interpreter</button>
                 </div>
-                <div class="hero-trust" aria-label="FiniSpeak benefits"><span>✓ Human expertise</span><span>✓ Saved transcripts</span><span>✓ Built for three-way calls</span></div>
+                <div class="hero-trust" aria-label="FiniSpeak benefits"><span>Verified profiles</span><span>Human expertise</span><span>Accessible three-way calls</span></div>
                 <p id="status" class="status" aria-live="polite"></p>
             </div>
-            <div class="hero-visual" aria-label="Live interpreted conversation preview">
-                <div class="hero-orbit hero-orbit-one"></div><div class="hero-orbit hero-orbit-two"></div>
-                <div class="hero-person hero-person-primary"><span>AM</span><strong>Amara</strong><small>English</small></div>
-                <div class="hero-person hero-person-secondary"><span>JL</span><strong>Javier</strong><small>Spanish</small></div>
-                <div class="hero-interpreter"><span class="live-dot"></span><div><strong>Interpreter connected</strong><small>Medical · Spanish</small></div></div>
+            <div class="hero-visual" aria-label="FiniSpeak interpreter matching preview">
+                <div class="hero-visual-header"><span><span class="brand-mark">F</span> Interpreter network</span><strong><span class="live-dot"></span> Available now</strong></div>
+                <div class="hero-search-preview"><span aria-hidden="true">⌕</span><span>Language, dialect, or specialty</span></div>
+                <div class="hero-match-card hero-match-primary">
+                    <span class="hero-match-avatar">MV</span>
+                    <div><strong>Marisol Vega</strong><small>Spanish · Healthcare</small></div>
+                    <span class="hero-verified" aria-label="Verified interpreter">✓</span>
+                </div>
+                <div class="hero-match-details"><span>Mexican &amp; Central American</span><span>4.9 rating</span><span>9 years</span></div>
+                <div class="hero-match-card">
+                    <span class="hero-match-avatar hero-match-avatar-blue">KH</span>
+                    <div><strong>Karim Haddad</strong><small>Arabic · Legal</small></div>
+                    <span class="hero-verified" aria-label="Verified interpreter">✓</span>
+                </div>
             </div>
+        </div>
+        <div id="featuredProfiles" class="landing-directory-section">
+            <div class="directory-section-heading">
+                <div class="section-intro"><span class="eyebrow">Interpreter network</span><h2>Start with a strong match</h2><p>Browse verified profiles and compare language coverage, specialties, experience, ratings, and availability before creating an account.</p></div>
+                <div class="directory-availability-note"><span class="live-dot"></span><div><strong id="featuredAvailableCount">Checking availability…</strong><span>Profiles update automatically</span></div></div>
+            </div>
+            <div class="featured-filter-panel" aria-label="Filter public interpreter profiles">
+                <label class="featured-search" for="featuredSearch">Search<input id="featuredSearch" type="search" placeholder="Name, language, region, or specialty"></label>
+                <label for="featuredLanguage">Language<select id="featuredLanguage"><option value="">All languages</option></select></label>
+                <label for="featuredSpecialty">Specialty<select id="featuredSpecialty"><option value="">All specialties</option></select></label>
+                <label class="featured-available"><input id="featuredAvailable" type="checkbox"> Available now</label>
+            </div>
+            <div class="directory-results-heading"><p id="featuredResultCount">Loading interpreter profiles…</p><button id="clearFeaturedFilters" class="text-button" type="button">Clear filters</button></div>
+            <div id="featuredInterpreters" class="interpreter-directory featured-interpreter-grid" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading interpreter profiles…</div></div>
         </div>
         <div class="landing-section">
             <div class="section-intro"><span class="eyebrow">How FiniSpeak works</span><h2>Choose how you want to connect</h2><p>Start a new conversation, add an interpreter to a call already in progress, or plan a session for later.</p></div>
@@ -61,10 +84,6 @@
                 <article class="feature-card"><span class="feature-number">02</span><h3>Book the session</h3><p>Confirm the interpreter, language, specialty, and session details.</p></article>
                 <article class="feature-card"><span class="feature-number">03</span><h3>Connect when it’s time</h3><p>Join the scheduled FiniSpeak session with your interpreter.</p></article>
             </div>
-        </div>
-        <div id="featuredProfiles" class="landing-directory-section">
-            <div class="section-intro"><span class="eyebrow">Interpreter profiles</span><h2>Meet interpreters before you sign up</h2><p>Browse available interpreter profiles, experience, languages, specialties, and ratings without logging in.</p></div>
-            <div id="featuredInterpreters" class="interpreter-directory featured-interpreter-grid" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading interpreter profiles…</div></div>
         </div>
         <div class="landing-cta"><div><span class="eyebrow">Ready when language gets in the way</span><h2>Make your next conversation easier.</h2></div><button id="landingCta" type="button">Create your account</button></div>
     </section>
@@ -115,6 +134,7 @@
                                     <button id="clearSelectedInterpreter" class="text-button" type="button">Change</button>
                                 </div>
                                 <form id="callForm"><label for="receiverEmail">Customer 2 email</label><input id="receiverEmail" type="email" autocomplete="email" placeholder="customer@example.com" required><button type="submit">Start call</button></form>
+                                <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
                             </div>
                             <div id="translatorTools" class="hidden translator-workspace">
                                 <div class="translator-hero-row">
@@ -250,7 +270,7 @@
             <button id="copyCallId" class="secondary" type="button">Copy Call ID</button>
         </div>
         <div id="videoGrid" class="video-grid">
-            <article class="video-card local"><video id="localVideo" autoplay muted playsinline></video><div class="video-label">You</div></article>
+            <article class="video-card local" data-role="local"><video id="localVideo" autoplay muted playsinline></video><div class="video-label video-label-local"><span class="video-role">You</span></div></article>
         </div>
         <div class="call-controls">
             <button id="muteButton" class="secondary" type="button">Mute</button>
