@@ -242,7 +242,7 @@ async function submitAuth(e) {
             const role = $("role").value;
             const normalizedEmail = email.toLowerCase();
             await updateProfile(result.user, { displayName: name });
-            await setDoc(doc(db, "users", result.user.uid), { uid: result.user.uid, email: normalizedEmail, displayName: name, role, createdAt: serverTimestamp() });
+            await setDoc(doc(db, "users", result.user.uid), { uid: result.user.uid, email: normalizedEmail, displayName: name, role, status: "active", createdAt: serverTimestamp() });
             await setDoc(doc(db, "emailDirectory", normalizedEmail), { uid: result.user.uid, displayName: name, role, email: normalizedEmail, updatedAt: serverTimestamp() });
             if (role === "translator") {
                 await setDoc(doc(db, "translators", result.user.uid), {
@@ -333,9 +333,13 @@ async function handleAuthState(user) {
 
         if (isTranslator) {
             try {
-                await loadTaxonomy();
                 if (currentInterpreterProfile) hydrateInterpreterProfile(currentInterpreterProfile);
                 else await loadInterpreterProfile();
+                try {
+                    await loadTaxonomy();
+                } catch (taxonomyError) {
+                    console.warn("Interpreter taxonomy load failed; saved profile remains available:", taxonomyError);
+                }
             } catch (error) {
                 console.error("Interpreter profile load failed:", error);
                 $("translatorRequestStatus").textContent = `Dashboard loaded, but the interpreter profile could not be loaded: ${error.message}`;
