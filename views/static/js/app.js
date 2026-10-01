@@ -13,6 +13,8 @@ let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
 let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterProfile = null;
 let featuredProfilesData = [];
 let callAttemptSequence = 0;
+let routedLanguageCalls = new Set();
+let activeModal = null, modalReturnFocus = null;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
 const taxonomySuggestionIndex = { languages: -1, dialects: -1, specialties: -1 };
@@ -103,7 +105,8 @@ function bindUI() {
     $("endCallButton").onclick = endCall;
     $("acceptIncomingCall").onclick = acceptIncomingCall;
     $("declineIncomingCall").onclick = declineIncomingCall;
-    $("closeTranscriptModal").onclick = () => $("transcriptModal").classList.add("hidden");
+    $("closeTranscriptModal").onclick = () => closeModal("transcriptModal");
+    document.addEventListener("keydown", handleModalKeyboard);
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => button.addEventListener("click", () => openDashboardPanel(button.dataset.dashboardPanel)));
     document.querySelectorAll("[data-open-panel]").forEach(button => button.addEventListener("click", () => openDashboardPanel(button.dataset.openPanel)));
     $("profileForm").onsubmit = saveProfile;
@@ -138,6 +141,7 @@ function bindUI() {
     document.querySelectorAll("[data-add-tag]").forEach(button => button.addEventListener("click", () => addTagFromInput(button.dataset.addTag)));
     $("dashboardAvailableNow").onchange = updateDashboardAvailability;
     $("settingsSignOut").onclick = async () => signOut(auth);
+    $("refreshAdmin").onclick = loadAdminDashboard;
     $("directorySearch").addEventListener("input", filterInterpreterDirectory);
     $("directoryRating").addEventListener("change", filterInterpreterDirectory);
     $("directorySort").addEventListener("change", filterInterpreterDirectory);
@@ -161,6 +165,40 @@ function bindUI() {
         openDashboardPanel("home");
         $("receiverEmail")?.focus();
     };
+}
+
+function openModal(id) {
+    const modal = $(id);
+    if (!modal) return;
+    modalReturnFocus = document.activeElement;
+    activeModal = modal;
+    modal.classList.remove("hidden");
+    const target = modal.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+    window.requestAnimationFrame(() => target?.focus());
+}
+
+function closeModal(id) {
+    const modal = $(id);
+    if (!modal) return;
+    modal.classList.add("hidden");
+    activeModal = null;
+    if (modalReturnFocus?.focus) modalReturnFocus.focus();
+    modalReturnFocus = null;
+}
+
+function handleModalKeyboard(event) {
+    if (!activeModal || activeModal.classList.contains("hidden")) return;
+    if (event.key === "Escape") {
+        event.preventDefault();
+        closeModal(activeModal.id);
+        return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...activeModal.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])")];
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 }
 
 function activateWorkflowTab(activeTab) {
@@ -254,7 +292,7 @@ async function handleAuthState(user) {
 
         // Older translator accounts may predate the role field in /users.
         // The translator profile is authoritative for those accounts.
-        if (translatorSnap?.exists()) currentProfile.role = "translator";
+        if (translatorSnap?.exists() && currentProfile.role !== "admin") currentProfile.role = "translator";
         currentInterpreterProfile = currentProfile.role === "translator" && translatorSnap?.exists()
             ? translatorSnap.data()
             : null;
@@ -281,13 +319,15 @@ async function handleAuthState(user) {
 
         hydrateDashboardProfile();
         const isTranslator = currentProfile.role === "translator";
+        const isAdmin = currentProfile.role === "admin";
         $("interpreterProfileNav").classList.toggle("hidden", !isTranslator);
-        $("customerTools").classList.toggle("hidden", isTranslator);
+        $("adminNav").classList.toggle("hidden", !isAdmin);
+        $("customerTools").classList.toggle("hidden", isTranslator || isAdmin);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         // Show the dashboard before loading optional translator/profile data so
         // a Firestore/profile problem cannot block navigation after login.
-        openDashboardPanel("home");
+        openDashboardPanel(isAdmin ? "admin" : "home");
         show("dashboardView");
         $("authStatus").textContent = "";
 
@@ -329,7 +369,7 @@ async function handleAuthState(user) {
 
 function hydrateDashboardProfile() {
     const name = currentProfile.displayName || currentProfile.email || "FiniSpeak";
-    const roleLabel = currentProfile.role === "translator" ? "Translator" : "Customer";
+    const roleLabel = currentProfile.role === "admin" ? "Administrator" : currentProfile.role === "translator" ? "Translator" : "Customer";
     $("welcomeName").textContent = name;
     $("accountRole").textContent = `${roleLabel} account`;
     $("sidebarName").textContent = name;
@@ -342,7 +382,7 @@ function hydrateDashboardProfile() {
 }
 
 function openDashboardPanel(panel) {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", profile: "dashboardProfile", interpreter: "dashboardInterpreter", settings: "dashboardSettings" };
+    const ids = { home: "dashboardHome", directory: "dashboardDirectory", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings" };
     Object.entries(ids).forEach(([key, id]) => $(id).classList.toggle("hidden", key !== panel));
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => {
         const active = button.dataset.dashboardPanel === panel;
@@ -350,6 +390,150 @@ function openDashboardPanel(panel) {
         if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
     });
     if (panel === "directory") loadInterpreterDirectory();
+    if (panel === "admin") loadAdminDashboard();
+}
+
+async function apiFetch(path, options = {}) {
+    if (!currentUser) throw new Error("Sign in to continue.");
+    const token = await currentUser.getIdToken();
+    const response = await fetch(path, {
+        ...options,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(options.headers || {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+    return payload;
+}
+
+async function loadAdminDashboard() {
+    if (currentProfile?.role !== "admin") return;
+    $("adminStatus").textContent = "Loading platform activity…";
+    try {
+        const [overview, queue, activity] = await Promise.all([
+            apiFetch("/api/admin/overview"), apiFetch("/api/admin/verifications"), apiFetch("/api/admin/activity")
+        ]);
+        const metrics = overview.metrics || {};
+        $("adminAccounts").textContent = metrics.accounts ?? 0;
+        $("adminActiveAccounts").textContent = `${metrics.activeAccounts ?? 0} active`;
+        $("adminVerified").textContent = metrics.verifiedInterpreters ?? 0;
+        $("adminPending").textContent = `${metrics.pendingVerifications ?? 0} awaiting review`;
+        $("adminSessions").textContent = metrics.sessions ?? 0;
+        $("adminActiveSessions").textContent = `${metrics.activeSessions ?? 0} active`;
+        $("adminOrganizations").textContent = metrics.organizations ?? 0;
+        renderAdminVerificationQueue(queue.interpreters || []);
+        renderAdminAccounts(activity.accounts || []);
+        renderAdminSessions(activity.sessions || []);
+        renderAdminReviews(activity.reviews || []);
+        renderAdminOrganizations(activity.organizations || []);
+        $("adminStatus").textContent = "Platform activity is up to date.";
+    } catch (error) {
+        $("adminStatus").textContent = `Could not load administration data: ${error.message}`;
+        $("adminVerificationQueue").innerHTML = '<p class="status">The verification queue is unavailable.</p>';
+    }
+}
+
+function adminEmpty(message) {
+    return `<p class="admin-empty">${escapeHtml(message)}</p>`;
+}
+
+function renderAdminAccounts(accounts) {
+    const container = $("adminAccountList");
+    if (!accounts.length) { container.innerHTML = adminEmpty("No accounts found."); return; }
+    container.innerHTML = accounts.map(account => {
+        const isCurrentAdmin = account.uid === currentUser?.uid;
+        return `<article class="admin-list-row"><div><strong>${escapeHtml(account.displayName || account.email || "User")}</strong><small>${escapeHtml(account.role || "customer")} · ${escapeHtml(account.email || account.uid || "")}</small></div><label class="admin-inline-control"><span class="sr-only">Account status for ${escapeHtml(account.displayName || account.email || "user")}</span><select data-account-id="${escapeHtml(account.uid || "")}"${isCurrentAdmin ? " disabled title=\"You cannot suspend your current administrator session\"" : ""}><option value="active"${account.status === "active" || !account.status ? " selected" : ""}>Active</option><option value="pending"${account.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${account.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></article>`;
+    }).join("");
+    container.querySelectorAll("[data-account-id]").forEach(select => select.onchange = () => updateAdminAccountStatus(select));
+}
+
+async function updateAdminAccountStatus(select) {
+    select.disabled = true;
+    try {
+        await apiFetch(`/api/accounts/${encodeURIComponent(select.dataset.accountId)}/status`, { method: "PATCH", body: JSON.stringify({ status: select.value }) });
+        $("adminStatus").textContent = "Account status updated.";
+    } catch (error) {
+        $("adminStatus").textContent = `Could not update account status: ${error.message}`;
+        await loadAdminDashboard();
+    } finally { select.disabled = false; }
+}
+
+function renderAdminSessions(sessions) {
+    const container = $("adminSessionList");
+    if (!sessions.length) { container.innerHTML = adminEmpty("No sessions have been created."); return; }
+    container.innerHTML = sessions.slice(0, 12).map(session => {
+        const date = timestampDate(session.createdAt);
+        return `<article class="admin-list-row"><div><strong>${escapeHtml(session.callerName || session.callerId || "Customer session")}</strong><small>${escapeHtml(date ? date.toLocaleString() : "Recent")} · ${escapeHtml(session.language || "Language not detected")}</small></div><span class="status-badge">${escapeHtml(session.status || "unknown")}</span></article>`;
+    }).join("");
+}
+
+function renderAdminReviews(reviews) {
+    const container = $("adminReviewList");
+    if (!reviews.length) { container.innerHTML = adminEmpty("No customer reviews yet."); return; }
+    container.innerHTML = reviews.slice(0, 20).map(review => `<article class="admin-list-row admin-review-row"><div><strong>${escapeHtml(review.authorName || "Customer")} · ${Number(review.rating || 0)}/5</strong><small>${escapeHtml(review.text || "No written feedback")}</small></div><div class="admin-review-actions"><button class="secondary" type="button" data-review-status="visible" data-interpreter-id="${escapeHtml(review.interpreterId)}" data-review-id="${escapeHtml(review.id)}">Show</button><button class="secondary reject-action" type="button" data-review-status="hidden" data-interpreter-id="${escapeHtml(review.interpreterId)}" data-review-id="${escapeHtml(review.id)}">Hide</button></div></article>`).join("");
+    container.querySelectorAll("[data-review-status]").forEach(button => button.onclick = () => moderateAdminReview(button));
+}
+
+async function moderateAdminReview(button) {
+    const buttons = button.closest(".admin-review-actions").querySelectorAll("button");
+    buttons.forEach(item => item.disabled = true);
+    try {
+        await apiFetch(`/api/admin/interpreters/${encodeURIComponent(button.dataset.interpreterId)}/reviews/${encodeURIComponent(button.dataset.reviewId)}`, { method: "PATCH", body: JSON.stringify({ status: button.dataset.reviewStatus }) });
+        $("adminStatus").textContent = `Review is now ${button.dataset.reviewStatus}.`;
+        await loadAdminDashboard();
+    } catch (error) {
+        $("adminStatus").textContent = `Could not moderate review: ${error.message}`;
+        buttons.forEach(item => item.disabled = false);
+    }
+}
+
+function renderAdminOrganizations(organizations) {
+    const container = $("adminOrganizationList");
+    if (!organizations.length) { container.innerHTML = adminEmpty("No organizations have been added yet."); return; }
+    container.innerHTML = organizations.slice(0, 20).map(organization => `<article class="admin-list-row"><div><strong>${escapeHtml(organization.name || organization.displayName || "Organization")}</strong><small>${escapeHtml(organization.contactEmail || organization.domain || organization.id || "Managed organization")}</small></div><span class="status-badge">${escapeHtml(organization.status || "active")}</span></article>`).join("");
+}
+
+function renderAdminVerificationQueue(profiles) {
+    const container = $("adminVerificationQueue");
+    $("adminQueueStatus").textContent = `${profiles.length} pending`;
+    if (!profiles.length) {
+        container.innerHTML = "<p>No credential submissions are waiting for review.</p>";
+        return;
+    }
+    container.replaceChildren(...profiles.map(profile => {
+        const row = document.createElement("article");
+        row.className = "admin-review-item";
+        const documents = (profile.credentialDocuments || []).map(document => document.path
+            ? `<button class="text-button" type="button" data-credential-path="${escapeHtml(document.path)}">${escapeHtml(document.name || "Credential document")}</button>`
+            : `<a href="${escapeHtml(document.url || "#")}" target="_blank" rel="noopener">${escapeHtml(document.name || "Credential document")}</a>`
+        ).join("");
+        row.innerHTML = `<div><strong>${escapeHtml(profile.displayName || profile.email || "Interpreter")}</strong><span>${escapeHtml([...(profile.languages || []), ...(profile.specialties || [])].slice(0, 4).join(" · ") || "Profile submitted")}</span><div class="admin-credential-links">${documents || "No uploaded documents"}</div></div><div class="admin-review-actions"><button class="secondary" type="button" data-status="needs_changes">Request changes</button><button type="button" data-status="verified">Approve</button></div>`;
+        row.querySelectorAll("[data-status]").forEach(button => button.onclick = () => reviewInterpreter(profile.id, button.dataset.status));
+        row.querySelectorAll("[data-credential-path]").forEach(button => button.onclick = () => openCredentialDocument(button));
+        return row;
+    }));
+}
+
+async function openCredentialDocument(button) {
+    button.disabled = true;
+    try {
+        const url = await getDownloadURL(storageRef(storage, button.dataset.credentialPath));
+        window.open(url, "_blank", "noopener");
+    } catch (error) {
+        $("adminStatus").textContent = `Could not open credential document: ${error.message}`;
+    } finally { button.disabled = false; }
+}
+
+async function reviewInterpreter(interpreterId, status) {
+    $("adminStatus").textContent = status === "verified" ? "Approving interpreter…" : "Returning profile for changes…";
+    try {
+        await apiFetch(`/api/admin/interpreters/${encodeURIComponent(interpreterId)}/verification`, {
+            method: "PATCH", body: JSON.stringify({ status })
+        });
+        $("adminStatus").textContent = status === "verified" ? "Interpreter approved and published." : "Interpreter was asked to update their credentials.";
+        await loadAdminDashboard();
+    } catch (error) {
+        $("adminStatus").textContent = `Could not update verification: ${error.message}`;
+    }
 }
 
 function selectInterpreterForCall(profile) {
@@ -843,6 +1027,7 @@ function hydrateInterpreterProfile(profile = {}) {
     $("interpreterYears").value = p.yearsExperience ?? "";
     $("interpreterCredentials").value = (p.credentials || []).join("\n");
     $("interpreterCredentialStatus").value = p.credentialStatus || "unsubmitted";
+    renderCredentialDocuments(p.credentialDocuments || []);
     const availability = p.availability || {};
     document.querySelectorAll('input[name="availabilityDay"]').forEach(input => input.checked = (availability.days || []).includes(input.value));
     $("availabilityStart").value = availability.start || "";
@@ -851,6 +1036,33 @@ function hydrateInterpreterProfile(profile = {}) {
     setInterpreterPhoto(p.photoUrl || "");
     updateInterpreterCompletion();
     renderTranslatorDashboard();
+}
+
+function renderCredentialDocuments(documents = []) {
+    const container = $("credentialDocumentList");
+    if (!documents.length) {
+        container.innerHTML = "<p>No credential documents uploaded yet.</p>";
+        return;
+    }
+    container.innerHTML = documents.map(document => `<span class="credential-document">${escapeHtml(document.name || "Credential document")}</span>`).join("");
+}
+
+async function uploadCredentialDocuments(existing = []) {
+    const files = [...($("interpreterCredentialFiles").files || [])];
+    if (!files.length) return existing;
+    if (!storage) throw new Error("Firebase Storage is not configured for credential uploads.");
+    const allowed = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
+    const documents = [...existing];
+    for (const file of files) {
+        if (!allowed.has(file.type)) throw new Error(`${file.name} must be a PDF, JPG, PNG, or WebP file.`);
+        if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} must be under 10 MB.`);
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-100);
+        const path = `interpreter-credentials/${currentUser.uid}/${Date.now()}-${safeName}`;
+        const reference = storageRef(storage, path);
+        await uploadBytes(reference, file, { contentType: file.type, cacheControl: "private,max-age=0" });
+        documents.push({ name: file.name, path, contentType: file.type, size: file.size, uploadedAt: Date.now() });
+    }
+    return documents;
 }
 
 async function loadInterpreterProfile() {
@@ -867,7 +1079,7 @@ async function loadInterpreterProfile() {
             verificationStatus: "unverified",
             languages: [], dialects: [], specialties: [], credentials: [],
             yearsExperience: 0,
-            availability: { days: [], start: "", end: "", availableNow: false },
+            availability: { days: [], start: "", end: "", availableNow: false, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" },
             rating: null, ratingCount: 0,
             createdAt: serverTimestamp(), updatedAt: serverTimestamp()
         };
@@ -952,7 +1164,8 @@ function interpreterFormData() {
             days: [...document.querySelectorAll('input[name="availabilityDay"]:checked')].map(input => input.value),
             start: $("availabilityStart").value,
             end: $("availabilityEnd").value,
-            availableNow: $("interpreterAvailableNow").checked
+            availableNow: $("interpreterAvailableNow").checked,
+            timezone: currentInterpreterProfile?.availability?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
         }
     };
 }
@@ -1021,8 +1234,10 @@ async function saveInterpreterProfile(e, draft = false) {
                 console.error("Interpreter photo upload failed:", error);
             }
         }
+        const credentialDocuments = await uploadCredentialDocuments(currentInterpreterProfile?.credentialDocuments || []);
         const payload = {
             ...data, uid: currentUser.uid, email: (currentProfile.email || currentUser.email || "").toLowerCase(), photoUrl,
+            credentialDocuments,
             onboardingStatus: completion === 100 ? "complete" : "draft",
             verificationStatus: currentInterpreterProfile?.verificationStatus || "unverified",
             rating: currentInterpreterProfile?.rating ?? null, ratingCount: currentInterpreterProfile?.ratingCount || 0,
@@ -1042,6 +1257,8 @@ async function saveInterpreterProfile(e, draft = false) {
             $("interpreterPhoto").value = "";
             setInterpreterPhoto(photoUrl);
         }
+        $("interpreterCredentialFiles").value = "";
+        renderCredentialDocuments(credentialDocuments);
         updateInterpreterCompletion(data);
         renderTranslatorDashboard();
         if (photoUploadError) {
@@ -1089,14 +1306,12 @@ async function createCall(e) {
         if (!receiver) {
             stage = "legacy-customer-lookup";
             callLog(attemptId, stage);
-            const usersQuery = query(
-                collection(db, "users"),
-                where("email", "==", receiverEmail)
-            );
-            const usersSnap = await getDocs(usersQuery);
-            if (!usersSnap.empty) {
-                receiver = usersSnap.docs[0].data();
+            try {
+                const lookup = await apiFetch(`/api/accounts/lookup?email=${encodeURIComponent(receiverEmail)}`);
+                receiver = lookup.account || null;
                 lookupSource = "users";
+            } catch (lookupError) {
+                if (!/not found/i.test(lookupError.message || "")) throw lookupError;
             }
         }
 
@@ -1341,6 +1556,13 @@ async function startTranscription(callId) {
                     createdAt: serverTimestamp(),
                     clientCreatedAt: Date.now()
                 });
+                if (message.language && !routedLanguageCalls.has(callId)) {
+                    routedLanguageCalls.add(callId);
+                    routeDetectedLanguage(callId, message.language).catch(error => {
+                        routedLanguageCalls.delete(callId);
+                        console.warn("Automatic language routing unavailable:", error);
+                    });
+                }
             }
         };
         transcriptionSocket.onerror = () => { status.textContent = "Transcription connection error — check Flask Terminal"; };
@@ -1359,6 +1581,19 @@ async function startTranscription(callId) {
     } catch (error) {
         status.textContent = `Transcription unavailable: ${error.message}`;
         stopTranscription(false);
+    }
+}
+
+async function routeDetectedLanguage(callId, detectedLanguage) {
+    const result = await apiFetch("/api/routing/recommend", {
+        method: "POST",
+        body: JSON.stringify({ callId, detectedLanguage })
+    });
+    const count = Number(result.count || 0);
+    if (count) {
+        $("callStatus").textContent = `${result.detectedLanguage} detected · ${count} matching interpreter${count === 1 ? "" : "s"} found.`;
+    } else {
+        $("callStatus").textContent = `${result.detectedLanguage} detected · no available exact match yet.`;
     }
 }
 
@@ -1411,11 +1646,13 @@ function toggleCamera() { const t = localStream?.getVideoTracks()[0]; if (!t) re
 async function endCall() { if (activeCallId) await updateDoc(doc(db, "calls", activeCallId), { status: "ended", endedAt: serverTimestamp() }); cleanupCall(); show("dashboardView"); loadConversationHistory(); }
 function cleanupListeners() { callUnsubs.forEach(u => u()); callUnsubs = []; }
 function cleanupCall(stopMedia = true) {
+    const endingCallId = activeCallId;
     stopTranscription();
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
     document.querySelectorAll("[data-peer]").forEach(e => e.remove());
     if (stopMedia && localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; $("localVideo").srcObject = null; }
     activeCallId = null; currentCallRole = null;
+    if (endingCallId) routedLanguageCalls.delete(endingCallId);
     $("requestTranslatorButton").disabled = false;
     $("requestTranslatorButton").title = "";
 }
@@ -1425,12 +1662,12 @@ function cleanupDashboardListeners() {
     dashboardUnsubs.forEach(unsub => unsub());
     dashboardUnsubs = [];
     pendingIncomingCall = null;
-    $("incomingCallModal")?.classList.add("hidden");
+    if (!$("incomingCallModal")?.classList.contains("hidden")) closeModal("incomingCallModal");
 }
 
 function clearPendingIncomingCall() {
     pendingIncomingCall = null;
-    $("incomingCallModal")?.classList.add("hidden");
+    if (!$("incomingCallModal")?.classList.contains("hidden")) closeModal("incomingCallModal");
 }
 
 function newestPendingCall(snapshot) {
@@ -1474,7 +1711,7 @@ function startDashboardListeners() {
             $("incomingCallTitle").textContent = `${pendingIncomingCall.callerName || "A customer"} is calling you`;
             $("incomingCallDetails").textContent = "Accept to connect. Live transcription starts after you join the call.";
             $("acceptIncomingCall").textContent = "Accept";
-            $("incomingCallModal").classList.remove("hidden");
+            openModal("incomingCallModal");
         }, error => handleDashboardListenerError("customer", error)));
     } else if (currentProfile.role === "translator") {
         const requests = query(collection(db, "calls"), where("translationStatus", "==", "requested"));
@@ -1494,7 +1731,7 @@ function startDashboardListeners() {
             $("incomingCallDetails").textContent = `${pendingIncomingCall.callerName || "Customer 1"} and ${pendingIncomingCall.receiverName || "Customer 2"} are requesting interpretation.`;
             $("translatorRequestStatus").textContent = "New interpretation request waiting — open it to join the call.";
             $("acceptIncomingCall").textContent = "Join Call";
-            $("incomingCallModal").classList.remove("hidden");
+            openModal("incomingCallModal");
         }, error => handleDashboardListenerError("translator", error)));
     }
 }
@@ -1503,7 +1740,7 @@ async function acceptIncomingCall() {
     if (!pendingIncomingCall) return;
     const pending = pendingIncomingCall;
     pendingIncomingCall = null;
-    $("incomingCallModal").classList.add("hidden");
+    closeModal("incomingCallModal");
     try {
         const callRef = doc(db, "calls", pending.id);
         if (pending.kind === "customer") {
@@ -1519,7 +1756,7 @@ async function declineIncomingCall() {
     if (!pendingIncomingCall) return;
     const pending = pendingIncomingCall;
     pendingIncomingCall = null;
-    $("incomingCallModal").classList.add("hidden");
+    closeModal("incomingCallModal");
     try {
         if (pending.kind === "customer") {
             await updateDoc(doc(db, "calls", pending.id), { status: "declined", endedAt: serverTimestamp() });
@@ -1580,7 +1817,7 @@ async function openHistoryTranscript(call) {
     $("historyTranscriptMeta").textContent = date ? date.toLocaleString() : "Previous conversation";
     const list = $("historyTranscriptList");
     list.innerHTML = '<p class="transcript-empty">Loading transcript…</p>';
-    $("transcriptModal").classList.remove("hidden");
+    openModal("transcriptModal");
     try {
         const snap = await getDocs(collection(db, "calls", call.id, "transcripts"));
         const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
