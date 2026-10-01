@@ -648,8 +648,10 @@ function renderFeaturedProfiles(profiles) {
         return;
     }
     container.replaceChildren(...profiles.map(profile => {
-        const card = document.createElement("article");
+        const card = document.createElement("button");
+        card.type = "button";
         card.className = "interpreter-card featured-interpreter-card";
+        card.setAttribute("aria-label", `View ${profile.displayName || "interpreter"}'s public profile`);
         const languages = [...(profile.languages || []), ...(profile.dialects || [])].slice(0, 2);
         const specialties = (profile.specialties || []).slice(0, 2);
         const tags = [...languages, ...specialties];
@@ -661,10 +663,10 @@ function renderFeaturedProfiles(profiles) {
                 <p class="card-bio">${escapeHtml(profile.bio || "Professional FiniSpeak interpreter profile.")}</p>
                 <div class="directory-tags">${tags.map(tag => `<span class="directory-tag">${escapeHtml(tag)}</span>`).join("")}</div>
                 <div class="directory-meta"><span>${Number(profile.yearsExperience || 0)} years experience</span><span>${escapeHtml(profileVerificationLabel(profile))}</span></div>
-                <button class="text-button featured-profile-login" type="button">View profile</button>
+                <span class="featured-profile-login">View public profile →</span>
             </div>`;
         setProfileAvatar(card.querySelector(".directory-avatar"), profile);
-        card.querySelector(".featured-profile-login").onclick = () => openPublicProfile(profile);
+        card.onclick = () => openPublicProfile(profile);
         return card;
     }));
 }
