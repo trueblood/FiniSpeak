@@ -322,7 +322,9 @@ async function handleAuthState(user) {
         const isAdmin = currentProfile.role === "admin";
         $("interpreterProfileNav").classList.toggle("hidden", !isTranslator);
         $("adminNav").classList.toggle("hidden", !isAdmin);
-        $("customerTools").classList.toggle("hidden", isTranslator || isAdmin);
+        // Administrators can also participate in calls. Keep the customer call
+        // workspace available while exposing the additional admin dashboard.
+        $("customerTools").classList.toggle("hidden", isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         // Show the dashboard before loading optional translator/profile data so
@@ -1360,8 +1362,8 @@ async function createCall(e) {
             receiverRole: receiver?.role || null,
             receiverHasUid: Boolean(receiver?.uid)
         });
-        if (!receiver) throw new Error("No FiniSpeak customer was found with that email. Ask them to sign in to FiniSpeak once, then try again.");
-        if (receiver.role !== "customer") throw new Error("That email address is not registered to a customer account.");
+        if (!receiver) throw new Error("No FiniSpeak account was found with that email. Ask them to sign in to FiniSpeak once, then try again.");
+        if (!["customer", "admin"].includes(receiver.role)) throw new Error("That email address is not registered to a customer or administrator account.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
         const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
         submitButton.textContent = "Starting call…";
@@ -1728,7 +1730,7 @@ function startDashboardListeners() {
     cleanupDashboardListeners();
     if (!currentUser || !currentProfile) return;
 
-    if (currentProfile.role === "customer") {
+    if (["customer", "admin"].includes(currentProfile.role)) {
         // Subscribe by receiver only and filter pending calls in the browser.
         // This avoids a compound query/index failure and ensures the initial
         // snapshot restores calls that were already ringing before page load.
@@ -1746,7 +1748,7 @@ function startDashboardListeners() {
             }
             pendingIncomingCall = { id: callDoc.id, ...callDoc.data(), kind: "customer" };
             $("incomingCallEyebrow").textContent = "Incoming FiniSpeak call";
-            $("incomingCallTitle").textContent = `${pendingIncomingCall.callerName || "A customer"} is calling you`;
+            $("incomingCallTitle").textContent = `${pendingIncomingCall.callerName || "A participant"} is calling you`;
             $("incomingCallDetails").textContent = "Accept to connect. Live transcription starts after you join the call.";
             $("acceptIncomingCall").textContent = "Accept";
             openModal("incomingCallModal");
