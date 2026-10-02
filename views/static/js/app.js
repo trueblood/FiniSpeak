@@ -322,7 +322,9 @@ async function handleAuthState(user) {
         const isAdmin = currentProfile.role === "admin";
         $("interpreterProfileNav").classList.toggle("hidden", !isTranslator);
         $("adminNav").classList.toggle("hidden", !isAdmin);
-        $("customerTools").classList.toggle("hidden", isTranslator || isAdmin);
+        // Administrators can also participate in calls. Keep the customer call
+        // workspace available while exposing the additional admin dashboard.
+        $("customerTools").classList.toggle("hidden", isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         // Show the dashboard before loading optional translator/profile data so
@@ -582,6 +584,7 @@ async function loadFeaturedProfiles() {
     try {
         featuredProfilesData = await fetchPublicProfiles();
         featuredProfilesData.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0));
+        hydrateHeroProfiles();
         hydrateFeaturedFilters();
         filterFeaturedProfiles();
     } catch (error) {
@@ -590,6 +593,37 @@ async function loadFeaturedProfiles() {
         $("featuredAvailableCount").textContent = "Availability unavailable";
         container.innerHTML = '<div class="directory-empty">Featured profiles are temporarily unavailable.</div>';
     }
+}
+
+function hydrateHeroProfiles() {
+    const slots = [
+        { prefix: "heroPrimary", profile: featuredProfilesData[0] },
+        { prefix: "heroSecondary", profile: featuredProfilesData[1] }
+    ];
+    slots.forEach(({ prefix, profile }) => {
+        const card = $(`${prefix}Profile`);
+        card.hidden = !profile;
+        card.disabled = !profile;
+        if (!profile) return;
+
+        const language = (profile.languages || [])[0];
+        const specialty = (profile.specialties || [])[0];
+        $(`${prefix}Name`).textContent = profile.displayName || "FiniSpeak interpreter";
+        $(`${prefix}Summary`).textContent = [language, specialty].filter(Boolean).join(" · ") || "Professional interpreter";
+        $(`${prefix}Verified`).hidden = profileVerificationLabel(profile) !== "Verified";
+        setProfileAvatar($(`${prefix}Avatar`), profile);
+        card.setAttribute("aria-label", `View ${profile.displayName || "interpreter"}'s public profile`);
+        card.onclick = () => openPublicProfile(profile);
+    });
+
+    const primary = featuredProfilesData[0];
+    $("heroPrimaryDetails").hidden = !primary;
+    if (!primary) return;
+    const rating = Number(primary.rating || 0);
+    const years = Number(primary.yearsExperience || 0);
+    $("heroPrimaryRegion").textContent = (primary.dialects || [])[0] || (primary.languages || [])[0] || "Language specialist";
+    $("heroPrimaryRating").textContent = rating ? `${rating.toFixed(1)} rating` : "New profile";
+    $("heroPrimaryExperience").textContent = `${years} year${years === 1 ? "" : "s"}`;
 }
 
 function hydrateFeaturedFilters() {
@@ -1328,8 +1362,8 @@ async function createCall(e) {
             receiverRole: receiver?.role || null,
             receiverHasUid: Boolean(receiver?.uid)
         });
-        if (!receiver) throw new Error("No FiniSpeak customer was found with that email. Ask them to sign in to FiniSpeak once, then try again.");
-        if (receiver.role !== "customer") throw new Error("That email address is not registered to a customer account.");
+        if (!receiver) throw new Error("No FiniSpeak account was found with that email. Ask them to sign in to FiniSpeak once, then try again.");
+        if (!["customer", "admin"].includes(receiver.role)) throw new Error("That email address is not registered to a customer or administrator account.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
         const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
         submitButton.textContent = "Starting call…";
@@ -1696,7 +1730,7 @@ function startDashboardListeners() {
     cleanupDashboardListeners();
     if (!currentUser || !currentProfile) return;
 
-    if (currentProfile.role === "customer") {
+    if (["customer", "admin"].includes(currentProfile.role)) {
         // Subscribe by receiver only and filter pending calls in the browser.
         // This avoids a compound query/index failure and ensures the initial
         // snapshot restores calls that were already ringing before page load.
@@ -1714,7 +1748,7 @@ function startDashboardListeners() {
             }
             pendingIncomingCall = { id: callDoc.id, ...callDoc.data(), kind: "customer" };
             $("incomingCallEyebrow").textContent = "Incoming FiniSpeak call";
-            $("incomingCallTitle").textContent = `${pendingIncomingCall.callerName || "A customer"} is calling you`;
+            $("incomingCallTitle").textContent = `${pendingIncomingCall.callerName || "A participant"} is calling you`;
             $("incomingCallDetails").textContent = "Accept to connect. Live transcription starts after you join the call.";
             $("acceptIncomingCall").textContent = "Accept";
             openModal("incomingCallModal");

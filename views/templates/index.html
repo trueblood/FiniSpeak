@@ -35,17 +35,17 @@
             <div class="hero-visual" aria-label="FiniSpeak interpreter matching preview">
                 <div class="hero-visual-header"><span><span class="brand-mark">F</span> Interpreter network</span><strong><span class="live-dot"></span> Available now</strong></div>
                 <div class="hero-search-preview"><span aria-hidden="true">⌕</span><span>Language, dialect, or specialty</span></div>
-                <div class="hero-match-card hero-match-primary">
-                    <span class="hero-match-avatar">MV</span>
-                    <div><strong>Marisol Vega</strong><small>Spanish · Healthcare</small></div>
-                    <span class="hero-verified" aria-label="Verified interpreter">✓</span>
-                </div>
-                <div class="hero-match-details"><span>Mexican &amp; Central American</span><span>4.9 rating</span><span>9 years</span></div>
-                <div class="hero-match-card">
-                    <span class="hero-match-avatar hero-match-avatar-blue">KH</span>
-                    <div><strong>Karim Haddad</strong><small>Arabic · Legal</small></div>
-                    <span class="hero-verified" aria-label="Verified interpreter">✓</span>
-                </div>
+                <button id="heroPrimaryProfile" class="hero-match-card hero-match-primary" type="button" disabled aria-label="Loading featured interpreter profile">
+                    <span id="heroPrimaryAvatar" class="hero-match-avatar">MV</span>
+                    <span><strong id="heroPrimaryName">Marisol Vega</strong><small id="heroPrimarySummary">Spanish · Healthcare</small></span>
+                    <span id="heroPrimaryVerified" class="hero-verified" aria-label="Verified interpreter">✓</span>
+                </button>
+                <div id="heroPrimaryDetails" class="hero-match-details"><span id="heroPrimaryRegion">Mexican &amp; Central American</span><span id="heroPrimaryRating">4.9 rating</span><span id="heroPrimaryExperience">9 years</span></div>
+                <button id="heroSecondaryProfile" class="hero-match-card" type="button" disabled aria-label="Loading featured interpreter profile">
+                    <span id="heroSecondaryAvatar" class="hero-match-avatar hero-match-avatar-blue">KH</span>
+                    <span><strong id="heroSecondaryName">Karim Haddad</strong><small id="heroSecondarySummary">Arabic · Legal</small></span>
+                    <span id="heroSecondaryVerified" class="hero-verified" aria-label="Verified interpreter">✓</span>
+                </button>
             </div>
         </div>
         <div id="featuredProfiles" class="landing-directory-section">
