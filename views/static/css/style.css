@@ -268,10 +268,11 @@ button:disabled { cursor:wait; opacity:.72; }
 .hero-visual-header>strong { display:flex; align-items:center; gap:6px; font-size:.72rem; }
 .hero-search-preview { display:flex; align-items:center; gap:10px; min-height:48px; margin:4px 0 2px; padding:0 14px; border:1px solid rgba(255,255,255,.18); border-radius:12px; background:rgba(255,255,255,.1); color:#c5d6e5; font-size:.84rem; }
 .hero-search-preview>span:first-child { color:#fff; font-size:1.25rem; }
-.hero-match-card { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; padding:16px; border:1px solid rgba(255,255,255,.16); border-radius:17px; background:rgba(255,255,255,.96); color:var(--dark); box-shadow:0 12px 24px rgba(2,18,35,.14); }
+.hero-match-card { width:100%; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; padding:16px; border:1px solid rgba(255,255,255,.16); border-radius:17px; background:rgba(255,255,255,.96); color:var(--dark); box-shadow:0 12px 24px rgba(2,18,35,.14); text-align:left; transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease; }
+.hero-match-card:hover:not(:disabled),.hero-match-card:focus-visible { background:#fff; border-color:#9fc9e3; transform:translateY(-2px); box-shadow:0 16px 30px rgba(2,18,35,.2); }
 .hero-match-card strong,.hero-match-card small { display:block; }
 .hero-match-card small { margin-top:3px; color:var(--muted); }
-.hero-match-avatar { width:48px; height:48px; display:grid; place-items:center; border-radius:14px; background:#fde5dc; color:#a94725; font-weight:850; }
+.hero-match-avatar { width:48px; height:48px; display:grid; place-items:center; border-radius:14px; background:#fde5dc; color:#a94725; font-weight:850; background-size:cover; background-position:center; }
 .hero-match-avatar-blue { background:#dcebf5; color:#1b5c85; }
 .hero-verified { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:#dceef8; color:#226a95; font-weight:900; }
 .hero-match-primary { margin-top:4px; }

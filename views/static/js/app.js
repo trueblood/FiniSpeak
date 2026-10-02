@@ -582,6 +582,7 @@ async function loadFeaturedProfiles() {
     try {
         featuredProfilesData = await fetchPublicProfiles();
         featuredProfilesData.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0));
+        hydrateHeroProfiles();
         hydrateFeaturedFilters();
         filterFeaturedProfiles();
     } catch (error) {
@@ -590,6 +591,37 @@ async function loadFeaturedProfiles() {
         $("featuredAvailableCount").textContent = "Availability unavailable";
         container.innerHTML = '<div class="directory-empty">Featured profiles are temporarily unavailable.</div>';
     }
+}
+
+function hydrateHeroProfiles() {
+    const slots = [
+        { prefix: "heroPrimary", profile: featuredProfilesData[0] },
+        { prefix: "heroSecondary", profile: featuredProfilesData[1] }
+    ];
+    slots.forEach(({ prefix, profile }) => {
+        const card = $(`${prefix}Profile`);
+        card.hidden = !profile;
+        card.disabled = !profile;
+        if (!profile) return;
+
+        const language = (profile.languages || [])[0];
+        const specialty = (profile.specialties || [])[0];
+        $(`${prefix}Name`).textContent = profile.displayName || "FiniSpeak interpreter";
+        $(`${prefix}Summary`).textContent = [language, specialty].filter(Boolean).join(" · ") || "Professional interpreter";
+        $(`${prefix}Verified`).hidden = profileVerificationLabel(profile) !== "Verified";
+        setProfileAvatar($(`${prefix}Avatar`), profile);
+        card.setAttribute("aria-label", `View ${profile.displayName || "interpreter"}'s public profile`);
+        card.onclick = () => openPublicProfile(profile);
+    });
+
+    const primary = featuredProfilesData[0];
+    $("heroPrimaryDetails").hidden = !primary;
+    if (!primary) return;
+    const rating = Number(primary.rating || 0);
+    const years = Number(primary.yearsExperience || 0);
+    $("heroPrimaryRegion").textContent = (primary.dialects || [])[0] || (primary.languages || [])[0] || "Language specialist";
+    $("heroPrimaryRating").textContent = rating ? `${rating.toFixed(1)} rating` : "New profile";
+    $("heroPrimaryExperience").textContent = `${years} year${years === 1 ? "" : "s"}`;
 }
 
 function hydrateFeaturedFilters() {
