@@ -26,7 +26,14 @@ jobs:
         with:
           project_id: finispeak-prod
 
+      - name: Verify OpenAI transcription secret
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: test -n "$OPENAI_API_KEY"
+
       - name: Deploy to Cloud Run
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           gcloud run deploy finispeak \
             --source . \
@@ -34,6 +41,7 @@ jobs:
             --region=us-east1 \
             --allow-unauthenticated \
             --memory=1Gi \
+            --update-env-vars="OPENAI_API_KEY=$OPENAI_API_KEY,OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe" \
             --clear-base-image \
             --quiet
 
