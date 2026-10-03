@@ -14,7 +14,7 @@ let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterPr
 let featuredProfilesData = [];
 let callAttemptSequence = 0;
 let routedLanguageCalls = new Set();
-let languageConfirmationRequired = false;
+let languageConfirmationPending = false;
 let confirmedDetectedLanguage = null;
 let activeTranslatorConnected = false;
 let interpreterMatchesByLanguage = new Map();
@@ -1472,12 +1472,8 @@ function watchCall(callId) {
         const translatorConnected = call.translationStatus === "connected";
         activeTranslatorConnected = translatorConnected;
         $("callTitle").textContent = call.status === "ended" ? "Call ended" : "Live conversation";
-        $("requestTranslatorButton").disabled = translatorConnected || languageConfirmationRequired;
-        $("requestTranslatorButton").title = translatorConnected
-            ? "A translator has joined this call"
-            : languageConfirmationRequired
-                ? "Confirm the detected language first"
-                : "";
+        $("requestTranslatorButton").disabled = translatorConnected;
+        $("requestTranslatorButton").title = translatorConnected ? "A translator has joined this call" : "";
         $("callStatus").textContent = call.status === "ringing"
             ? "Calling… waiting for the other customer to accept."
             : call.status === "declined"
@@ -1618,7 +1614,7 @@ async function startTranscription(callId) {
                     clientCreatedAt: Date.now()
                 });
                 const routeKey = languageRouteKey(callId, message.language);
-                if (message.language && !languageConfirmationRequired && !routedLanguageCalls.has(routeKey)) {
+                if (message.language && !routedLanguageCalls.has(routeKey)) {
                     routedLanguageCalls.add(routeKey);
                     routeDetectedLanguage(callId, message.language, confidence).catch(error => {
                         routedLanguageCalls.delete(routeKey);
@@ -1702,7 +1698,7 @@ function detectedLanguageLabel(language) {
 }
 
 function resetDetectedLanguage() {
-    languageConfirmationRequired = false;
+    languageConfirmationPending = false;
     confirmedDetectedLanguage = null;
     $("detectedLanguageCard").className = "language-detection pending";
     $("detectedLanguageValue").textContent = "Listening…";
@@ -1716,20 +1712,20 @@ function resetDetectedLanguage() {
 function updateDetectedLanguage(language, confidence, confirmed = false) {
     confirmed = confirmed || String(confirmedDetectedLanguage || "").toLowerCase() === String(language || "").toLowerCase();
     const normalizedConfidence = normalizeLanguageConfidence(confidence);
-    languageConfirmationRequired = !confirmed && (normalizedConfidence === null || normalizedConfidence < 0.7);
-    $("detectedLanguageCard").className = `language-detection${languageConfirmationRequired ? " low" : ""}`;
+    const lowConfidence = normalizedConfidence === null || normalizedConfidence < 0.7;
+    languageConfirmationPending = !confirmed;
+    $("detectedLanguageCard").className = `language-detection${lowConfidence && !confirmed ? " low" : ""}`;
     $("detectedLanguageValue").textContent = detectedLanguageLabel(language);
     $("detectedLanguageConfidence").textContent = confirmed
         ? "Confirmed by participant"
         : normalizedConfidence === null
-            ? "Confidence unavailable · confirmation needed"
-            : `${Math.round(normalizedConfidence * 100)}% confidence${languageConfirmationRequired ? " · confirmation needed" : ""}`;
-    $("languageConfirmation").classList.toggle("hidden", !languageConfirmationRequired);
+            ? "Confidence unavailable · please confirm"
+            : `${Math.round(normalizedConfidence * 100)}% confidence · please confirm`;
+    $("languageConfirmation").className = `language-confirmation${lowConfidence ? " low" : ""}${languageConfirmationPending ? "" : " hidden"}`;
     const code = String(language || "").toLowerCase();
     if (detectedLanguageNames[code]) $("confirmedLanguage").value = code;
-    $("requestTranslatorButton").disabled = activeTranslatorConnected || languageConfirmationRequired;
-    if (languageConfirmationRequired) $("requestTranslatorButton").title = "Confirm the detected language first";
-    else if (!activeTranslatorConnected) $("requestTranslatorButton").title = "";
+    $("requestTranslatorButton").disabled = activeTranslatorConnected;
+    if (!activeTranslatorConnected) $("requestTranslatorButton").title = "";
 }
 
 async function confirmDetectedLanguage() {
@@ -1737,6 +1733,9 @@ async function confirmDetectedLanguage() {
     const language = $("confirmedLanguage").value;
     confirmedDetectedLanguage = language;
     updateDetectedLanguage(language, 1, true);
+    if (transcriptionSocket?.readyState === WebSocket.OPEN) {
+        transcriptionSocket.send(JSON.stringify({ type: "language", language }));
+    }
     const routeKey = languageRouteKey(activeCallId, language);
     routedLanguageCalls.delete(routeKey);
     routedLanguageCalls.add(routeKey);
@@ -1826,11 +1825,6 @@ function formatTranscriptRole(role) {
 
 async function requestTranslator() {
     if (!activeCallId) return;
-    if (languageConfirmationRequired) {
-        $("languageConfirmation").scrollIntoView({ behavior: "smooth", block: "center" });
-        $("confirmedLanguage").focus();
-        return;
-    }
     await updateDoc(doc(db, "calls", activeCallId), { translationStatus: "requested" });
     $("callStatus").textContent = "Translator requested. Available translators will receive a request.";
 }

@@ -44,6 +44,11 @@ def handle_socket(ws):
                     continue
                 if control.get("type") == "stop":
                     break
+                if control.get("type") == "language":
+                    confirmed_language = str(control.get("language") or "").strip().casefold()
+                    if confirmed_language:
+                        language = confirmed_language
+                        language_confidence = 1.0
                 continue
 
             buffer.extend(message)

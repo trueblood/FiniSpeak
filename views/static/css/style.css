@@ -97,7 +97,8 @@ code { background:#e2e8f0; padding:3px 6px; border-radius:6px; }
 .language-detection-label { color:var(--muted); font-size:.68rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
 .language-detection strong { color:var(--dark); font-size:.9rem; }
 .language-detection span:last-child { color:var(--muted); font-size:.72rem; }
-.language-confirmation { margin:14px 0 4px; padding:13px; border:1px solid #f0c36c; border-radius:12px; background:#fff8e8; }
+.language-confirmation { margin:14px 0 4px; padding:13px; border:1px solid #bfdbfe; border-radius:12px; background:#f8fbff; }
+.language-confirmation.low { border-color:#f0c36c; background:#fff8e8; }
 .language-confirmation label { margin:0 0 9px; font-size:.84rem; }
 .language-confirmation > div { display:flex; align-items:center; gap:9px; }
 .language-confirmation select { max-width:250px; padding:10px 12px; }
