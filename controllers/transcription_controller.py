@@ -21,6 +21,7 @@ def handle_socket(ws):
         call_id = start.get("callId", "")
         sample_rate = int(start.get("sampleRate") or 48000)
         language = (start.get("language") or "").strip() or None
+        language_confidence = None
         if not token or not call_id:
             raise RuntimeError("Missing transcription authentication or call ID.")
 
@@ -54,17 +55,19 @@ def handle_socket(ws):
                 raw = bytes(buffer)
                 buffer.clear()
                 ws.send(json.dumps({"type": "processing"}))
-                result = transcribe_pcm(raw, sample_rate, language)
+                result = transcribe_pcm(raw, sample_rate, language, language_confidence)
                 if result["text"]:
                     if result.get("language"):
                         language = result["language"]
+                    if result.get("languageConfidence") is not None:
+                        language_confidence = result["languageConfidence"]
                     ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence")}))
                 else:
                     ws.send(json.dumps({"type": "listening"}))
 
         if buffer:
             ws.send(json.dumps({"type": "processing"}))
-            result = transcribe_pcm(bytes(buffer), sample_rate, language)
+            result = transcribe_pcm(bytes(buffer), sample_rate, language, language_confidence)
             if result["text"]:
                 ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence")}))
     except urllib.error.HTTPError as exc:

@@ -1690,6 +1690,7 @@ function renderInterpreterMatches() {
 }
 
 function normalizeLanguageConfidence(value) {
+    if (value === null || value === undefined || value === "") return null;
     const confidence = Number(value);
     if (!Number.isFinite(confidence)) return null;
     return Math.max(0, Math.min(1, confidence > 1 && confidence <= 100 ? confidence / 100 : confidence));

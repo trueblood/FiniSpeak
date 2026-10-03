@@ -63,14 +63,14 @@ def _normalize_confidence(value):
     return max(0.0, min(1.0, confidence))
 
 
-def _language_details(transcription, fallback=None):
+def _language_details(transcription, fallback=None, fallback_confidence=None):
     for language in getattr(transcription, "languages", None) or []:
         code = _field(language, "code") or _field(language, "language") or _field(language, "name")
         if code:
             confidence = _field(language, "confidence")
             if confidence is None:
                 confidence = _field(language, "probability", _field(language, "score"))
-            return str(code), _normalize_confidence(confidence)
+            return str(code), _normalize_confidence(confidence) if confidence is not None else _normalize_confidence(fallback_confidence)
     direct = (
         _field(transcription, "language")
         or _field(transcription, "detected_language")
@@ -82,8 +82,8 @@ def _language_details(transcription, fallback=None):
             or _field(transcription, "languageConfidence")
             or _field(transcription, "confidence")
         )
-        return str(direct), _normalize_confidence(confidence)
-    return fallback, 1.0 if fallback else None
+        return str(direct), _normalize_confidence(confidence) if confidence is not None else _normalize_confidence(fallback_confidence)
+    return fallback, _normalize_confidence(fallback_confidence)
 
 
 def _detect_language_from_text(text: str):
@@ -132,9 +132,9 @@ def _detect_language_from_text(text: str):
         return None, None
 
 
-def transcribe_pcm(raw: bytes, sample_rate: int, language: str | None = None) -> dict:
+def transcribe_pcm(raw: bytes, sample_rate: int, language: str | None = None, language_confidence: float | None = None) -> dict:
     if len(raw) < 3200:
-        return {"text": "", "language": language, "languageConfidence": 1.0 if language else None}
+        return {"text": "", "language": language, "languageConfidence": _normalize_confidence(language_confidence)}
 
     model = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-transcribe").strip() or "gpt-transcribe"
     prompt = os.getenv(
@@ -162,12 +162,16 @@ def transcribe_pcm(raw: bytes, sample_rate: int, language: str | None = None) ->
         request["language"] = language
     transcription = _get_client().audio.transcriptions.create(**request)
     text = str(getattr(transcription, "text", "") or "").strip()
-    detected_language, language_confidence = _language_details(transcription, language)
-    if not detected_language and text:
-        detected_language, language_confidence = _detect_language_from_text(text)
+    detected_language, detected_confidence = _language_details(transcription, language, language_confidence)
+    if text and (not detected_language or detected_confidence is None):
+        classified_language, classified_confidence = _detect_language_from_text(text)
+        if classified_language:
+            detected_language = classified_language
+        if classified_confidence is not None:
+            detected_confidence = classified_confidence
     print(
         f"[Transcription] OpenAI completed in {time.time() - started:.1f}s "
-        f"(language={detected_language or 'unknown'}, confidence={language_confidence}): {text!r}",
+        f"(language={detected_language or 'unknown'}, confidence={detected_confidence}): {text!r}",
         flush=True,
     )
-    return {"text": text, "language": detected_language, "languageConfidence": language_confidence}
+    return {"text": text, "language": detected_language, "languageConfidence": detected_confidence}
