@@ -56,7 +56,9 @@ def handle_socket(ws):
                 ws.send(json.dumps({"type": "processing"}))
                 result = transcribe_pcm(raw, sample_rate, language)
                 if result["text"]:
-                    ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language")}))
+                    if result.get("language"):
+                        language = result["language"]
+                    ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence")}))
                 else:
                     ws.send(json.dumps({"type": "listening"}))
 
@@ -64,7 +66,7 @@ def handle_socket(ws):
             ws.send(json.dumps({"type": "processing"}))
             result = transcribe_pcm(bytes(buffer), sample_rate, language)
             if result["text"]:
-                ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language")}))
+                ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence")}))
     except urllib.error.HTTPError as exc:
         try:
             detail = exc.read().decode("utf-8")

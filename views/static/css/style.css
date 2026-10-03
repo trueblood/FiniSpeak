@@ -89,6 +89,18 @@ code { background:#e2e8f0; padding:3px 6px; border-radius:6px; }
 .transcript-card { max-width:1300px; margin:28px auto 0; background:#fff; border:1px solid var(--border); border-radius:20px; padding:22px; }
 .transcript-header { display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); padding-bottom:14px; }
 .transcript-header h3 { margin:.2rem 0 0; }
+.transcript-indicators { display:flex; align-items:center; justify-content:flex-end; gap:14px; }
+.language-detection { min-width:190px; display:grid; gap:2px; padding:9px 12px; border:1px solid #a7d7bd; border-radius:12px; background:#edf9f2; text-align:left; }
+.language-detection.pending { border-color:var(--border); background:#f8fafc; }
+.language-detection.low { border-color:#f0c36c; background:#fff8e8; }
+.language-detection-label { color:var(--muted); font-size:.68rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+.language-detection strong { color:var(--dark); font-size:.9rem; }
+.language-detection span:last-child { color:var(--muted); font-size:.72rem; }
+.language-confirmation { margin:14px 0 4px; padding:13px; border:1px solid #f0c36c; border-radius:12px; background:#fff8e8; }
+.language-confirmation label { margin:0 0 9px; font-size:.84rem; }
+.language-confirmation > div { display:flex; align-items:center; gap:9px; }
+.language-confirmation select { max-width:250px; padding:10px 12px; }
+.language-confirmation button { padding:10px 15px; }
 .transcription-status { font-size:.88rem; font-weight:750; color:var(--muted); }
 .transcript-list { max-height:300px; overflow:auto; padding:10px 0; }
 .transcript-line { padding:12px 0; border-bottom:1px solid var(--border); }
@@ -98,6 +110,7 @@ code { background:#e2e8f0; padding:3px 6px; border-radius:6px; }
 .transcript-text { margin:5px 0 0; color:var(--dark); line-height:1.5; }
 .transcript-empty,.transcript-note { font-size:.9rem; }
 .transcript-note { margin:10px 0 0; border-top:1px solid var(--border); padding-top:12px; }
+@media (max-width:760px) { .transcript-header { align-items:flex-start; flex-direction:column; }.transcript-indicators { width:100%; align-items:stretch; flex-direction:column; }.language-detection { min-width:0; }.language-confirmation > div { align-items:stretch; flex-direction:column; }.language-confirmation select { max-width:none; } }
 
 /* Dashboard history + incoming call experience */
 .conversation-history { display: grid; gap: .75rem; margin-top: 1rem; }
