@@ -32,6 +32,8 @@ python -m unittest discover -s tests
 - Mute, camera, request translator, copy Call ID, and end-call controls
 - STUN configured for development; TURN is intentionally deferred
 - Firebase Storage for interpreter profile photos; FCM is intentionally deferred
+- Interpreter onboarding with draft, profile-complete, submitted, changes-requested, rejected, and verified states
+- Private credential evidence uploads with interpreter view/remove controls and administrator review
 
 ## Run locally
 
@@ -67,11 +69,17 @@ Deploy both rule files after Storage is created:
 firebase deploy --only firestore:rules,storage --project finispeak
 ```
 
+## Interpreter onboarding and verification
+
+Interpreters can save an incomplete draft, save a complete profile, or submit a complete profile and credential evidence for administrator review. Submission requires a name, bio, language, specialty, years of experience, valid weekly availability, at least one credential, and at least one credential document. Administrators can approve the profile or request changes. Approved profiles become visible in discovery; a returned profile can be edited and submitted again.
+
+Credential files are private under `interpreter-credentials/{userId}/`. Interpreters can view or remove their own files. To replace a file, remove it, choose the replacement, and save or resubmit the profile.
+
 For local testing, create three accounts in separate browser profiles/incognito contexts: Customer 1, Customer 2, and Translator. Customer 1 creates a call using Customer 2's email address. Customer 2 joins using the Call ID. Press Request Translator, then the Translator joins using the same Call ID.
 
 ## Production work still required
 
-Add TURN/coturn, stricter Firestore security rules, server-authoritative call state, translator discovery/availability, billing, push notifications, verification, abuse controls, and mobile incoming-call behavior before production use.
+Add TURN/coturn, stricter Firestore security rules, server-authoritative call state, billing, push notifications, abuse controls, and mobile incoming-call behavior before production use. The interpreter verification workflow exists, but still needs a deployed Firebase end-to-end acceptance pass before production.
 
 
 ## Customer lookup
@@ -110,3 +118,5 @@ For a GPU deployment, use a supported CUDA environment and set `WHISPER_DEVICE=c
 Authenticated users are now routed to their dashboard. Customers receive a live Firestore-backed incoming-call popup with Accept/Decline instead of manually entering a Call ID. Translators receive interpretation-request popups and can join the existing three-person call. The dashboard also loads previous calls for the signed-in participant and opens saved `calls/{callId}/transcripts` in a transcript viewer.
 
 The existing development Firestore rules permit these call queries. Before production, tighten call reads/updates and translator request visibility/state transitions.
+
+## Bug Crap

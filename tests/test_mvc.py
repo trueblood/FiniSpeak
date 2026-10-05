@@ -30,6 +30,17 @@ class MvcRouteTests(unittest.TestCase):
             "/ws/transcription",
         }.issubset(paths))
 
+    def test_interpreter_onboarding_exposes_explicit_review_workflow(self):
+        response = self.client.get("/")
+        html = response.get_data(as_text=True)
+        self.assertIn('id="submitInterpreterVerification"', html)
+        self.assertIn('data-wizard-step="0"', html)
+        self.assertIn('data-wizard-step="3"', html)
+        self.assertIn('class="wizard-step-icon"', html)
+        self.assertIn('id="interpreterWizardNext"', html)
+        self.assertIn('id="interpreterWizardBack"', html)
+        self.assertNotIn('<select id="interpreterCredentialStatus">', html)
+
     def test_call_validation_stays_in_controller(self):
         self.assertEqual(self.client.post("/api/calls/", json={}).status_code, 400)
         response = self.client.post(

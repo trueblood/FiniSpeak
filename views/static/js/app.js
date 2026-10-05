@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-storage.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-storage.js";
 
 const $ = (id) => document.getElementById(id);
 const views = ["heroView", "authView", "dashboardView", "profileView", "callView"];
@@ -14,6 +14,8 @@ let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterPr
 let featuredProfilesData = [];
 let callAttemptSequence = 0;
 let routedLanguageCalls = new Set();
+let pendingCredentialRemovalPaths = new Set();
+let currentInterpreterWizardStep = 0;
 let activeModal = null, modalReturnFocus = null;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
@@ -112,7 +114,14 @@ function bindUI() {
     $("profileForm").onsubmit = saveProfile;
     $("interpreterProfileForm").onsubmit = (e) => saveInterpreterProfile(e, false);
     $("saveInterpreterDraft").onclick = (e) => saveInterpreterProfile(e, true);
+    $("submitInterpreterVerification").onclick = (e) => saveInterpreterProfile(e, false, true);
+    $("interpreterWizardBack").onclick = () => showInterpreterWizardStep(currentInterpreterWizardStep - 1);
+    $("interpreterWizardNext").onclick = advanceInterpreterWizard;
+    document.querySelectorAll("[data-wizard-step]").forEach(button => {
+        button.onclick = () => showInterpreterWizardStep(Number(button.dataset.wizardStep));
+    });
     $("interpreterPhoto").onchange = previewInterpreterPhoto;
+    $("interpreterCredentialFiles").onchange = () => updateInterpreterCompletion();
     $("interpreterProfileForm").addEventListener("input", () => updateInterpreterCompletion());
     Object.keys(taxonomyUI).forEach(kind => {
         const input = $(taxonomyUI[kind].input);
@@ -248,7 +257,7 @@ async function submitAuth(e) {
                 await setDoc(doc(db, "translators", result.user.uid), {
                     uid: result.user.uid, displayName: name, email: normalizedEmail,
                     onboardingStatus: "draft", verificationStatus: "unverified",
-                    languages: [], dialects: [], specialties: [], credentials: [],
+                    languages: [], dialects: [], specialties: [], credentials: [], credentialDocuments: [], credentialStatus: "unsubmitted",
                     yearsExperience: 0, availability: { days: [], start: "", end: "", availableNow: false },
                     rating: null, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
                 }, { merge: true });
@@ -1066,7 +1075,8 @@ function hydrateInterpreterProfile(profile = {}) {
     setSelectedTags("specialties", p.specialties || []);
     $("interpreterYears").value = p.yearsExperience ?? "";
     $("interpreterCredentials").value = (p.credentials || []).join("\n");
-    $("interpreterCredentialStatus").value = p.credentialStatus || "unsubmitted";
+    pendingCredentialRemovalPaths = new Set();
+    renderCredentialReviewStatus(p);
     renderCredentialDocuments(p.credentialDocuments || []);
     const availability = p.availability || {};
     document.querySelectorAll('input[name="availabilityDay"]').forEach(input => input.checked = (availability.days || []).includes(input.value));
@@ -1075,16 +1085,96 @@ function hydrateInterpreterProfile(profile = {}) {
     $("interpreterAvailableNow").checked = Boolean(availability.availableNow);
     setInterpreterPhoto(p.photoUrl || "");
     updateInterpreterCompletion();
+    renderInterpreterLifecycle(p);
     renderTranslatorDashboard();
 }
 
 function renderCredentialDocuments(documents = []) {
     const container = $("credentialDocumentList");
-    if (!documents.length) {
+    const visibleDocuments = documents.filter(document => !pendingCredentialRemovalPaths.has(document.path));
+    if (!visibleDocuments.length) {
         container.innerHTML = "<p>No credential documents uploaded yet.</p>";
         return;
     }
-    container.innerHTML = documents.map(document => `<span class="credential-document">${escapeHtml(document.name || "Credential document")}</span>`).join("");
+    container.replaceChildren(...visibleDocuments.map(document => {
+        const row = document.createElement("span");
+        row.className = "credential-document";
+        const name = document.createElement("span");
+        name.textContent = document.name || "Credential document";
+        const view = document.createElement("button");
+        view.className = "text-button";
+        view.type = "button";
+        view.textContent = "View";
+        view.onclick = () => openInterpreterCredentialDocument(document, view);
+        const remove = document.createElement("button");
+        remove.className = "text-button reject-action";
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.onclick = () => {
+            if (document.path) pendingCredentialRemovalPaths.add(document.path);
+            renderCredentialDocuments(documents);
+            updateInterpreterCompletion();
+            $("interpreterProfileStatus").textContent = `${document.name || "Credential document"} will be removed when you save.`;
+        };
+        row.append(name, view, remove);
+        return row;
+    }));
+}
+
+async function openInterpreterCredentialDocument(document, button) {
+    if (!document.path || !storage) return;
+    button.disabled = true;
+    try {
+        const url = await getDownloadURL(storageRef(storage, document.path));
+        window.open(url, "_blank", "noopener");
+    } catch (error) {
+        $("interpreterProfileStatus").textContent = `Could not open credential document: ${error.message}`;
+    } finally { button.disabled = false; }
+}
+
+function renderCredentialReviewStatus(profile = {}) {
+    const labels = {
+        unsubmitted: "Not submitted",
+        submitted: "Pending review",
+        approved: "Approved",
+        needs_changes: "Changes requested",
+        rejected: "Rejected"
+    };
+    const status = profile.verificationStatus === "verified" ? "approved" : (profile.credentialStatus || "unsubmitted");
+    $("interpreterCredentialStatus").textContent = labels[status] || status.replace(/_/g, " ");
+}
+
+function interpreterLifecycleStatus(profile = {}) {
+    if (profile.verificationStatus === "verified") return "verified";
+    if (profile.credentialStatus === "submitted" || profile.onboardingStatus === "submitted") return "submitted";
+    if (profile.verificationStatus === "needs_changes" || profile.verificationStatus === "rejected") return profile.verificationStatus;
+    if (profile.onboardingStatus === "complete") return "complete";
+    return "draft";
+}
+
+function renderInterpreterLifecycle(profile = {}) {
+    const status = interpreterLifecycleStatus(profile);
+    const labels = {
+        draft: "Not submitted",
+        complete: "Ready to submit",
+        submitted: "Pending review",
+        verified: "Verified",
+        needs_changes: "Changes requested",
+        rejected: "Not approved"
+    };
+    const messages = {
+        draft: "Finish the steps below, then submit your profile for review.",
+        complete: "Your profile is complete and ready to submit for verification.",
+        submitted: "Your profile and credential evidence are pending administrator review.",
+        verified: "Your interpreter profile is verified and visible in discovery.",
+        needs_changes: "An administrator requested changes. Update your profile or credentials, then submit again.",
+        rejected: "Verification was not approved. Update your information before submitting again."
+    };
+    const notes = ["needs_changes", "rejected"].includes(status) && profile.verificationNotes
+        ? ` Reviewer note: ${profile.verificationNotes}`
+        : "";
+    $("interpreterVerificationSummary").textContent = labels[status] || labels.draft;
+    $("interpreterLifecycleText").textContent = (messages[status] || messages.draft) + notes;
 }
 
 async function uploadCredentialDocuments(existing = []) {
@@ -1117,7 +1207,7 @@ async function loadInterpreterProfile() {
             email: (currentUser.email || "").toLowerCase(),
             onboardingStatus: "draft",
             verificationStatus: "unverified",
-            languages: [], dialects: [], specialties: [], credentials: [],
+            languages: [], dialects: [], specialties: [], credentials: [], credentialDocuments: [], credentialStatus: "unsubmitted",
             yearsExperience: 0,
             availability: { days: [], start: "", end: "", availableNow: false, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" },
             rating: null, ratingCount: 0,
@@ -1190,6 +1280,7 @@ function previewInterpreterPhoto() {
 }
 
 function interpreterFormData() {
+    const experienceValue = $("interpreterYears").value.trim();
     return {
         displayName: $("interpreterFullName").value.trim(),
         phone: $("interpreterPhone").value.trim(),
@@ -1197,9 +1288,8 @@ function interpreterFormData() {
         languages: [...selectedTags.languages],
         dialects: [...selectedTags.dialects],
         specialties: [...selectedTags.specialties],
-        yearsExperience: Number($("interpreterYears").value || 0),
+        yearsExperience: experienceValue === "" ? null : Number(experienceValue),
         credentials: splitList($("interpreterCredentials").value),
-        credentialStatus: $("interpreterCredentialStatus").value,
         availability: {
             days: [...document.querySelectorAll('input[name="availabilityDay"]:checked')].map(input => input.value),
             start: $("availabilityStart").value,
@@ -1210,50 +1300,117 @@ function interpreterFormData() {
     };
 }
 
+function interpreterWizardSteps(data = interpreterFormData()) {
+    const hasValidExperience = Number.isFinite(data.yearsExperience) && data.yearsExperience >= 0 && data.yearsExperience <= 80;
+    const hasValidSchedule = data.availability.days.length && data.availability.start && data.availability.end && data.availability.start < data.availability.end;
+    const existingDocuments = (currentInterpreterProfile?.credentialDocuments || []).filter(document => !pendingCredentialRemovalPaths.has(document.path));
+    const selectedDocuments = [...($("interpreterCredentialFiles").files || [])];
+    return [
+        { label: "Personal info", complete: Boolean(data.displayName && data.bio), message: "Add your full name and professional bio before continuing." },
+        { label: "Languages", complete: Boolean(data.languages.length && data.specialties.length), message: "Add at least one language and one specialty before continuing." },
+        { label: "Credentials", complete: Boolean(hasValidExperience && data.credentials.length && (existingDocuments.length || selectedDocuments.length)), message: "Add your years of experience, at least one credential, and a supporting document before continuing." },
+        { label: "Availability", complete: Boolean(hasValidSchedule), message: "Choose at least one available day and a valid start and end time before continuing." }
+    ];
+}
+
 function interpreterCompletion(data = interpreterFormData()) {
-    const checks = [data.displayName, data.bio, data.languages.length, data.specialties.length, Number.isFinite(data.yearsExperience), data.availability.days.length];
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+    const steps = interpreterWizardSteps(data);
+    return Math.round((steps.filter(step => step.complete).length / steps.length) * 100);
+}
+
+function renderInterpreterWizard(data = interpreterFormData()) {
+    const steps = interpreterWizardSteps(data);
+    document.querySelectorAll("[data-wizard-step]").forEach((button, index) => {
+        const step = steps[index];
+        const active = index === currentInterpreterWizardStep;
+        button.classList.toggle("complete", step.complete);
+        button.classList.toggle("incomplete", !step.complete);
+        button.classList.toggle("active", active);
+        button.querySelector(".wizard-step-icon").textContent = step.complete ? "✓" : "✕";
+        button.setAttribute("aria-label", `${step.label}: ${step.complete ? "complete" : "incomplete"}`);
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+    });
+    document.querySelectorAll("[data-wizard-panel]").forEach(panel => {
+        panel.classList.toggle("hidden", Number(panel.dataset.wizardPanel) !== currentInterpreterWizardStep);
+    });
+    $("interpreterWizardBack").disabled = currentInterpreterWizardStep === 0;
+    $("interpreterWizardNext").classList.toggle("hidden", currentInterpreterWizardStep === steps.length - 1);
+    $("interpreterFinalActions").classList.toggle("hidden", currentInterpreterWizardStep !== steps.length - 1);
+    $("interpreterWizardPosition").textContent = `Step ${currentInterpreterWizardStep + 1} of ${steps.length}`;
+    return steps;
+}
+
+function showInterpreterWizardStep(index, focus = true) {
+    currentInterpreterWizardStep = Math.max(0, Math.min(3, Number(index) || 0));
+    renderInterpreterWizard();
+    if (focus) document.querySelector(`[data-wizard-panel="${currentInterpreterWizardStep}"] h3`)?.focus();
+}
+
+function advanceInterpreterWizard() {
+    const steps = renderInterpreterWizard();
+    const current = steps[currentInterpreterWizardStep];
+    if (!current.complete) {
+        $("interpreterProfileStatus").textContent = current.message;
+        return;
+    }
+    $("interpreterProfileStatus").textContent = "";
+    showInterpreterWizardStep(currentInterpreterWizardStep + 1);
+}
+
+function verificationSubmissionError(data) {
+    const incompleteStep = interpreterWizardSteps(data).find(step => !step.complete);
+    if (incompleteStep) return incompleteStep.message;
+    return "";
 }
 
 function updateInterpreterCompletion(data = interpreterFormData()) {
     const pct = interpreterCompletion(data);
+    renderInterpreterWizard(data);
     $("interpreterProgressBar").style.width = `${pct}%`;
-    $("interpreterProgressText").textContent = pct === 100 ? "Your required interpreter profile information is complete." : `${pct}% complete · Add the remaining required information.`;
+    const completeSteps = interpreterWizardSteps(data).filter(step => step.complete).length;
+    $("interpreterProgressText").textContent = pct === 100 ? "All 4 profile steps are complete." : `${completeSteps} of 4 steps complete · Finish the steps marked ✕.`;
     $("interpreterCompletionBadge").textContent = pct === 100 ? "Profile complete" : "Not complete";
     $("interpreterCompletionBadge").classList.toggle("pending-badge", pct !== 100);
     return pct;
 }
 
-function setInterpreterSaveLoading(loading, draft = false) {
+function setInterpreterSaveLoading(loading, draft = false, submitForVerification = false) {
     const profileButton = $("saveInterpreterProfile");
     const draftButton = $("saveInterpreterDraft");
-    const activeButton = draft ? draftButton : profileButton;
+    const submitButton = $("submitInterpreterVerification");
+    const activeButton = submitForVerification ? submitButton : (draft ? draftButton : profileButton);
     profileButton.disabled = loading;
     draftButton.disabled = loading;
+    submitButton.disabled = loading;
     profileButton.setAttribute("aria-busy", String(loading && !draft));
     draftButton.setAttribute("aria-busy", String(loading && draft));
+    submitButton.setAttribute("aria-busy", String(loading && submitForVerification));
 
     if (loading) {
         const spinner = document.createElement("span");
         spinner.className = "button-spinner";
         spinner.setAttribute("aria-hidden", "true");
-        activeButton.replaceChildren(spinner, document.createTextNode(draft ? "Saving draft…" : "Saving profile…"));
+        activeButton.replaceChildren(spinner, document.createTextNode(submitForVerification ? "Submitting…" : (draft ? "Saving draft…" : "Saving profile…")));
         return;
     }
 
-    profileButton.textContent = "Save interpreter profile";
+    profileButton.textContent = "Save profile";
     draftButton.textContent = "Save draft";
+    submitButton.textContent = "Submit for verification";
 }
 
-async function saveInterpreterProfile(e, draft = false) {
+async function saveInterpreterProfile(e, draft = false, submitForVerification = false) {
     e?.preventDefault?.();
     if (currentProfile?.role !== "translator") return;
     const status = $("interpreterProfileStatus");
     const data = interpreterFormData();
     const completion = interpreterCompletion(data);
     if (!draft && completion < 100) { status.textContent = "Complete all required interpreter fields before finishing onboarding."; updateInterpreterCompletion(data); return; }
-    status.textContent = "Saving interpreter profile…";
-    setInterpreterSaveLoading(true, draft);
+    const submissionError = submitForVerification ? verificationSubmissionError(data) : "";
+    if (submissionError) { status.textContent = submissionError; updateInterpreterCompletion(data); return; }
+    status.textContent = submitForVerification ? "Submitting profile for verification…" : "Saving interpreter profile…";
+    setInterpreterSaveLoading(true, draft, submitForVerification);
     try {
         let photoUrl = currentInterpreterProfile?.photoUrl || "";
         let photoUploadError = null;
@@ -1274,16 +1431,25 @@ async function saveInterpreterProfile(e, draft = false) {
                 console.error("Interpreter photo upload failed:", error);
             }
         }
-        const credentialDocuments = await uploadCredentialDocuments(currentInterpreterProfile?.credentialDocuments || []);
+        const existingCredentialDocuments = (currentInterpreterProfile?.credentialDocuments || []).filter(document => !pendingCredentialRemovalPaths.has(document.path));
+        const credentialDocuments = await uploadCredentialDocuments(existingCredentialDocuments);
+        const credentialStatus = submitForVerification ? "submitted" : (currentInterpreterProfile?.credentialStatus || "unsubmitted");
+        const onboardingStatus = submitForVerification
+            ? "submitted"
+            : (currentInterpreterProfile?.verificationStatus === "verified"
+                ? (currentInterpreterProfile.onboardingStatus || "verified")
+                : (draft ? "draft" : (completion === 100 ? "complete" : "draft")));
         const payload = {
             ...data, uid: currentUser.uid, email: (currentProfile.email || currentUser.email || "").toLowerCase(), photoUrl,
-            credentialDocuments,
-            onboardingStatus: completion === 100 ? "complete" : "draft",
+            credentialDocuments, credentialStatus, onboardingStatus,
             verificationStatus: currentInterpreterProfile?.verificationStatus || "unverified",
             rating: currentInterpreterProfile?.rating ?? null, ratingCount: currentInterpreterProfile?.ratingCount || 0,
             updatedAt: serverTimestamp()
         };
         await setDoc(doc(db, "translators", currentUser.uid), payload, { merge: true });
+        const removalPaths = [...pendingCredentialRemovalPaths];
+        pendingCredentialRemovalPaths = new Set();
+        if (storage) await Promise.allSettled(removalPaths.map(path => deleteObject(storageRef(storage, path))));
         if (data.displayName && data.displayName !== currentProfile.displayName) {
             await updateProfile(currentUser, { displayName: data.displayName });
             await setDoc(doc(db, "users", currentUser.uid), { displayName: data.displayName, updatedAt: serverTimestamp() }, { merge: true });
@@ -1299,17 +1465,19 @@ async function saveInterpreterProfile(e, draft = false) {
         }
         $("interpreterCredentialFiles").value = "";
         renderCredentialDocuments(credentialDocuments);
+        renderCredentialReviewStatus(currentInterpreterProfile);
+        renderInterpreterLifecycle(currentInterpreterProfile);
         updateInterpreterCompletion(data);
         renderTranslatorDashboard();
         if (photoUploadError) {
             status.textContent = `Profile saved, but the photo could not upload: ${photoUploadError.message}. Your selected photo is still here to retry.`;
         } else {
-            status.textContent = completion === 100 ? "Interpreter profile saved. Your onboarding information is complete." : "Draft saved. You can finish onboarding later.";
+            status.textContent = submitForVerification ? "Profile submitted for verification. You will see the review outcome here." : (completion === 100 ? "Interpreter profile saved. It is ready to submit for verification." : "Draft saved. You can finish onboarding later.");
         }
     } catch (error) {
         status.textContent = `Could not save interpreter profile: ${error.message}`;
     } finally {
-        setInterpreterSaveLoading(false, draft);
+        setInterpreterSaveLoading(false, draft, submitForVerification);
     }
 }
 

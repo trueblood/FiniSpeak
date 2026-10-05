@@ -194,13 +194,20 @@
                     <div class="dashboard-heading"><div><span class="eyebrow">Interpreter onboarding</span><h2>Interpreter profile</h2><p>Complete your professional profile so FiniSpeak can match you with the right conversations.</p></div><span id="interpreterCompletionBadge" class="status-badge pending-badge">Not complete</span></div>
                     <div class="onboarding-progress" aria-label="Interpreter profile completion"><div id="interpreterProgressBar" class="onboarding-progress-bar"></div></div>
                     <p id="interpreterProgressText" class="field-help">Complete the required fields below.</p>
+                    <div class="verification-banner"><span>Verification status</span><strong id="interpreterVerificationSummary">Not submitted</strong><p id="interpreterLifecycleText" aria-live="polite">Finish the steps below, then submit your profile for review.</p></div>
+                    <ol class="profile-wizard-steps" aria-label="Interpreter profile steps">
+                        <li><button type="button" data-wizard-step="0" aria-current="step"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 1</small>Personal info</span></button></li>
+                        <li><button type="button" data-wizard-step="1"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 2</small>Languages</span></button></li>
+                        <li><button type="button" data-wizard-step="2"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 3</small>Credentials</span></button></li>
+                        <li><button type="button" data-wizard-step="3"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 4</small>Availability</span></button></li>
+                    </ol>
                     <form id="interpreterProfileForm" class="interpreter-form">
-                        <div class="card form-section"><span class="eyebrow">1 · Personal information</span><h3>About you</h3>
+                        <div class="card form-section" data-wizard-panel="0"><span class="eyebrow">Step 1 of 4</span><h3 tabindex="-1">Personal information</h3>
                             <div class="profile-photo-row"><div id="interpreterPhotoPreview" class="interpreter-photo-placeholder" aria-hidden="true">Photo</div><div><label for="interpreterPhoto">Profile photo</label><input id="interpreterPhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="field-help">JPG, PNG, or WebP. Your current photo stays in place unless you choose a new one.</p></div></div>
                             <div class="form-grid"><label for="interpreterFullName">Full name<input id="interpreterFullName" autocomplete="name" required></label><label for="interpreterPhone">Phone number<input id="interpreterPhone" type="tel" autocomplete="tel" placeholder="(555) 555-5555"></label></div>
                             <label for="interpreterBio">Professional bio<textarea id="interpreterBio" rows="4" maxlength="800" placeholder="Tell customers about your interpretation background and approach." required></textarea></label>
                         </div>
-                        <div class="card form-section"><span class="eyebrow">2 · Language expertise</span><h3>Languages and specialties</h3>
+                        <div class="card form-section hidden" data-wizard-panel="1"><span class="eyebrow">Step 2 of 4</span><h3 tabindex="-1">Languages and specialties</h3>
                             <div class="tag-field" data-tag-field="languages">
                                 <label for="interpreterLanguages">Languages</label>
                                 <div id="interpreterLanguagesTags" class="tag-list" aria-live="polite"></div>
@@ -218,19 +225,20 @@
                                 <div class="tag-entry-row"><div class="tag-entry-input"><input id="interpreterSpecialties" placeholder="Search or add a specialty" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="specialtiesOptions"><div id="specialtiesOptions" class="tag-suggestions hidden" role="listbox"></div></div><button class="secondary tag-add-button" type="button" data-add-tag="specialties">Add</button></div>
                             </div>
                         </div>
-                        <div class="card form-section"><span class="eyebrow">3 · Experience & credentials</span><h3>Professional background</h3>
-                            <div class="form-grid"><label for="interpreterYears">Years of experience<input id="interpreterYears" type="number" min="0" max="80" step="1" required></label><label for="interpreterCredentialStatus">Credential status<select id="interpreterCredentialStatus"><option value="unsubmitted">Not submitted</option><option value="submitted">Submitted for verification</option></select></label></div>
+                        <div class="card form-section hidden" data-wizard-panel="2"><span class="eyebrow">Step 3 of 4</span><h3 tabindex="-1">Experience and credentials</h3>
+                            <div class="form-grid"><label for="interpreterYears">Years of experience<input id="interpreterYears" type="number" min="0" max="80" step="1" required></label><div><span class="field-label">Credential review</span><strong id="interpreterCredentialStatus" class="credential-review-status">Not submitted</strong></div></div>
                             <label for="interpreterCredentials">Credentials / certifications<textarea id="interpreterCredentials" rows="4" placeholder="One credential per line, for example: CCHI Certified Healthcare Interpreter"></textarea></label>
                             <label for="interpreterCredentialFiles">Credential documents<input id="interpreterCredentialFiles" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" aria-describedby="credentialFilesHelp"></label>
-                            <p id="credentialFilesHelp" class="field-help">Upload PDF, JPG, PNG, or WebP evidence. Each private document must be under 10 MB and is visible only to you and administrators.</p>
+                            <p id="credentialFilesHelp" class="field-help">Upload PDF, JPG, PNG, or WebP evidence. Each private document must be under 10 MB and is visible only to you and administrators. To replace a file, remove it and choose the replacement before saving.</p>
                             <div id="credentialDocumentList" class="credential-document-list" aria-live="polite"></div>
                         </div>
-                        <div class="card form-section"><span class="eyebrow">4 · Availability</span><h3>When can you interpret?</h3>
+                        <div class="card form-section hidden" data-wizard-panel="3"><span class="eyebrow">Step 4 of 4</span><h3 tabindex="-1">Availability</h3>
                             <fieldset><legend>Available days</legend><div class="day-options"><label><input type="checkbox" name="availabilityDay" value="monday"> Monday</label><label><input type="checkbox" name="availabilityDay" value="tuesday"> Tuesday</label><label><input type="checkbox" name="availabilityDay" value="wednesday"> Wednesday</label><label><input type="checkbox" name="availabilityDay" value="thursday"> Thursday</label><label><input type="checkbox" name="availabilityDay" value="friday"> Friday</label><label><input type="checkbox" name="availabilityDay" value="saturday"> Saturday</label><label><input type="checkbox" name="availabilityDay" value="sunday"> Sunday</label></div></fieldset>
                             <div class="form-grid"><label for="availabilityStart">Available from<input id="availabilityStart" type="time"></label><label for="availabilityEnd">Available until<input id="availabilityEnd" type="time"></label></div>
                             <label class="inline-check"><input id="interpreterAvailableNow" type="checkbox"> Available for interpretation requests now</label>
                         </div>
-                        <div class="form-actions"><button id="saveInterpreterProfile" type="submit">Save interpreter profile</button><button id="saveInterpreterDraft" class="secondary" type="button">Save draft</button></div>
+                        <div class="wizard-navigation"><button id="interpreterWizardBack" class="secondary" type="button">Back</button><span id="interpreterWizardPosition">Step 1 of 4</span><button id="saveInterpreterDraft" class="secondary" type="button">Save draft</button><button id="interpreterWizardNext" type="button">Next</button></div>
+                        <div id="interpreterFinalActions" class="form-actions hidden"><button id="submitInterpreterVerification" type="button">Submit for verification</button><button id="saveInterpreterProfile" class="secondary" type="submit">Save profile</button></div>
                     </form>
                     <p id="interpreterProfileStatus" class="status" aria-live="polite"></p>
                 </div>

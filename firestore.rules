@@ -26,6 +26,31 @@ service cloud.firestore {
         && request.resource.data.active == true && request.resource.data.seeded == false
         && request.resource.data.createdBy == request.auth.uid && request.resource.data.createdAt == request.time;
     }
+    function validInterpreterSubmission() {
+      let profile = request.resource.data;
+      return profile.displayName is string && profile.displayName.size() > 0
+        && profile.bio is string && profile.bio.size() > 0
+        && profile.languages is list && profile.languages.size() > 0
+        && profile.specialties is list && profile.specialties.size() > 0
+        && profile.yearsExperience is number && profile.yearsExperience >= 0 && profile.yearsExperience <= 80
+        && profile.credentials is list && profile.credentials.size() > 0
+        && profile.credentialDocuments is list && profile.credentialDocuments.size() > 0
+        && profile.availability is map
+        && profile.availability.days is list && profile.availability.days.size() > 0
+        && profile.availability.start is string && profile.availability.start.size() > 0
+        && profile.availability.end is string && profile.availability.end.size() > 0
+        && profile.onboardingStatus == 'submitted';
+    }
+    function validInterpreterOwnerUpdate() {
+      let credentialStatus = request.resource.data.credentialStatus;
+      let onboardingStatus = request.resource.data.onboardingStatus;
+      return credentialStatus in ['unsubmitted', 'submitted', 'needs_changes', 'approved', 'rejected']
+        && (credentialStatus == 'submitted'
+          || (credentialStatus == 'unsubmitted' && !('credentialStatus' in resource.data))
+          || ('credentialStatus' in resource.data && credentialStatus == resource.data.credentialStatus))
+        && (onboardingStatus == resource.data.onboardingStatus || onboardingStatus in ['draft', 'complete', 'submitted'])
+        && (credentialStatus != 'submitted' || validInterpreterSubmission());
+    }
 
     match /users/{userId} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
@@ -49,7 +74,7 @@ service cloud.firestore {
           'displayName', 'email', 'phone', 'bio', 'languages', 'dialects', 'specialties',
           'yearsExperience', 'credentials', 'credentialDocuments', 'credentialStatus', 'availability',
           'photoUrl', 'onboardingStatus', 'updatedAt'
-        ]));
+        ]) && validInterpreterOwnerUpdate());
       allow delete: if isAdmin() || (isActive() && request.auth.uid == translatorId);
 
       match /reviews/{reviewId} {

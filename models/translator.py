@@ -72,8 +72,11 @@ class TranslatorModel:
         ref = get_db().collection(cls.collection_name).document(translator_id)
         if not ref.get().exists:
             return None
+        credential_status = "approved" if status == "verified" else status
         ref.set({
             "verificationStatus": status,
+            "credentialStatus": credential_status,
+            "onboardingStatus": status,
             "verificationNotes": notes,
             "verifiedBy": reviewer_id,
             "verifiedAt": datetime.now(timezone.utc),
