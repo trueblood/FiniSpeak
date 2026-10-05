@@ -13,11 +13,27 @@ LANGUAGE_NAMES = {
 }
 
 
+def _confidence(value, fallback=0.75):
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _recommendation(profile, language_confidence):
+    availability = profile.get("availability", {})
+    available_now = bool(availability.get("availableNow"))
+    rating = max(0.0, min(5.0, float(profile.get("rating") or 0)))
+    match_confidence = min(0.99, language_confidence * 0.7 + (0.2 if available_now else 0.08) + (rating / 5) * 0.1)
+    return {**profile, "matchConfidence": round(match_confidence, 2)}
+
+
 def recommend():
     identity, error = identity_or_response()
     if error:
         return error
     data = json_body()
+    language_confidence = _confidence(data.get("languageConfidence"))
     detected = str(data.get("detectedLanguage") or "").strip().casefold()
     language = LANGUAGE_NAMES.get(detected, detected.title())
     if not language:
@@ -30,12 +46,13 @@ def recommend():
     profiles = TranslatorModel.search(language=language, specialty=data.get("specialty"), available_now=True)
     if not profiles:
         profiles = TranslatorModel.search(language=language, specialty=data.get("specialty"), available_now=False)
-    recommendations = profiles[:5]
+    recommendations = [_recommendation(profile, language_confidence) for profile in profiles[:5]]
     if call_id:
         CallModel.request_translator(
             call_id,
             language=language,
+            language_confidence=language_confidence,
             specialty=data.get("specialty"),
             recommended_ids=[profile["id"] for profile in recommendations],
         )
-    return jsonify({"detectedLanguage": language, "recommendations": recommendations, "count": len(recommendations)})
+    return jsonify({"detectedLanguage": language, "languageConfidence": language_confidence, "recommendations": recommendations, "count": len(recommendations)})

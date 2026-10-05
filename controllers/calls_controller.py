@@ -85,7 +85,12 @@ def request_translator(call_id):
     if not call or (identity.get("role") != "admin" and identity["uid"] not in {call.get("callerId"), call.get("receiverId")}):
         return jsonify({"error": "Call not found or access denied."}), 404
     data = json_body()
-    updated = CallModel.request_translator(call_id, data.get("language"), data.get("dialect"), data.get("specialty"))
+    updated = CallModel.request_translator(
+        call_id,
+        language=data.get("language"),
+        dialect=data.get("dialect"),
+        specialty=data.get("specialty"),
+    )
     return (jsonify({"call": updated}), 200) if updated else (jsonify({"error": "Call not found."}), 404)
 
 

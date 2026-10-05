@@ -16,6 +16,10 @@ let callAttemptSequence = 0;
 let routedLanguageCalls = new Set();
 let pendingCredentialRemovalPaths = new Set();
 let currentInterpreterWizardStep = 0;
+let languageConfirmationPending = false;
+let confirmedDetectedLanguage = null;
+let activeTranslatorConnected = false;
+let interpreterMatchesByLanguage = new Map();
 let activeModal = null, modalReturnFocus = null;
 let reviewCall = null;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
@@ -35,6 +39,11 @@ const defaultTaxonomy = {
     languages: ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Mandarin Chinese", "Cantonese", "Arabic", "Hindi", "Bengali", "Urdu", "Punjabi", "Russian", "Ukrainian", "Japanese", "Korean", "Vietnamese", "Tagalog", "Haitian Creole", "American Sign Language"],
     dialects: ["Mexican Spanish", "Caribbean Spanish", "Castilian Spanish", "Latin American Spanish", "Brazilian Portuguese", "European Portuguese", "Modern Standard Arabic", "Egyptian Arabic", "Levantine Arabic", "Gulf Arabic", "Mandarin", "Cantonese"],
     specialties: ["Medical", "Education", "Legal", "Business", "Financial", "Government", "Social Services", "Mental Health", "Immigration", "Community", "Technical", "Conference"]
+};
+const detectedLanguageNames = {
+    ar: "Arabic", bn: "Bengali", de: "German", en: "English", es: "Spanish", fr: "French",
+    hi: "Hindi", it: "Italian", ja: "Japanese", ko: "Korean", pt: "Portuguese", ru: "Russian",
+    so: "Somali", tl: "Tagalog", uk: "Ukrainian", ur: "Urdu", vi: "Vietnamese", zh: "Mandarin Chinese"
 };
 const profilePhotoTypes = {
     "image/jpeg": "jpg",
@@ -105,6 +114,7 @@ function bindUI() {
     $("muteButton").onclick = toggleMute;
     $("cameraButton").onclick = toggleCamera;
     $("requestTranslatorButton").onclick = requestTranslator;
+    $("confirmDetectedLanguage").onclick = confirmDetectedLanguage;
     $("endCallButton").onclick = endCall;
     $("acceptIncomingCall").onclick = acceptIncomingCall;
     $("declineIncomingCall").onclick = declineIncomingCall;
@@ -1654,6 +1664,8 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
             await apiFetch(`/api/calls/${encodeURIComponent(callId)}/translator-claim`, { method: "POST", body: "{}" });
         }
         activeCallId = callId; show("callView"); $("callIdLabel").textContent = callId;
+        resetDetectedLanguage();
+        document.querySelector('.video-card[data-role="local"]').dataset.speaker = currentUser.uid;
         $("requestTranslatorButton").classList.toggle("hidden", role === "translator");
         $("requestTranslatorButton").disabled = false;
         stage = "media-permission";
@@ -1694,6 +1706,7 @@ function watchCall(callId) {
         if (!snap.exists()) return;
         const call = snap.data();
         const translatorConnected = call.translationStatus === "connected";
+        activeTranslatorConnected = translatorConnected;
         $("callTitle").textContent = call.status === "ended" ? "Call ended" : "Live conversation";
         $("requestTranslatorButton").disabled = translatorConnected;
         $("requestTranslatorButton").title = translatorConnected ? "A translator has joined this call" : "";
@@ -1770,6 +1783,7 @@ function attachRemoteVideo(uid, profile, stream) {
     }
     const role = ["translator", "caller", "receiver"].includes(profile?.role) ? profile.role : "guest";
     card.dataset.role = role;
+    card.dataset.speaker = uid;
     card.querySelector("video").srcObject = stream;
     card.querySelector(".video-role").textContent = participantRoleLabel(role);
     card.querySelector(".video-name").textContent = profile?.displayName || "FiniSpeak guest";
@@ -1822,20 +1836,24 @@ async function startTranscription(callId) {
             if (message.type === "error") { status.textContent = `Transcription: ${message.message}`; return; }
             if (message.type === "final" && message.text?.trim() && activeCallId === callId) {
                 status.textContent = "Listening 🎤";
+                const confidence = normalizeLanguageConfidence(message.languageConfidence);
+                if (message.language) updateDetectedLanguage(message.language, confidence);
                 await addDoc(collection(db, "calls", callId, "transcripts"), {
                     speakerId: currentUser.uid,
                     speakerRole: currentCallRole,
                     speakerName: currentProfile.displayName || currentProfile.email,
                     language: message.language || null,
+                    languageConfidence: confidence,
                     text: message.text.trim(),
                     isFinal: true,
                     createdAt: serverTimestamp(),
                     clientCreatedAt: Date.now()
                 });
-                if (message.language && !routedLanguageCalls.has(callId)) {
-                    routedLanguageCalls.add(callId);
-                    routeDetectedLanguage(callId, message.language).catch(error => {
-                        routedLanguageCalls.delete(callId);
+                const routeKey = languageRouteKey(callId, message.language);
+                if (message.language && !routedLanguageCalls.has(routeKey)) {
+                    routedLanguageCalls.add(routeKey);
+                    routeDetectedLanguage(callId, message.language, confidence).catch(error => {
+                        routedLanguageCalls.delete(routeKey);
                         console.warn("Automatic language routing unavailable:", error);
                     });
                 }
@@ -1860,16 +1878,108 @@ async function startTranscription(callId) {
     }
 }
 
-async function routeDetectedLanguage(callId, detectedLanguage) {
+function languageRouteKey(callId, language) {
+    return `${callId}:${String(language || "").toLowerCase()}`;
+}
+
+async function routeDetectedLanguage(callId, detectedLanguage, languageConfidence = null) {
     const result = await apiFetch("/api/routing/recommend", {
         method: "POST",
-        body: JSON.stringify({ callId, detectedLanguage })
+        body: JSON.stringify({ callId, detectedLanguage, languageConfidence })
     });
     const count = Number(result.count || 0);
+    interpreterMatchesByLanguage.set(result.detectedLanguage, result.recommendations || []);
+    renderInterpreterMatches();
     if (count) {
-        $("callStatus").textContent = `${result.detectedLanguage} detected · ${count} matching interpreter${count === 1 ? "" : "s"} found.`;
+        $("callStatus").textContent = `${count} available interpreter${count === 1 ? "" : "s"} matched.`;
     } else {
-        $("callStatus").textContent = `${result.detectedLanguage} detected · no available exact match yet.`;
+        $("callStatus").textContent = `No available exact interpreter match yet.`;
+    }
+    return result;
+}
+
+function renderInterpreterMatches() {
+    const panel = $("interpreterMatches"), list = $("interpreterMatchList");
+    const matches = new Map();
+    for (const [language, profiles] of interpreterMatchesByLanguage) {
+        for (const profile of profiles) {
+            const existing = matches.get(profile.id);
+            const confidence = normalizeLanguageConfidence(profile.matchConfidence) || 0;
+            if (!existing || confidence > existing.confidence) matches.set(profile.id, { profile, confidence, language });
+        }
+    }
+    const sorted = [...matches.values()].sort((a, b) => b.confidence - a.confidence).slice(0, 5);
+    panel.classList.toggle("hidden", !sorted.length);
+    $("interpreterMatchSummary").textContent = sorted.length ? `${sorted.length} available now` : "";
+    list.innerHTML = "";
+    for (const { profile, confidence, language } of sorted) {
+        const card = document.createElement("article");
+        card.className = "interpreter-match";
+        const tags = [...(profile.languages || []), ...(profile.dialects || []), ...(profile.specialties || [])].slice(0, 4);
+        card.innerHTML = `<div class="interpreter-match-top"><div><strong>${escapeHtml(profile.displayName || "Interpreter")}</strong><small>Matched for ${escapeHtml(language)}${profile.rating ? ` · ★ ${escapeHtml(profile.rating)}` : ""}</small></div><span class="match-confidence">${Math.round(confidence * 100)}% match</span></div><div class="interpreter-match-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`;
+        list.appendChild(card);
+    }
+}
+
+function normalizeLanguageConfidence(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const confidence = Number(value);
+    if (!Number.isFinite(confidence)) return null;
+    return Math.max(0, Math.min(1, confidence > 1 && confidence <= 100 ? confidence / 100 : confidence));
+}
+
+function detectedLanguageLabel(language) {
+    const value = String(language || "").trim();
+    return detectedLanguageNames[value.toLowerCase()] || value || "Not detected yet";
+}
+
+function resetDetectedLanguage() {
+    languageConfirmationPending = false;
+    confirmedDetectedLanguage = null;
+    $("detectedLanguageCard").className = "language-detection pending";
+    $("detectedLanguageValue").textContent = "Listening…";
+    $("detectedLanguageConfidence").textContent = "Waiting for enough speech";
+    $("languageConfirmation").classList.add("hidden");
+    interpreterMatchesByLanguage.clear();
+    $("interpreterMatches").classList.add("hidden");
+    $("interpreterMatchList").innerHTML = "";
+}
+
+function updateDetectedLanguage(language, confidence, confirmed = false) {
+    confirmed = confirmed || String(confirmedDetectedLanguage || "").toLowerCase() === String(language || "").toLowerCase();
+    const normalizedConfidence = normalizeLanguageConfidence(confidence);
+    const lowConfidence = normalizedConfidence === null || normalizedConfidence < 0.7;
+    languageConfirmationPending = !confirmed;
+    $("detectedLanguageCard").className = `language-detection${lowConfidence && !confirmed ? " low" : ""}`;
+    $("detectedLanguageValue").textContent = detectedLanguageLabel(language);
+    $("detectedLanguageConfidence").textContent = confirmed
+        ? "Confirmed by participant"
+        : normalizedConfidence === null
+            ? "Confidence unavailable · please confirm"
+            : `${Math.round(normalizedConfidence * 100)}% confidence · please confirm`;
+    $("languageConfirmation").className = `language-confirmation${lowConfidence ? " low" : ""}${languageConfirmationPending ? "" : " hidden"}`;
+    const code = String(language || "").toLowerCase();
+    if (detectedLanguageNames[code]) $("confirmedLanguage").value = code;
+    $("requestTranslatorButton").disabled = activeTranslatorConnected;
+    if (!activeTranslatorConnected) $("requestTranslatorButton").title = "";
+}
+
+async function confirmDetectedLanguage() {
+    if (!activeCallId) return;
+    const language = $("confirmedLanguage").value;
+    confirmedDetectedLanguage = language;
+    updateDetectedLanguage(language, 1, true);
+    if (transcriptionSocket?.readyState === WebSocket.OPEN) {
+        transcriptionSocket.send(JSON.stringify({ type: "language", language }));
+    }
+    const routeKey = languageRouteKey(activeCallId, language);
+    routedLanguageCalls.delete(routeKey);
+    routedLanguageCalls.add(routeKey);
+    try {
+        await routeDetectedLanguage(activeCallId, language, 1);
+    } catch (error) {
+        routedLanguageCalls.delete(routeKey);
+        $("callStatus").textContent = `Language confirmed, but interpreter matching is unavailable: ${error.message}`;
     }
 }
 
@@ -1893,16 +2003,53 @@ function renderTranscript(rows) {
         list.innerHTML = '<p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p>';
         return;
     }
+    const localLanguage = [...rows].reverse().find(row => row.speakerId === currentUser?.uid && row.language);
+    if (localLanguage) updateDetectedLanguage(localLanguage.language, localLanguage.languageConfidence);
+    updateParticipantLanguageBadges(rows);
+    routeTranscriptLanguages(rows);
     list.innerHTML = "";
     for (const row of rows) {
         const item = document.createElement("div"); item.className = "transcript-line";
         const speaker = document.createElement("div"); speaker.className = "transcript-speaker";
         const name = document.createElement("span"); name.textContent = row.speakerName || "Participant";
         const role = document.createElement("span"); role.className = "transcript-role"; role.textContent = formatTranscriptRole(row.speakerRole);
+        const language = document.createElement("span"); language.className = "transcript-language";
+        const confidence = normalizeLanguageConfidence(row.languageConfidence);
+        language.textContent = row.language ? `${detectedLanguageLabel(row.language)}${confidence === null ? "" : ` · ${Math.round(confidence * 100)}%`}` : "Language pending";
         const text = document.createElement("p"); text.className = "transcript-text"; text.textContent = row.text || "";
-        speaker.append(name, role); item.append(speaker, text); list.appendChild(item);
+        speaker.append(name, role, language); item.append(speaker, text); list.appendChild(item);
     }
     list.scrollTop = list.scrollHeight;
+}
+
+function updateParticipantLanguageBadges(rows) {
+    const latestBySpeaker = new Map();
+    for (const row of rows) if (row.speakerId && row.language) latestBySpeaker.set(row.speakerId, row);
+    document.querySelectorAll(".video-card[data-speaker]").forEach(card => {
+        const row = latestBySpeaker.get(card.dataset.speaker);
+        let badge = card.querySelector(".video-language");
+        if (!row) { badge?.remove(); return; }
+        if (!badge) { badge = document.createElement("span"); badge.className = "video-language"; card.querySelector(".video-label")?.appendChild(badge); }
+        const confidence = normalizeLanguageConfidence(row.languageConfidence);
+        badge.textContent = `${detectedLanguageLabel(row.language)}${confidence === null ? "" : ` ${Math.round(confidence * 100)}%`}`;
+    });
+}
+
+function routeTranscriptLanguages(rows) {
+    if (!activeCallId) return;
+    const latestBySpeaker = new Map();
+    for (const row of rows) if (row.speakerId && row.language) latestBySpeaker.set(row.speakerId, row);
+    for (const row of latestBySpeaker.values()) {
+        const confidence = normalizeLanguageConfidence(row.languageConfidence);
+        if (confidence === null || confidence < 0.7) continue;
+        const routeKey = languageRouteKey(activeCallId, row.language);
+        if (routedLanguageCalls.has(routeKey)) continue;
+        routedLanguageCalls.add(routeKey);
+        routeDetectedLanguage(activeCallId, row.language, confidence).catch(error => {
+            routedLanguageCalls.delete(routeKey);
+            console.warn("Participant language routing unavailable:", error);
+        });
+    }
 }
 
 function formatTranscriptRole(role) {
@@ -1935,7 +2082,9 @@ function cleanupCall(stopMedia = true) {
     document.querySelectorAll("[data-peer]").forEach(e => e.remove());
     if (stopMedia && localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; $("localVideo").srcObject = null; }
     activeCallId = null; currentCallRole = null;
-    if (endingCallId) routedLanguageCalls.delete(endingCallId);
+    activeTranslatorConnected = false;
+    if (endingCallId) for (const key of [...routedLanguageCalls]) if (key.startsWith(`${endingCallId}:`)) routedLanguageCalls.delete(key);
+    resetDetectedLanguage();
     $("requestTranslatorButton").disabled = false;
     $("requestTranslatorButton").title = "";
 }

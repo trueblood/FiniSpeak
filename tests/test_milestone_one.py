@@ -63,10 +63,11 @@ class MilestoneOneApiTests(unittest.TestCase):
     @patch("controllers.routing_controller.identity_or_response")
     def test_language_code_is_routed_to_available_interpreters(self, identity, search):
         identity.return_value = ({"uid": "customer-1", "role": "customer"}, None)
-        search.return_value = [{"id": "interpreter-1"}]
-        response = self.client.post("/api/routing/recommend", json={"detectedLanguage": "es"})
+        search.return_value = [{"id": "interpreter-1", "displayName": "Marisol", "rating": 5, "availability": {"availableNow": True}}]
+        response = self.client.post("/api/routing/recommend", json={"detectedLanguage": "es", "languageConfidence": 0.9})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["detectedLanguage"], "Spanish")
+        self.assertEqual(response.get_json()["recommendations"][0]["matchConfidence"], 0.93)
         search.assert_called_once_with(language="Spanish", specialty=None, available_now=True)
 
     @patch("controllers.admin_controller.TranslatorModel.set_verification")
