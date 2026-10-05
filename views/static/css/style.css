@@ -101,10 +101,13 @@ code { background:#e2e8f0; padding:3px 6px; border-radius:6px; }
 
 /* Dashboard history + incoming call experience */
 .conversation-history { display: grid; gap: .75rem; margin-top: 1rem; }
+.conversation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .6rem; align-items: center; }
 .conversation-item { width: 100%; text-align: left; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 1rem; color: inherit; }
 .conversation-item:hover { border-color: rgba(255,255,255,.28); transform: translateY(-1px); }
 .conversation-item strong { display: block; margin-bottom: .3rem; }
 .conversation-meta { opacity: .72; font-size: .9rem; }
+.conversation-review-button { white-space: nowrap; }
+@media (max-width: 640px) { .conversation-row { grid-template-columns: 1fr; } .conversation-review-button { width: 100%; } }
 .modal-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(3,8,18,.78); display: grid; place-items: center; padding: 1rem; backdrop-filter: blur(8px); }
 .modal-backdrop.hidden { display: none; }
 .modal-card { width: min(520px, 100%); background: #111827; border: 1px solid rgba(255,255,255,.14); border-radius: 22px; padding: 1.5rem; box-shadow: 0 24px 80px rgba(0,0,0,.45); }

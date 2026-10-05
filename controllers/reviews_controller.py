@@ -1,4 +1,4 @@
-from flask import jsonify
+from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
 from models.review import ReviewModel
@@ -19,3 +19,12 @@ def create(interpreter_id):
         return jsonify({"error": str(exc)}), 403
     except (TypeError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+def index(interpreter_id):
+    try:
+        limit = min(max(int(request.args.get("limit", 20)), 1), 50)
+    except ValueError:
+        return jsonify({"error": "limit must be a number"}), 400
+    reviews = ReviewModel.for_interpreter(interpreter_id, visible_only=True, limit=limit)
+    return jsonify({"reviews": reviews, "count": len(reviews)})

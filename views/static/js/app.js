@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot, serverTimestamp, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-storage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +17,7 @@ let routedLanguageCalls = new Set();
 let pendingCredentialRemovalPaths = new Set();
 let currentInterpreterWizardStep = 0;
 let activeModal = null, modalReturnFocus = null;
+let reviewCall = null;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
 const taxonomySuggestionIndex = { languages: -1, dialects: -1, specialties: -1 };
@@ -108,6 +109,8 @@ function bindUI() {
     $("acceptIncomingCall").onclick = acceptIncomingCall;
     $("declineIncomingCall").onclick = declineIncomingCall;
     $("closeTranscriptModal").onclick = () => closeModal("transcriptModal");
+    $("closeReviewModal").onclick = () => closeModal("reviewModal");
+    $("reviewForm").onsubmit = submitInterpreterReview;
     document.addEventListener("keydown", handleModalKeyboard);
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => button.addEventListener("click", () => openDashboardPanel(button.dataset.dashboardPanel)));
     document.querySelectorAll("[data-open-panel]").forEach(button => button.addEventListener("click", () => openDashboardPanel(button.dataset.openPanel)));
@@ -151,6 +154,7 @@ function bindUI() {
     $("dashboardAvailableNow").onchange = updateDashboardAvailability;
     $("settingsSignOut").onclick = async () => signOut(auth);
     $("refreshAdmin").onclick = loadAdminDashboard;
+    $("organizationForm").onsubmit = createOrganization;
     $("directorySearch").addEventListener("input", filterInterpreterDirectory);
     $("directoryRating").addEventListener("change", filterInterpreterDirectory);
     $("directorySort").addEventListener("change", filterInterpreterDirectory);
@@ -254,13 +258,19 @@ async function submitAuth(e) {
             await setDoc(doc(db, "users", result.user.uid), { uid: result.user.uid, email: normalizedEmail, displayName: name, role, status: "active", createdAt: serverTimestamp() });
             await setDoc(doc(db, "emailDirectory", normalizedEmail), { uid: result.user.uid, displayName: name, role, email: normalizedEmail, updatedAt: serverTimestamp() });
             if (role === "translator") {
-                await setDoc(doc(db, "translators", result.user.uid), {
-                    uid: result.user.uid, displayName: name, email: normalizedEmail,
+                const batch = writeBatch(db);
+                batch.set(doc(db, "translators", result.user.uid), {
+                    uid: result.user.uid, displayName: name,
                     onboardingStatus: "draft", verificationStatus: "unverified",
-                    languages: [], dialects: [], specialties: [], credentials: [], credentialDocuments: [], credentialStatus: "unsubmitted",
+                    languages: [], dialects: [], specialties: [], credentials: [], credentialStatus: "unsubmitted",
                     yearsExperience: 0, availability: { days: [], start: "", end: "", availableNow: false },
                     rating: null, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
                 }, { merge: true });
+                batch.set(doc(db, "interpreterPrivate", result.user.uid), {
+                    uid: result.user.uid, email: normalizedEmail, phone: "", credentialDocuments: [],
+                    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                }, { merge: true });
+                await batch.commit();
             }
         } else await signInWithEmailAndPassword(auth, email, password);
         $("authStatus").textContent = "";
@@ -286,9 +296,11 @@ async function handleAuthState(user) {
     try {
         const userRef = doc(db, "users", user.uid);
         const translatorRef = doc(db, "translators", user.uid);
-        const [userSnap, translatorSnap] = await Promise.all([
+        const translatorPrivateRef = doc(db, "interpreterPrivate", user.uid);
+        const [userSnap, translatorSnap, translatorPrivateSnap] = await Promise.all([
             getDoc(userRef),
-            getDoc(translatorRef).catch(() => null)
+            getDoc(translatorRef).catch(() => null),
+            getDoc(translatorPrivateRef).catch(() => null)
         ]);
 
         const fallbackProfile = {
@@ -303,7 +315,7 @@ async function handleAuthState(user) {
         // The translator profile is authoritative for those accounts.
         if (translatorSnap?.exists() && currentProfile.role !== "admin") currentProfile.role = "translator";
         currentInterpreterProfile = currentProfile.role === "translator" && translatorSnap?.exists()
-            ? translatorSnap.data()
+            ? { ...translatorSnap.data(), ...(translatorPrivateSnap?.exists() ? translatorPrivateSnap.data() : {}) }
             : null;
 
         // Repair/migrate the signed-in user's basic profile and email lookup.
@@ -504,7 +516,39 @@ async function moderateAdminReview(button) {
 function renderAdminOrganizations(organizations) {
     const container = $("adminOrganizationList");
     if (!organizations.length) { container.innerHTML = adminEmpty("No organizations have been added yet."); return; }
-    container.innerHTML = organizations.slice(0, 20).map(organization => `<article class="admin-list-row"><div><strong>${escapeHtml(organization.name || organization.displayName || "Organization")}</strong><small>${escapeHtml(organization.contactEmail || organization.domain || organization.id || "Managed organization")}</small></div><span class="status-badge">${escapeHtml(organization.status || "active")}</span></article>`).join("");
+    container.innerHTML = organizations.slice(0, 20).map(organization => `<article class="admin-list-row"><div><strong>${escapeHtml(organization.name || organization.displayName || "Organization")}</strong><small>${escapeHtml(organization.contactEmail || organization.domain || organization.id || "Managed organization")}</small></div><label class="admin-inline-control"><span class="sr-only">Organization status</span><select data-organization-id="${escapeHtml(organization.id || "")}"><option value="active"${organization.status === "active" ? " selected" : ""}>Active</option><option value="pending"${organization.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${organization.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></article>`).join("");
+    container.querySelectorAll("[data-organization-id]").forEach(select => select.onchange = () => updateOrganizationStatus(select));
+}
+
+async function createOrganization(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+        await apiFetch("/api/admin/organizations", {
+            method: "POST",
+            body: JSON.stringify({ name: $("organizationName").value.trim(), contactEmail: $("organizationEmail").value.trim() })
+        });
+        form.reset();
+        $("adminStatus").textContent = "Organization added.";
+        await loadAdminDashboard();
+    } catch (error) {
+        $("adminStatus").textContent = `Could not add organization: ${error.message}`;
+    } finally { button.disabled = false; }
+}
+
+async function updateOrganizationStatus(select) {
+    select.disabled = true;
+    try {
+        await apiFetch(`/api/admin/organizations/${encodeURIComponent(select.dataset.organizationId)}`, {
+            method: "PATCH", body: JSON.stringify({ status: select.value })
+        });
+        $("adminStatus").textContent = "Organization status updated.";
+    } catch (error) {
+        $("adminStatus").textContent = `Could not update organization: ${error.message}`;
+        await loadAdminDashboard();
+    } finally { select.disabled = false; }
 }
 
 function renderAdminVerificationQueue(profiles) {
@@ -1197,26 +1241,36 @@ async function uploadCredentialDocuments(existing = []) {
 
 async function loadInterpreterProfile() {
     const ref = doc(db, "translators", currentUser.uid);
-    const snap = await getDoc(ref);
+    const privateRef = doc(db, "interpreterPrivate", currentUser.uid);
+    const [snap, privateSnap] = await Promise.all([getDoc(ref), getDoc(privateRef).catch(() => null)]);
     if (!snap.exists()) {
         // Translator role exists but its onboarding document does not yet. This
         // can happen with accounts created before interpreter onboarding.
         const starter = {
             uid: currentUser.uid,
             displayName: currentProfile.displayName || currentUser.displayName || "",
-            email: (currentUser.email || "").toLowerCase(),
             onboardingStatus: "draft",
             verificationStatus: "unverified",
-            languages: [], dialects: [], specialties: [], credentials: [], credentialDocuments: [], credentialStatus: "unsubmitted",
+            languages: [], dialects: [], specialties: [], credentials: [], credentialStatus: "unsubmitted",
             yearsExperience: 0,
             availability: { days: [], start: "", end: "", availableNow: false, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" },
             rating: null, ratingCount: 0,
             createdAt: serverTimestamp(), updatedAt: serverTimestamp()
         };
-        await setDoc(ref, starter, { merge: true });
-        currentInterpreterProfile = starter;
+        const privateStarter = {
+            uid: currentUser.uid,
+            email: (currentUser.email || "").toLowerCase(),
+            phone: "",
+            credentialDocuments: [],
+            createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+        };
+        const batch = writeBatch(db);
+        batch.set(ref, starter, { merge: true });
+        batch.set(privateRef, privateStarter, { merge: true });
+        await batch.commit();
+        currentInterpreterProfile = { ...starter, ...privateStarter };
     } else {
-        currentInterpreterProfile = snap.data();
+        currentInterpreterProfile = { ...snap.data(), ...(privateSnap?.exists() ? privateSnap.data() : {}) };
     }
     hydrateInterpreterProfile(currentInterpreterProfile);
 }
@@ -1439,26 +1493,40 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
             : (currentInterpreterProfile?.verificationStatus === "verified"
                 ? (currentInterpreterProfile.onboardingStatus || "verified")
                 : (draft ? "draft" : (completion === 100 ? "complete" : "draft")));
+        const { phone, ...publicData } = data;
         const payload = {
-            ...data, uid: currentUser.uid, email: (currentProfile.email || currentUser.email || "").toLowerCase(), photoUrl,
-            credentialDocuments, credentialStatus, onboardingStatus,
+            ...publicData, uid: currentUser.uid, photoUrl,
+            credentialStatus, onboardingStatus,
             verificationStatus: currentInterpreterProfile?.verificationStatus || "unverified",
             rating: currentInterpreterProfile?.rating ?? null, ratingCount: currentInterpreterProfile?.ratingCount || 0,
+            // Remove private fields from legacy profile documents as each
+            // interpreter saves after the privacy split migration.
+            email: deleteField(), phone: deleteField(), credentialDocuments: deleteField(), verificationNotes: deleteField(),
             updatedAt: serverTimestamp()
         };
-        await setDoc(doc(db, "translators", currentUser.uid), payload, { merge: true });
+        const privatePayload = {
+            uid: currentUser.uid,
+            email: (currentProfile.email || currentUser.email || "").toLowerCase(),
+            phone,
+            credentialDocuments,
+            updatedAt: serverTimestamp()
+        };
+        const batch = writeBatch(db);
+        batch.set(doc(db, "translators", currentUser.uid), payload, { merge: true });
+        batch.set(doc(db, "interpreterPrivate", currentUser.uid), privatePayload, { merge: true });
+        await batch.commit();
         const removalPaths = [...pendingCredentialRemovalPaths];
         pendingCredentialRemovalPaths = new Set();
         if (storage) await Promise.allSettled(removalPaths.map(path => deleteObject(storageRef(storage, path))));
         if (data.displayName && data.displayName !== currentProfile.displayName) {
             await updateProfile(currentUser, { displayName: data.displayName });
             await setDoc(doc(db, "users", currentUser.uid), { displayName: data.displayName, updatedAt: serverTimestamp() }, { merge: true });
-            const email = payload.email;
+            const email = privatePayload.email;
             if (email) await setDoc(doc(db, "emailDirectory", email), { displayName: data.displayName, updatedAt: serverTimestamp() }, { merge: true });
             currentProfile = { ...currentProfile, displayName: data.displayName };
             hydrateDashboardProfile();
         }
-        currentInterpreterProfile = { ...currentInterpreterProfile, ...payload, photoUrl };
+        currentInterpreterProfile = { ...currentInterpreterProfile, ...payload, ...privatePayload, photoUrl };
         if (!photoUploadError) {
             $("interpreterPhoto").value = "";
             setInterpreterPhoto(photoUrl);
@@ -1540,18 +1608,18 @@ async function createCall(e) {
             : "Starting the call…");
         stage = "call-document-create";
         callLog(attemptId, stage, { interpreterRequested: Boolean(selectedInterpreter) });
-        const ref = await addDoc(collection(db, "calls"), {
-            callerId: currentUser.uid, receiverId: receiver.uid,
-            translatorId: selectedInterpreter?.id || null,
-            translatorName: selectedInterpreter?.displayName || null,
-            status: "ringing", translationStatus: selectedInterpreter ? "requested" : "not_requested",
-            createdAt: serverTimestamp(), startedAt: null, endedAt: null,
-            callerName: currentProfile.displayName || currentProfile.email, receiverName: receiver.displayName || receiver.email || receiverEmail
+        const created = await apiFetch("/api/calls/", {
+            method: "POST",
+            body: JSON.stringify({
+                receiverId: receiver.uid,
+                translatorId: selectedInterpreter?.id || null
+            })
         });
-        callLog(attemptId, "call-document-created", { callId: ref.id });
+        const callId = created.callId;
+        callLog(attemptId, "call-document-created", { callId });
         clearSelectedInterpreter();
         stage = "local-join";
-        await joinCall(ref.id, attemptId);
+        await joinCall(callId, attemptId);
         if (activeCallId) setCallFormStatus("");
     } catch (error) {
         console.error(`[FiniSpeak call][${attemptId}] start failed`, callErrorDetails(error, stage), error);
@@ -1583,7 +1651,7 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
         if (role === "translator") {
             if (call.translatorId && call.translatorId !== currentUser.uid) throw new Error("Another translator has already joined.");
             stage = "translator-connect-update";
-            await updateDoc(callRef, { translatorId: currentUser.uid, translationStatus: "connected" });
+            await apiFetch(`/api/calls/${encodeURIComponent(callId)}/translator-claim`, { method: "POST", body: "{}" });
         }
         activeCallId = callId; show("callView"); $("callIdLabel").textContent = callId;
         $("requestTranslatorButton").classList.toggle("hidden", role === "translator");
@@ -1846,12 +1914,19 @@ function formatTranscriptRole(role) {
 
 async function requestTranslator() {
     if (!activeCallId) return;
-    await updateDoc(doc(db, "calls", activeCallId), { translationStatus: "requested" });
+    await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/translator-request`, { method: "POST", body: "{}" });
     $("callStatus").textContent = "Translator requested. Available translators will receive a request.";
 }
 function toggleMute() { const t = localStream?.getAudioTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("muteButton").textContent = t.enabled ? "Mute" : "Unmute"; }
 function toggleCamera() { const t = localStream?.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("cameraButton").textContent = t.enabled ? "Camera Off" : "Camera On"; }
-async function endCall() { if (activeCallId) await updateDoc(doc(db, "calls", activeCallId), { status: "ended", endedAt: serverTimestamp() }); cleanupCall(); show("dashboardView"); loadConversationHistory(); }
+async function endCall() {
+    if (activeCallId) {
+        await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/state`, {
+            method: "PATCH", body: JSON.stringify({ state: "ended" })
+        });
+    }
+    cleanupCall(); show("dashboardView"); loadConversationHistory();
+}
 function cleanupListeners() { callUnsubs.forEach(u => u()); callUnsubs = []; }
 function cleanupCall(stopMedia = true) {
     const endingCallId = activeCallId;
@@ -1950,9 +2025,10 @@ async function acceptIncomingCall() {
     pendingIncomingCall = null;
     closeModal("incomingCallModal");
     try {
-        const callRef = doc(db, "calls", pending.id);
         if (pending.kind === "customer") {
-            await updateDoc(callRef, { status: "connected", startedAt: serverTimestamp() });
+            await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
+                method: "PATCH", body: JSON.stringify({ state: "connected" })
+            });
         }
         await joinCall(pending.id);
     } catch (error) {
@@ -1967,7 +2043,9 @@ async function declineIncomingCall() {
     closeModal("incomingCallModal");
     try {
         if (pending.kind === "customer") {
-            await updateDoc(doc(db, "calls", pending.id), { status: "declined", endedAt: serverTimestamp() });
+            await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
+                method: "PATCH", body: JSON.stringify({ state: "declined" })
+            });
         }
         // Translator declines only this visible request locally. Another translator can still accept it.
     } catch (error) {
@@ -2005,6 +2083,8 @@ function renderConversationHistory(rows) {
     }
     history.innerHTML = "";
     for (const call of rows) {
+        const row = document.createElement("article");
+        row.className = "conversation-row";
         const button = document.createElement("button");
         button.type = "button";
         button.className = "conversation-item";
@@ -2015,7 +2095,48 @@ function renderConversationHistory(rows) {
         const dateText = date ? date.toLocaleString() : "Previous call";
         button.innerHTML = `<strong>${escapeHtml(other)}</strong><span class="conversation-meta">${escapeHtml(dateText)} · View transcript</span>`;
         button.onclick = () => openHistoryTranscript(call);
-        history.appendChild(button);
+        row.appendChild(button);
+        if (call.status === "ended" && call.translatorId && currentProfile.role !== "translator") {
+            const reviewButton = document.createElement("button");
+            reviewButton.type = "button";
+            reviewButton.className = "secondary conversation-review-button";
+            reviewButton.textContent = "Review interpreter";
+            reviewButton.onclick = () => openReviewModal(call);
+            row.appendChild(reviewButton);
+        }
+        history.appendChild(row);
+    }
+}
+
+function openReviewModal(call) {
+    reviewCall = call;
+    $("reviewRating").value = "5";
+    $("reviewText").value = "";
+    $("reviewStatus").textContent = "";
+    openModal("reviewModal");
+}
+
+async function submitInterpreterReview(event) {
+    event.preventDefault();
+    if (!reviewCall?.translatorId) return;
+    const button = $("submitReview");
+    button.disabled = true;
+    $("reviewStatus").textContent = "Submitting review…";
+    try {
+        await apiFetch(`/api/reviews/interpreters/${encodeURIComponent(reviewCall.translatorId)}`, {
+            method: "POST",
+            body: JSON.stringify({
+                callId: reviewCall.id,
+                rating: Number($("reviewRating").value),
+                text: $("reviewText").value.trim()
+            })
+        });
+        $("reviewStatus").textContent = "Thank you. Your review is now visible.";
+        window.setTimeout(() => closeModal("reviewModal"), 700);
+    } catch (error) {
+        $("reviewStatus").textContent = error.message;
+    } finally {
+        button.disabled = false;
     }
 }
 

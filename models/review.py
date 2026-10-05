@@ -5,6 +5,17 @@ from services.firebase_service import get_db
 
 class ReviewModel:
     @classmethod
+    def for_interpreter(cls, interpreter_id, visible_only=True, limit=20):
+        reviews = []
+        for document in get_db().collection("translators").document(interpreter_id).collection("reviews").stream():
+            data = document.to_dict()
+            if visible_only and data.get("moderationStatus", "visible") != "visible":
+                continue
+            reviews.append({"id": document.id, **data})
+        reviews.sort(key=lambda item: str(item.get("createdAt") or ""), reverse=True)
+        return reviews[:limit]
+
+    @classmethod
     def create(cls, interpreter_id, author, call_id, rating, text):
         db = get_db()
         call = db.collection("calls").document(call_id).get()
@@ -15,7 +26,7 @@ class ReviewModel:
             raise PermissionError("Only a customer from this session may leave a review.")
         if call_data.get("translatorId") != interpreter_id:
             raise ValueError("The selected interpreter did not participate in this session.")
-        review_ref = db.collection("translators").document(interpreter_id).collection("reviews").document(call_id)
+        review_ref = db.collection("translators").document(interpreter_id).collection("reviews").document(f"{call_id}-{author['uid']}")
         if review_ref.get().exists:
             raise ValueError("A review has already been submitted for this session.")
         review = {
@@ -25,7 +36,7 @@ class ReviewModel:
         }
         review_ref.set(review)
         cls.recalculate(interpreter_id)
-        return {"id": call_id, **review}
+        return {"id": review_ref.id, **review}
 
     @classmethod
     def recalculate(cls, interpreter_id):

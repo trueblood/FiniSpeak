@@ -91,7 +91,7 @@ class MilestoneOneApiTests(unittest.TestCase):
 
         TranslatorModel.set_verification("interpreter-1", "verified", "admin-1", "Checked")
 
-        payload = reference.set.call_args.args[0]
+        payload = reference.set.call_args_list[0].args[0]
         self.assertEqual(payload["verificationStatus"], "verified")
         self.assertEqual(payload["credentialStatus"], "approved")
         self.assertEqual(payload["onboardingStatus"], "verified")

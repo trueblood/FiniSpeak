@@ -5,10 +5,10 @@ from services.firebase_service import get_db
 
 class TranslatorModel:
     collection_name = "translators"
+    private_collection_name = "interpreterPrivate"
     public_fields = {
         "bio",
         "credentials",
-        "credentialStatus",
         "dialects",
         "displayName",
         "languages",
@@ -30,7 +30,14 @@ class TranslatorModel:
         document = get_db().collection(cls.collection_name).document(translator_id).get()
         if not document.exists:
             return None
+        if public and document.to_dict().get("verificationStatus") != "verified":
+            return None
         return cls.to_public(document) if public else {"id": document.id, **document.to_dict()}
+
+    @classmethod
+    def get_private(cls, translator_id):
+        document = get_db().collection(cls.private_collection_name).document(translator_id).get()
+        return {"id": document.id, **document.to_dict()} if document.exists else {"id": translator_id}
 
     @classmethod
     def search(cls, language=None, dialect=None, specialty=None, available_now=False, minimum_rating=0):
@@ -58,12 +65,19 @@ class TranslatorModel:
 
     @classmethod
     def pending_verification(cls):
-        docs = get_db().collection(cls.collection_name).stream()
-        return [
-            {"id": doc.id, **doc.to_dict()}
-            for doc in docs
-            if doc.to_dict().get("credentialStatus") == "submitted" and doc.to_dict().get("verificationStatus") != "verified"
-        ]
+        db = get_db()
+        results = []
+        for doc in db.collection(cls.collection_name).stream():
+            data = doc.to_dict()
+            if data.get("credentialStatus") != "submitted" or data.get("verificationStatus") == "verified":
+                continue
+            private = db.collection(cls.private_collection_name).document(doc.id).get()
+            private_data = private.to_dict() if private.exists else {}
+            # Legacy profiles stored credential document metadata on the public
+            # document. Keep this fallback only until the migration is run.
+            credential_documents = private_data.get("credentialDocuments", data.get("credentialDocuments", []))
+            results.append({"id": doc.id, **data, "credentialDocuments": credential_documents})
+        return results
 
     @classmethod
     def set_verification(cls, translator_id, status, reviewer_id, notes=""):
@@ -77,6 +91,10 @@ class TranslatorModel:
             "verificationStatus": status,
             "credentialStatus": credential_status,
             "onboardingStatus": status,
+            "verifiedBy": reviewer_id,
+            "verifiedAt": datetime.now(timezone.utc),
+        }, merge=True)
+        get_db().collection(cls.private_collection_name).document(translator_id).set({
             "verificationNotes": notes,
             "verifiedBy": reviewer_id,
             "verifiedAt": datetime.now(timezone.utc),
@@ -102,5 +120,23 @@ class TranslatorModel:
             "start": availability.get("start", ""),
             "end": availability.get("end", ""),
         }
+        visible_reviews = []
+        try:
+            for review in doc.reference.collection("reviews").stream():
+                data = review.to_dict()
+                if data.get("moderationStatus", "visible") == "visible":
+                    visible_reviews.append({
+                        "id": review.id,
+                        "authorName": data.get("authorName") or "FiniSpeak customer",
+                        "rating": data.get("rating"),
+                        "text": data.get("text", ""),
+                        "createdAt": data.get("createdAt"),
+                    })
+            visible_reviews.sort(key=lambda item: str(item.get("createdAt") or ""), reverse=True)
+        except Exception:
+            # Discovery should remain available if one profile has malformed
+            # legacy review data.
+            visible_reviews = []
+        profile["recentReviews"] = visible_reviews[:5]
         profile["id"] = doc.id
         return profile

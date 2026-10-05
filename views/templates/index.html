@@ -279,6 +279,11 @@
                         </section>
                         <section class="card admin-section" aria-labelledby="organizationTitle">
                             <div class="admin-section-heading"><div><span class="eyebrow">Commercial accounts</span><h3 id="organizationTitle">Organizations</h3></div></div>
+                            <form id="organizationForm" class="admin-inline-form">
+                                <label for="organizationName">Name<input id="organizationName" required maxlength="160"></label>
+                                <label for="organizationEmail">Contact email<input id="organizationEmail" type="email" maxlength="320"></label>
+                                <button type="submit">Add organization</button>
+                            </form>
                             <div id="adminOrganizationList" class="admin-list" aria-live="polite"><p>Loading organizations…</p></div>
                         </section>
                     </div>
@@ -354,6 +359,26 @@
             </div>
             <p id="historyTranscriptMeta"></p>
             <div id="historyTranscriptList" class="transcript-list history-transcript-list"></div>
+        </div>
+    </div>
+
+    <div id="reviewModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
+        <div class="modal-card">
+            <div class="transcript-header">
+                <div><span class="eyebrow">Interpreter feedback</span><h2 id="reviewModalTitle">Review your interpreter</h2></div>
+                <button id="closeReviewModal" class="secondary" type="button">Close</button>
+            </div>
+            <form id="reviewForm">
+                <label for="reviewRating">Rating
+                    <select id="reviewRating" required>
+                        <option value="5">5 — Excellent</option><option value="4">4 — Good</option>
+                        <option value="3">3 — Fair</option><option value="2">2 — Poor</option><option value="1">1 — Very poor</option>
+                    </select>
+                </label>
+                <label for="reviewText">Comments<textarea id="reviewText" rows="4" maxlength="1000" placeholder="Share useful, respectful feedback about the interpretation."></textarea></label>
+                <button id="submitReview" type="submit">Submit review</button>
+                <p id="reviewStatus" class="status" role="status" aria-live="polite"></p>
+            </form>
         </div>
     </div>
 
