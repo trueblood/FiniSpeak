@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app import create_app
+from models.account import normalize_phone
 from models.translator import TranslatorModel
 
 
@@ -32,6 +33,22 @@ class MilestoneOneApiTests(unittest.TestCase):
         response = self.client.get("/api/accounts/me")
         self.assertEqual(response.status_code, 401)
         self.assertIn("bearer token", response.get_json()["error"].lower())
+
+    @patch("controllers.accounts_controller.AccountModel.find_by_phone")
+    @patch("controllers.accounts_controller.identity_or_response")
+    def test_account_lookup_supports_saved_phone_number(self, identity, find_by_phone):
+        identity.return_value = ({"uid": "customer-1", "role": "customer"}, None)
+        find_by_phone.return_value = {
+            "uid": "customer-2", "displayName": "Customer Two", "role": "customer", "status": "active"
+        }
+        response = self.client.get("/api/accounts/lookup?phone=%2B1%20317%20555%200123")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["account"]["uid"], "customer-2")
+        find_by_phone.assert_called_once_with("+1 317 555 0123")
+
+    def test_phone_normalization_is_format_independent(self):
+        self.assertEqual(normalize_phone("+1 (317) 555-0123"), "13175550123")
+        self.assertEqual(normalize_phone("123"), "")
 
     @patch("controllers.discovery_controller.TranslatorModel.search")
     def test_discovery_passes_filters_to_ranked_search(self, search):

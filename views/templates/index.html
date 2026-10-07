@@ -94,6 +94,7 @@
             <form id="authForm">
                 <label id="nameField" class="hidden">Name<input id="displayName" autocomplete="name"></label>
                 <label>Email<input id="email" type="email" autocomplete="email" required></label>
+                <label id="phoneField" class="hidden">Phone number<input id="signupPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="For example, +1 317 555 0123" aria-describedby="signupPhoneHelp"><small id="signupPhoneHelp">Used only so other registered FiniSpeak users can call you inside the app.</small></label>
                 <label>Password<input id="password" type="password" minlength="6" required></label>
                 <label id="roleField" class="hidden">Account type
                     <select id="role"><option value="customer">Customer</option><option value="translator">Translator</option></select>
@@ -146,12 +147,18 @@
                         <div class="card call-start-card" id="callStartCard">
                             <div id="customerTools">
                                 <span class="eyebrow">Connect now</span><h3>Start a conversation</h3>
-                                <p id="callFormHelp">Invite another FiniSpeak customer, then add a verified interpreter when you need one.</p>
+                                <p id="callFormHelp">Call another FiniSpeak customer by their account email or saved phone number, then add a verified interpreter when needed.</p>
                                 <div id="selectedInterpreter" class="selected-interpreter hidden" aria-live="polite">
                                     <div><span>Selected interpreter</span><strong id="selectedInterpreterName"></strong></div>
                                     <button id="clearSelectedInterpreter" class="text-button" type="button">Change</button>
                                 </div>
-                                <form id="callForm"><label for="receiverEmail">Who are you calling?</label><input id="receiverEmail" type="email" autocomplete="email" placeholder="Enter their FiniSpeak email" required><button type="submit">Start call</button></form>
+                                <form id="callForm">
+                                    <label for="receiverEmail">FiniSpeak email</label><input id="receiverEmail" type="email" autocomplete="email" placeholder="Enter their FiniSpeak email">
+                                    <div class="call-method-separator" aria-hidden="true"><span>or</span></div>
+                                    <label for="receiverPhone">Phone number</label><input id="receiverPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="Enter their saved phone number" aria-describedby="receiverPhoneHelp">
+                                    <p id="receiverPhoneHelp" class="field-help call-phone-help">This starts a secure in-app call. It does not dial a cellular or landline number.</p>
+                                    <button type="submit">Start in-app call</button>
+                                </form>
                                 <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
                             </div>
                             <div id="translatorTools" class="hidden translator-workspace">
@@ -188,6 +195,7 @@
                         <form id="profileForm">
                             <label for="profileDisplayName">Display name</label><input id="profileDisplayName" autocomplete="name" required>
                             <label for="profileEmail">Email</label><input id="profileEmail" type="email" disabled aria-describedby="emailHelp"><p id="emailHelp" class="field-help">Your sign-in email cannot be changed here yet.</p>
+                            <label for="profilePhone">Phone number for in-app calls</label><input id="profilePhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="For example, +1 317 555 0123" aria-describedby="profilePhoneHelp"><p id="profilePhoneHelp" class="field-help">Other FiniSpeak users can enter this number to reach you inside the app. FiniSpeak does not place telephone-network calls.</p>
                             <label for="profileRole">Account type</label><input id="profileRole" disabled>
                             <button type="submit">Save profile</button>
                         </form>

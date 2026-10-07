@@ -23,7 +23,11 @@ def lookup():
     _, error = identity_or_response()
     if error:
         return error
-    account = AccountModel.find_by_email(request.args.get("email"))
+    email = request.args.get("email")
+    phone = request.args.get("phone")
+    if not email and not phone:
+        return jsonify({"error": "email or phone is required"}), 400
+    account = AccountModel.find_by_email(email) if email else AccountModel.find_by_phone(phone)
     if not account or account.get("status") != "active":
         return jsonify({"error": "Account not found"}), 404
     return jsonify({"account": account})
