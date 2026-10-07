@@ -113,28 +113,45 @@
                     <div><strong id="sidebarName">FiniSpeak</strong><span id="sidebarRole">Customer</span></div>
                 </div>
                 <nav class="dashboard-nav" aria-label="Dashboard sections">
-                    <button class="dashboard-nav-item active" type="button" data-dashboard-panel="home" aria-current="page">Dashboard</button>
-                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="directory">Find Interpreters</button>
-                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="profile">Profile</button>
-                    <button id="interpreterProfileNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="interpreter">Interpreter Profile</button>
-                    <button id="adminNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="admin">Administration</button>
-                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="settings">Settings</button>
+                    <button class="dashboard-nav-item active" type="button" data-dashboard-panel="home" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span><span>Home</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="directory"><span class="nav-icon" aria-hidden="true">⌕</span><span>Discover</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="profile"><span class="nav-icon" aria-hidden="true">○</span><span>Profile</span></button>
+                    <button id="interpreterProfileNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="interpreter"><span class="nav-icon" aria-hidden="true">✓</span><span>Interpreter</span></button>
+                    <button id="adminNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="admin"><span class="nav-icon" aria-hidden="true">▦</span><span>Admin</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="settings"><span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span></button>
                 </nav>
             </aside>
 
             <div class="dashboard-content">
+                <header class="mobile-app-header">
+                    <div class="mobile-app-brand"><span aria-hidden="true">◎</span><strong>FiniSpeak</strong></div>
+                    <button class="mobile-settings-button" type="button" data-open-panel="settings" aria-label="Open settings">⚙</button>
+                </header>
                 <div id="dashboardHome" class="dashboard-panel">
                     <div class="dashboard-heading"><div><span class="eyebrow">Welcome back</span><h2 id="welcomeName">FiniSpeak</h2><p id="accountRole"></p></div><span id="accountStatusBadge" class="status-badge">Active</span></div>
+                    <section class="app-action-hub" aria-labelledby="appActionTitle">
+                        <p class="app-greeting">Hello, <strong id="appWelcomeName">there</strong></p>
+                        <h2 id="appActionTitle">What do you need today?</h2>
+                        <div class="app-primary-actions">
+                            <button type="button" data-open-panel="directory"><span class="app-action-icon" aria-hidden="true">↻</span><span><strong>Find an interpreter</strong><small>Search languages and specialties</small></span><span aria-hidden="true">›</span></button>
+                            <button id="openStartCall" type="button"><span class="app-action-icon" aria-hidden="true">●</span><span><strong>Start a call</strong><small>Connect and request live help</small></span><span aria-hidden="true">›</span></button>
+                        </div>
+                        <div class="app-category-row" aria-label="Browse common needs">
+                            <button type="button" data-discovery-category="Business">Business</button>
+                            <button type="button" data-discovery-category="Education">Education</button>
+                            <button type="button" data-discovery-category="Personal">Personal</button>
+                        </div>
+                    </section>
                     <div class="dashboard-grid">
-                        <div class="card">
+                        <div class="card call-start-card" id="callStartCard">
                             <div id="customerTools">
-                                <span class="eyebrow">Connect</span><h3>Start a customer call</h3>
-                                <p id="callFormHelp">Enter the other customer's FiniSpeak email address. You can request a human interpreter after the call starts.</p>
+                                <span class="eyebrow">Connect now</span><h3>Start a conversation</h3>
+                                <p id="callFormHelp">Invite another FiniSpeak customer, then add a verified interpreter when you need one.</p>
                                 <div id="selectedInterpreter" class="selected-interpreter hidden" aria-live="polite">
                                     <div><span>Selected interpreter</span><strong id="selectedInterpreterName"></strong></div>
                                     <button id="clearSelectedInterpreter" class="text-button" type="button">Change</button>
                                 </div>
-                                <form id="callForm"><label for="receiverEmail">Customer 2 email</label><input id="receiverEmail" type="email" autocomplete="email" placeholder="customer@example.com" required><button type="submit">Start call</button></form>
+                                <form id="callForm"><label for="receiverEmail">Who are you calling?</label><input id="receiverEmail" type="email" autocomplete="email" placeholder="Enter their FiniSpeak email" required><button type="submit">Start call</button></form>
                                 <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
                             </div>
                             <div id="translatorTools" class="hidden translator-workspace">
@@ -157,8 +174,8 @@
                             </div>
                         </div>
                         <div class="card history-card">
-                            <div class="section-heading"><span class="eyebrow">History</span><h3>Previous conversations</h3></div>
-                            <p>Open a previous call to review the saved transcript.</p>
+                            <div class="section-heading"><span class="eyebrow">Your activity</span><h3>Recent conversations</h3></div>
+                            <p>Open a session to review its saved transcript.</p>
                             <div id="conversationHistory" class="conversation-history"><p class="transcript-empty">Loading conversations…</p></div>
                         </div>
                     </div>

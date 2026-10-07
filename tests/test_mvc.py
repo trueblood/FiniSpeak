@@ -41,6 +41,15 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('id="interpreterWizardBack"', html)
         self.assertNotIn('<select id="interpreterCredentialStatus">', html)
 
+    def test_dashboard_exposes_mobile_app_navigation_and_actions(self):
+        response = self.client.get("/")
+        html = response.get_data(as_text=True)
+        self.assertIn('class="mobile-app-header"', html)
+        self.assertIn('id="appActionTitle">What do you need today?', html)
+        self.assertIn('id="openStartCall"', html)
+        self.assertIn('data-discovery-category="Business"', html)
+        self.assertIn('data-dashboard-panel="directory"', html)
+
     def test_call_validation_stays_in_controller(self):
         self.assertEqual(self.client.post("/api/calls/", json={}).status_code, 400)
         response = self.client.post(
