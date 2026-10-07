@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-storage.js";
+import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot, serverTimestamp, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-storage.js";
 
 const $ = (id) => document.getElementById(id);
 const views = ["heroView", "authView", "dashboardView", "profileView", "callView"];
@@ -14,11 +14,14 @@ let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterPr
 let featuredProfilesData = [];
 let callAttemptSequence = 0;
 let routedLanguageCalls = new Set();
+let pendingCredentialRemovalPaths = new Set();
+let currentInterpreterWizardStep = 0;
 let languageConfirmationPending = false;
 let confirmedDetectedLanguage = null;
 let activeTranslatorConnected = false;
 let interpreterMatchesByLanguage = new Map();
 let activeModal = null, modalReturnFocus = null;
+let reviewCall = null;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
 const taxonomySuggestionIndex = { languages: -1, dialects: -1, specialties: -1 };
@@ -116,13 +119,22 @@ function bindUI() {
     $("acceptIncomingCall").onclick = acceptIncomingCall;
     $("declineIncomingCall").onclick = declineIncomingCall;
     $("closeTranscriptModal").onclick = () => closeModal("transcriptModal");
+    $("closeReviewModal").onclick = () => closeModal("reviewModal");
+    $("reviewForm").onsubmit = submitInterpreterReview;
     document.addEventListener("keydown", handleModalKeyboard);
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => button.addEventListener("click", () => openDashboardPanel(button.dataset.dashboardPanel)));
     document.querySelectorAll("[data-open-panel]").forEach(button => button.addEventListener("click", () => openDashboardPanel(button.dataset.openPanel)));
     $("profileForm").onsubmit = saveProfile;
     $("interpreterProfileForm").onsubmit = (e) => saveInterpreterProfile(e, false);
     $("saveInterpreterDraft").onclick = (e) => saveInterpreterProfile(e, true);
+    $("submitInterpreterVerification").onclick = (e) => saveInterpreterProfile(e, false, true);
+    $("interpreterWizardBack").onclick = () => showInterpreterWizardStep(currentInterpreterWizardStep - 1);
+    $("interpreterWizardNext").onclick = advanceInterpreterWizard;
+    document.querySelectorAll("[data-wizard-step]").forEach(button => {
+        button.onclick = () => showInterpreterWizardStep(Number(button.dataset.wizardStep));
+    });
     $("interpreterPhoto").onchange = previewInterpreterPhoto;
+    $("interpreterCredentialFiles").onchange = () => updateInterpreterCompletion();
     $("interpreterProfileForm").addEventListener("input", () => updateInterpreterCompletion());
     Object.keys(taxonomyUI).forEach(kind => {
         const input = $(taxonomyUI[kind].input);
@@ -152,6 +164,7 @@ function bindUI() {
     $("dashboardAvailableNow").onchange = updateDashboardAvailability;
     $("settingsSignOut").onclick = async () => signOut(auth);
     $("refreshAdmin").onclick = loadAdminDashboard;
+    $("organizationForm").onsubmit = createOrganization;
     $("directorySearch").addEventListener("input", filterInterpreterDirectory);
     $("directoryRating").addEventListener("change", filterInterpreterDirectory);
     $("directorySort").addEventListener("change", filterInterpreterDirectory);
@@ -255,13 +268,19 @@ async function submitAuth(e) {
             await setDoc(doc(db, "users", result.user.uid), { uid: result.user.uid, email: normalizedEmail, displayName: name, role, status: "active", createdAt: serverTimestamp() });
             await setDoc(doc(db, "emailDirectory", normalizedEmail), { uid: result.user.uid, displayName: name, role, email: normalizedEmail, updatedAt: serverTimestamp() });
             if (role === "translator") {
-                await setDoc(doc(db, "translators", result.user.uid), {
-                    uid: result.user.uid, displayName: name, email: normalizedEmail,
+                const batch = writeBatch(db);
+                batch.set(doc(db, "translators", result.user.uid), {
+                    uid: result.user.uid, displayName: name,
                     onboardingStatus: "draft", verificationStatus: "unverified",
-                    languages: [], dialects: [], specialties: [], credentials: [],
+                    languages: [], dialects: [], specialties: [], credentials: [], credentialStatus: "unsubmitted",
                     yearsExperience: 0, availability: { days: [], start: "", end: "", availableNow: false },
                     rating: null, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
                 }, { merge: true });
+                batch.set(doc(db, "interpreterPrivate", result.user.uid), {
+                    uid: result.user.uid, email: normalizedEmail, phone: "", credentialDocuments: [],
+                    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                }, { merge: true });
+                await batch.commit();
             }
         } else await signInWithEmailAndPassword(auth, email, password);
         $("authStatus").textContent = "";
@@ -287,9 +306,11 @@ async function handleAuthState(user) {
     try {
         const userRef = doc(db, "users", user.uid);
         const translatorRef = doc(db, "translators", user.uid);
-        const [userSnap, translatorSnap] = await Promise.all([
+        const translatorPrivateRef = doc(db, "interpreterPrivate", user.uid);
+        const [userSnap, translatorSnap, translatorPrivateSnap] = await Promise.all([
             getDoc(userRef),
-            getDoc(translatorRef).catch(() => null)
+            getDoc(translatorRef).catch(() => null),
+            getDoc(translatorPrivateRef).catch(() => null)
         ]);
 
         const fallbackProfile = {
@@ -304,7 +325,7 @@ async function handleAuthState(user) {
         // The translator profile is authoritative for those accounts.
         if (translatorSnap?.exists() && currentProfile.role !== "admin") currentProfile.role = "translator";
         currentInterpreterProfile = currentProfile.role === "translator" && translatorSnap?.exists()
-            ? translatorSnap.data()
+            ? { ...translatorSnap.data(), ...(translatorPrivateSnap?.exists() ? translatorPrivateSnap.data() : {}) }
             : null;
 
         // Repair/migrate the signed-in user's basic profile and email lookup.
@@ -505,7 +526,39 @@ async function moderateAdminReview(button) {
 function renderAdminOrganizations(organizations) {
     const container = $("adminOrganizationList");
     if (!organizations.length) { container.innerHTML = adminEmpty("No organizations have been added yet."); return; }
-    container.innerHTML = organizations.slice(0, 20).map(organization => `<article class="admin-list-row"><div><strong>${escapeHtml(organization.name || organization.displayName || "Organization")}</strong><small>${escapeHtml(organization.contactEmail || organization.domain || organization.id || "Managed organization")}</small></div><span class="status-badge">${escapeHtml(organization.status || "active")}</span></article>`).join("");
+    container.innerHTML = organizations.slice(0, 20).map(organization => `<article class="admin-list-row"><div><strong>${escapeHtml(organization.name || organization.displayName || "Organization")}</strong><small>${escapeHtml(organization.contactEmail || organization.domain || organization.id || "Managed organization")}</small></div><label class="admin-inline-control"><span class="sr-only">Organization status</span><select data-organization-id="${escapeHtml(organization.id || "")}"><option value="active"${organization.status === "active" ? " selected" : ""}>Active</option><option value="pending"${organization.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${organization.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></article>`).join("");
+    container.querySelectorAll("[data-organization-id]").forEach(select => select.onchange = () => updateOrganizationStatus(select));
+}
+
+async function createOrganization(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+        await apiFetch("/api/admin/organizations", {
+            method: "POST",
+            body: JSON.stringify({ name: $("organizationName").value.trim(), contactEmail: $("organizationEmail").value.trim() })
+        });
+        form.reset();
+        $("adminStatus").textContent = "Organization added.";
+        await loadAdminDashboard();
+    } catch (error) {
+        $("adminStatus").textContent = `Could not add organization: ${error.message}`;
+    } finally { button.disabled = false; }
+}
+
+async function updateOrganizationStatus(select) {
+    select.disabled = true;
+    try {
+        await apiFetch(`/api/admin/organizations/${encodeURIComponent(select.dataset.organizationId)}`, {
+            method: "PATCH", body: JSON.stringify({ status: select.value })
+        });
+        $("adminStatus").textContent = "Organization status updated.";
+    } catch (error) {
+        $("adminStatus").textContent = `Could not update organization: ${error.message}`;
+        await loadAdminDashboard();
+    } finally { select.disabled = false; }
 }
 
 function renderAdminVerificationQueue(profiles) {
@@ -1076,7 +1129,8 @@ function hydrateInterpreterProfile(profile = {}) {
     setSelectedTags("specialties", p.specialties || []);
     $("interpreterYears").value = p.yearsExperience ?? "";
     $("interpreterCredentials").value = (p.credentials || []).join("\n");
-    $("interpreterCredentialStatus").value = p.credentialStatus || "unsubmitted";
+    pendingCredentialRemovalPaths = new Set();
+    renderCredentialReviewStatus(p);
     renderCredentialDocuments(p.credentialDocuments || []);
     const availability = p.availability || {};
     document.querySelectorAll('input[name="availabilityDay"]').forEach(input => input.checked = (availability.days || []).includes(input.value));
@@ -1085,16 +1139,96 @@ function hydrateInterpreterProfile(profile = {}) {
     $("interpreterAvailableNow").checked = Boolean(availability.availableNow);
     setInterpreterPhoto(p.photoUrl || "");
     updateInterpreterCompletion();
+    renderInterpreterLifecycle(p);
     renderTranslatorDashboard();
 }
 
 function renderCredentialDocuments(documents = []) {
     const container = $("credentialDocumentList");
-    if (!documents.length) {
+    const visibleDocuments = documents.filter(document => !pendingCredentialRemovalPaths.has(document.path));
+    if (!visibleDocuments.length) {
         container.innerHTML = "<p>No credential documents uploaded yet.</p>";
         return;
     }
-    container.innerHTML = documents.map(document => `<span class="credential-document">${escapeHtml(document.name || "Credential document")}</span>`).join("");
+    container.replaceChildren(...visibleDocuments.map(document => {
+        const row = document.createElement("span");
+        row.className = "credential-document";
+        const name = document.createElement("span");
+        name.textContent = document.name || "Credential document";
+        const view = document.createElement("button");
+        view.className = "text-button";
+        view.type = "button";
+        view.textContent = "View";
+        view.onclick = () => openInterpreterCredentialDocument(document, view);
+        const remove = document.createElement("button");
+        remove.className = "text-button reject-action";
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.onclick = () => {
+            if (document.path) pendingCredentialRemovalPaths.add(document.path);
+            renderCredentialDocuments(documents);
+            updateInterpreterCompletion();
+            $("interpreterProfileStatus").textContent = `${document.name || "Credential document"} will be removed when you save.`;
+        };
+        row.append(name, view, remove);
+        return row;
+    }));
+}
+
+async function openInterpreterCredentialDocument(document, button) {
+    if (!document.path || !storage) return;
+    button.disabled = true;
+    try {
+        const url = await getDownloadURL(storageRef(storage, document.path));
+        window.open(url, "_blank", "noopener");
+    } catch (error) {
+        $("interpreterProfileStatus").textContent = `Could not open credential document: ${error.message}`;
+    } finally { button.disabled = false; }
+}
+
+function renderCredentialReviewStatus(profile = {}) {
+    const labels = {
+        unsubmitted: "Not submitted",
+        submitted: "Pending review",
+        approved: "Approved",
+        needs_changes: "Changes requested",
+        rejected: "Rejected"
+    };
+    const status = profile.verificationStatus === "verified" ? "approved" : (profile.credentialStatus || "unsubmitted");
+    $("interpreterCredentialStatus").textContent = labels[status] || status.replace(/_/g, " ");
+}
+
+function interpreterLifecycleStatus(profile = {}) {
+    if (profile.verificationStatus === "verified") return "verified";
+    if (profile.credentialStatus === "submitted" || profile.onboardingStatus === "submitted") return "submitted";
+    if (profile.verificationStatus === "needs_changes" || profile.verificationStatus === "rejected") return profile.verificationStatus;
+    if (profile.onboardingStatus === "complete") return "complete";
+    return "draft";
+}
+
+function renderInterpreterLifecycle(profile = {}) {
+    const status = interpreterLifecycleStatus(profile);
+    const labels = {
+        draft: "Not submitted",
+        complete: "Ready to submit",
+        submitted: "Pending review",
+        verified: "Verified",
+        needs_changes: "Changes requested",
+        rejected: "Not approved"
+    };
+    const messages = {
+        draft: "Finish the steps below, then submit your profile for review.",
+        complete: "Your profile is complete and ready to submit for verification.",
+        submitted: "Your profile and credential evidence are pending administrator review.",
+        verified: "Your interpreter profile is verified and visible in discovery.",
+        needs_changes: "An administrator requested changes. Update your profile or credentials, then submit again.",
+        rejected: "Verification was not approved. Update your information before submitting again."
+    };
+    const notes = ["needs_changes", "rejected"].includes(status) && profile.verificationNotes
+        ? ` Reviewer note: ${profile.verificationNotes}`
+        : "";
+    $("interpreterVerificationSummary").textContent = labels[status] || labels.draft;
+    $("interpreterLifecycleText").textContent = (messages[status] || messages.draft) + notes;
 }
 
 async function uploadCredentialDocuments(existing = []) {
@@ -1117,26 +1251,36 @@ async function uploadCredentialDocuments(existing = []) {
 
 async function loadInterpreterProfile() {
     const ref = doc(db, "translators", currentUser.uid);
-    const snap = await getDoc(ref);
+    const privateRef = doc(db, "interpreterPrivate", currentUser.uid);
+    const [snap, privateSnap] = await Promise.all([getDoc(ref), getDoc(privateRef).catch(() => null)]);
     if (!snap.exists()) {
         // Translator role exists but its onboarding document does not yet. This
         // can happen with accounts created before interpreter onboarding.
         const starter = {
             uid: currentUser.uid,
             displayName: currentProfile.displayName || currentUser.displayName || "",
-            email: (currentUser.email || "").toLowerCase(),
             onboardingStatus: "draft",
             verificationStatus: "unverified",
-            languages: [], dialects: [], specialties: [], credentials: [],
+            languages: [], dialects: [], specialties: [], credentials: [], credentialStatus: "unsubmitted",
             yearsExperience: 0,
             availability: { days: [], start: "", end: "", availableNow: false, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" },
             rating: null, ratingCount: 0,
             createdAt: serverTimestamp(), updatedAt: serverTimestamp()
         };
-        await setDoc(ref, starter, { merge: true });
-        currentInterpreterProfile = starter;
+        const privateStarter = {
+            uid: currentUser.uid,
+            email: (currentUser.email || "").toLowerCase(),
+            phone: "",
+            credentialDocuments: [],
+            createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+        };
+        const batch = writeBatch(db);
+        batch.set(ref, starter, { merge: true });
+        batch.set(privateRef, privateStarter, { merge: true });
+        await batch.commit();
+        currentInterpreterProfile = { ...starter, ...privateStarter };
     } else {
-        currentInterpreterProfile = snap.data();
+        currentInterpreterProfile = { ...snap.data(), ...(privateSnap?.exists() ? privateSnap.data() : {}) };
     }
     hydrateInterpreterProfile(currentInterpreterProfile);
 }
@@ -1200,6 +1344,7 @@ function previewInterpreterPhoto() {
 }
 
 function interpreterFormData() {
+    const experienceValue = $("interpreterYears").value.trim();
     return {
         displayName: $("interpreterFullName").value.trim(),
         phone: $("interpreterPhone").value.trim(),
@@ -1207,9 +1352,8 @@ function interpreterFormData() {
         languages: [...selectedTags.languages],
         dialects: [...selectedTags.dialects],
         specialties: [...selectedTags.specialties],
-        yearsExperience: Number($("interpreterYears").value || 0),
+        yearsExperience: experienceValue === "" ? null : Number(experienceValue),
         credentials: splitList($("interpreterCredentials").value),
-        credentialStatus: $("interpreterCredentialStatus").value,
         availability: {
             days: [...document.querySelectorAll('input[name="availabilityDay"]:checked')].map(input => input.value),
             start: $("availabilityStart").value,
@@ -1220,50 +1364,117 @@ function interpreterFormData() {
     };
 }
 
+function interpreterWizardSteps(data = interpreterFormData()) {
+    const hasValidExperience = Number.isFinite(data.yearsExperience) && data.yearsExperience >= 0 && data.yearsExperience <= 80;
+    const hasValidSchedule = data.availability.days.length && data.availability.start && data.availability.end && data.availability.start < data.availability.end;
+    const existingDocuments = (currentInterpreterProfile?.credentialDocuments || []).filter(document => !pendingCredentialRemovalPaths.has(document.path));
+    const selectedDocuments = [...($("interpreterCredentialFiles").files || [])];
+    return [
+        { label: "Personal info", complete: Boolean(data.displayName && data.bio), message: "Add your full name and professional bio before continuing." },
+        { label: "Languages", complete: Boolean(data.languages.length && data.specialties.length), message: "Add at least one language and one specialty before continuing." },
+        { label: "Credentials", complete: Boolean(hasValidExperience && data.credentials.length && (existingDocuments.length || selectedDocuments.length)), message: "Add your years of experience, at least one credential, and a supporting document before continuing." },
+        { label: "Availability", complete: Boolean(hasValidSchedule), message: "Choose at least one available day and a valid start and end time before continuing." }
+    ];
+}
+
 function interpreterCompletion(data = interpreterFormData()) {
-    const checks = [data.displayName, data.bio, data.languages.length, data.specialties.length, Number.isFinite(data.yearsExperience), data.availability.days.length];
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+    const steps = interpreterWizardSteps(data);
+    return Math.round((steps.filter(step => step.complete).length / steps.length) * 100);
+}
+
+function renderInterpreterWizard(data = interpreterFormData()) {
+    const steps = interpreterWizardSteps(data);
+    document.querySelectorAll("[data-wizard-step]").forEach((button, index) => {
+        const step = steps[index];
+        const active = index === currentInterpreterWizardStep;
+        button.classList.toggle("complete", step.complete);
+        button.classList.toggle("incomplete", !step.complete);
+        button.classList.toggle("active", active);
+        button.querySelector(".wizard-step-icon").textContent = step.complete ? "✓" : "✕";
+        button.setAttribute("aria-label", `${step.label}: ${step.complete ? "complete" : "incomplete"}`);
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+    });
+    document.querySelectorAll("[data-wizard-panel]").forEach(panel => {
+        panel.classList.toggle("hidden", Number(panel.dataset.wizardPanel) !== currentInterpreterWizardStep);
+    });
+    $("interpreterWizardBack").disabled = currentInterpreterWizardStep === 0;
+    $("interpreterWizardNext").classList.toggle("hidden", currentInterpreterWizardStep === steps.length - 1);
+    $("interpreterFinalActions").classList.toggle("hidden", currentInterpreterWizardStep !== steps.length - 1);
+    $("interpreterWizardPosition").textContent = `Step ${currentInterpreterWizardStep + 1} of ${steps.length}`;
+    return steps;
+}
+
+function showInterpreterWizardStep(index, focus = true) {
+    currentInterpreterWizardStep = Math.max(0, Math.min(3, Number(index) || 0));
+    renderInterpreterWizard();
+    if (focus) document.querySelector(`[data-wizard-panel="${currentInterpreterWizardStep}"] h3`)?.focus();
+}
+
+function advanceInterpreterWizard() {
+    const steps = renderInterpreterWizard();
+    const current = steps[currentInterpreterWizardStep];
+    if (!current.complete) {
+        $("interpreterProfileStatus").textContent = current.message;
+        return;
+    }
+    $("interpreterProfileStatus").textContent = "";
+    showInterpreterWizardStep(currentInterpreterWizardStep + 1);
+}
+
+function verificationSubmissionError(data) {
+    const incompleteStep = interpreterWizardSteps(data).find(step => !step.complete);
+    if (incompleteStep) return incompleteStep.message;
+    return "";
 }
 
 function updateInterpreterCompletion(data = interpreterFormData()) {
     const pct = interpreterCompletion(data);
+    renderInterpreterWizard(data);
     $("interpreterProgressBar").style.width = `${pct}%`;
-    $("interpreterProgressText").textContent = pct === 100 ? "Your required interpreter profile information is complete." : `${pct}% complete · Add the remaining required information.`;
+    const completeSteps = interpreterWizardSteps(data).filter(step => step.complete).length;
+    $("interpreterProgressText").textContent = pct === 100 ? "All 4 profile steps are complete." : `${completeSteps} of 4 steps complete · Finish the steps marked ✕.`;
     $("interpreterCompletionBadge").textContent = pct === 100 ? "Profile complete" : "Not complete";
     $("interpreterCompletionBadge").classList.toggle("pending-badge", pct !== 100);
     return pct;
 }
 
-function setInterpreterSaveLoading(loading, draft = false) {
+function setInterpreterSaveLoading(loading, draft = false, submitForVerification = false) {
     const profileButton = $("saveInterpreterProfile");
     const draftButton = $("saveInterpreterDraft");
-    const activeButton = draft ? draftButton : profileButton;
+    const submitButton = $("submitInterpreterVerification");
+    const activeButton = submitForVerification ? submitButton : (draft ? draftButton : profileButton);
     profileButton.disabled = loading;
     draftButton.disabled = loading;
+    submitButton.disabled = loading;
     profileButton.setAttribute("aria-busy", String(loading && !draft));
     draftButton.setAttribute("aria-busy", String(loading && draft));
+    submitButton.setAttribute("aria-busy", String(loading && submitForVerification));
 
     if (loading) {
         const spinner = document.createElement("span");
         spinner.className = "button-spinner";
         spinner.setAttribute("aria-hidden", "true");
-        activeButton.replaceChildren(spinner, document.createTextNode(draft ? "Saving draft…" : "Saving profile…"));
+        activeButton.replaceChildren(spinner, document.createTextNode(submitForVerification ? "Submitting…" : (draft ? "Saving draft…" : "Saving profile…")));
         return;
     }
 
-    profileButton.textContent = "Save interpreter profile";
+    profileButton.textContent = "Save profile";
     draftButton.textContent = "Save draft";
+    submitButton.textContent = "Submit for verification";
 }
 
-async function saveInterpreterProfile(e, draft = false) {
+async function saveInterpreterProfile(e, draft = false, submitForVerification = false) {
     e?.preventDefault?.();
     if (currentProfile?.role !== "translator") return;
     const status = $("interpreterProfileStatus");
     const data = interpreterFormData();
     const completion = interpreterCompletion(data);
     if (!draft && completion < 100) { status.textContent = "Complete all required interpreter fields before finishing onboarding."; updateInterpreterCompletion(data); return; }
-    status.textContent = "Saving interpreter profile…";
-    setInterpreterSaveLoading(true, draft);
+    const submissionError = submitForVerification ? verificationSubmissionError(data) : "";
+    if (submissionError) { status.textContent = submissionError; updateInterpreterCompletion(data); return; }
+    status.textContent = submitForVerification ? "Submitting profile for verification…" : "Saving interpreter profile…";
+    setInterpreterSaveLoading(true, draft, submitForVerification);
     try {
         let photoUrl = currentInterpreterProfile?.photoUrl || "";
         let photoUploadError = null;
@@ -1284,42 +1495,67 @@ async function saveInterpreterProfile(e, draft = false) {
                 console.error("Interpreter photo upload failed:", error);
             }
         }
-        const credentialDocuments = await uploadCredentialDocuments(currentInterpreterProfile?.credentialDocuments || []);
+        const existingCredentialDocuments = (currentInterpreterProfile?.credentialDocuments || []).filter(document => !pendingCredentialRemovalPaths.has(document.path));
+        const credentialDocuments = await uploadCredentialDocuments(existingCredentialDocuments);
+        const credentialStatus = submitForVerification ? "submitted" : (currentInterpreterProfile?.credentialStatus || "unsubmitted");
+        const onboardingStatus = submitForVerification
+            ? "submitted"
+            : (currentInterpreterProfile?.verificationStatus === "verified"
+                ? (currentInterpreterProfile.onboardingStatus || "verified")
+                : (draft ? "draft" : (completion === 100 ? "complete" : "draft")));
+        const { phone, ...publicData } = data;
         const payload = {
-            ...data, uid: currentUser.uid, email: (currentProfile.email || currentUser.email || "").toLowerCase(), photoUrl,
-            credentialDocuments,
-            onboardingStatus: completion === 100 ? "complete" : "draft",
+            ...publicData, uid: currentUser.uid, photoUrl,
+            credentialStatus, onboardingStatus,
             verificationStatus: currentInterpreterProfile?.verificationStatus || "unverified",
             rating: currentInterpreterProfile?.rating ?? null, ratingCount: currentInterpreterProfile?.ratingCount || 0,
+            // Remove private fields from legacy profile documents as each
+            // interpreter saves after the privacy split migration.
+            email: deleteField(), phone: deleteField(), credentialDocuments: deleteField(), verificationNotes: deleteField(),
             updatedAt: serverTimestamp()
         };
-        await setDoc(doc(db, "translators", currentUser.uid), payload, { merge: true });
+        const privatePayload = {
+            uid: currentUser.uid,
+            email: (currentProfile.email || currentUser.email || "").toLowerCase(),
+            phone,
+            credentialDocuments,
+            updatedAt: serverTimestamp()
+        };
+        const batch = writeBatch(db);
+        batch.set(doc(db, "translators", currentUser.uid), payload, { merge: true });
+        batch.set(doc(db, "interpreterPrivate", currentUser.uid), privatePayload, { merge: true });
+        await batch.commit();
+        const removalPaths = [...pendingCredentialRemovalPaths];
+        pendingCredentialRemovalPaths = new Set();
+        if (storage) await Promise.allSettled(removalPaths.map(path => deleteObject(storageRef(storage, path))));
         if (data.displayName && data.displayName !== currentProfile.displayName) {
             await updateProfile(currentUser, { displayName: data.displayName });
             await setDoc(doc(db, "users", currentUser.uid), { displayName: data.displayName, updatedAt: serverTimestamp() }, { merge: true });
-            const email = payload.email;
+            const email = privatePayload.email;
             if (email) await setDoc(doc(db, "emailDirectory", email), { displayName: data.displayName, updatedAt: serverTimestamp() }, { merge: true });
             currentProfile = { ...currentProfile, displayName: data.displayName };
             hydrateDashboardProfile();
         }
-        currentInterpreterProfile = { ...currentInterpreterProfile, ...payload, photoUrl };
+        currentInterpreterProfile = { ...currentInterpreterProfile, ...payload, ...privatePayload, photoUrl };
         if (!photoUploadError) {
             $("interpreterPhoto").value = "";
             setInterpreterPhoto(photoUrl);
         }
         $("interpreterCredentialFiles").value = "";
         renderCredentialDocuments(credentialDocuments);
+        renderCredentialReviewStatus(currentInterpreterProfile);
+        renderInterpreterLifecycle(currentInterpreterProfile);
         updateInterpreterCompletion(data);
         renderTranslatorDashboard();
         if (photoUploadError) {
             status.textContent = `Profile saved, but the photo could not upload: ${photoUploadError.message}. Your selected photo is still here to retry.`;
         } else {
-            status.textContent = completion === 100 ? "Interpreter profile saved. Your onboarding information is complete." : "Draft saved. You can finish onboarding later.";
+            status.textContent = submitForVerification ? "Profile submitted for verification. You will see the review outcome here." : (completion === 100 ? "Interpreter profile saved. It is ready to submit for verification." : "Draft saved. You can finish onboarding later.");
         }
     } catch (error) {
         status.textContent = `Could not save interpreter profile: ${error.message}`;
     } finally {
-        setInterpreterSaveLoading(false, draft);
+        setInterpreterSaveLoading(false, draft, submitForVerification);
     }
 }
 
@@ -1382,18 +1618,18 @@ async function createCall(e) {
             : "Starting the call…");
         stage = "call-document-create";
         callLog(attemptId, stage, { interpreterRequested: Boolean(selectedInterpreter) });
-        const ref = await addDoc(collection(db, "calls"), {
-            callerId: currentUser.uid, receiverId: receiver.uid,
-            translatorId: selectedInterpreter?.id || null,
-            translatorName: selectedInterpreter?.displayName || null,
-            status: "ringing", translationStatus: selectedInterpreter ? "requested" : "not_requested",
-            createdAt: serverTimestamp(), startedAt: null, endedAt: null,
-            callerName: currentProfile.displayName || currentProfile.email, receiverName: receiver.displayName || receiver.email || receiverEmail
+        const created = await apiFetch("/api/calls/", {
+            method: "POST",
+            body: JSON.stringify({
+                receiverId: receiver.uid,
+                translatorId: selectedInterpreter?.id || null
+            })
         });
-        callLog(attemptId, "call-document-created", { callId: ref.id });
+        const callId = created.callId;
+        callLog(attemptId, "call-document-created", { callId });
         clearSelectedInterpreter();
         stage = "local-join";
-        await joinCall(ref.id, attemptId);
+        await joinCall(callId, attemptId);
         if (activeCallId) setCallFormStatus("");
     } catch (error) {
         console.error(`[FiniSpeak call][${attemptId}] start failed`, callErrorDetails(error, stage), error);
@@ -1425,7 +1661,7 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
         if (role === "translator") {
             if (call.translatorId && call.translatorId !== currentUser.uid) throw new Error("Another translator has already joined.");
             stage = "translator-connect-update";
-            await updateDoc(callRef, { translatorId: currentUser.uid, translationStatus: "connected" });
+            await apiFetch(`/api/calls/${encodeURIComponent(callId)}/translator-claim`, { method: "POST", body: "{}" });
         }
         activeCallId = callId; show("callView"); $("callIdLabel").textContent = callId;
         resetDetectedLanguage();
@@ -1825,12 +2061,19 @@ function formatTranscriptRole(role) {
 
 async function requestTranslator() {
     if (!activeCallId) return;
-    await updateDoc(doc(db, "calls", activeCallId), { translationStatus: "requested" });
+    await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/translator-request`, { method: "POST", body: "{}" });
     $("callStatus").textContent = "Translator requested. Available translators will receive a request.";
 }
 function toggleMute() { const t = localStream?.getAudioTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("muteButton").textContent = t.enabled ? "Mute" : "Unmute"; }
 function toggleCamera() { const t = localStream?.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("cameraButton").textContent = t.enabled ? "Camera Off" : "Camera On"; }
-async function endCall() { if (activeCallId) await updateDoc(doc(db, "calls", activeCallId), { status: "ended", endedAt: serverTimestamp() }); cleanupCall(); show("dashboardView"); loadConversationHistory(); }
+async function endCall() {
+    if (activeCallId) {
+        await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/state`, {
+            method: "PATCH", body: JSON.stringify({ state: "ended" })
+        });
+    }
+    cleanupCall(); show("dashboardView"); loadConversationHistory();
+}
 function cleanupListeners() { callUnsubs.forEach(u => u()); callUnsubs = []; }
 function cleanupCall(stopMedia = true) {
     const endingCallId = activeCallId;
@@ -1931,9 +2174,10 @@ async function acceptIncomingCall() {
     pendingIncomingCall = null;
     closeModal("incomingCallModal");
     try {
-        const callRef = doc(db, "calls", pending.id);
         if (pending.kind === "customer") {
-            await updateDoc(callRef, { status: "connected", startedAt: serverTimestamp() });
+            await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
+                method: "PATCH", body: JSON.stringify({ state: "connected" })
+            });
         }
         await joinCall(pending.id);
     } catch (error) {
@@ -1948,7 +2192,9 @@ async function declineIncomingCall() {
     closeModal("incomingCallModal");
     try {
         if (pending.kind === "customer") {
-            await updateDoc(doc(db, "calls", pending.id), { status: "declined", endedAt: serverTimestamp() });
+            await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
+                method: "PATCH", body: JSON.stringify({ state: "declined" })
+            });
         }
         // Translator declines only this visible request locally. Another translator can still accept it.
     } catch (error) {
@@ -1986,6 +2232,8 @@ function renderConversationHistory(rows) {
     }
     history.innerHTML = "";
     for (const call of rows) {
+        const row = document.createElement("article");
+        row.className = "conversation-row";
         const button = document.createElement("button");
         button.type = "button";
         button.className = "conversation-item";
@@ -1996,7 +2244,48 @@ function renderConversationHistory(rows) {
         const dateText = date ? date.toLocaleString() : "Previous call";
         button.innerHTML = `<strong>${escapeHtml(other)}</strong><span class="conversation-meta">${escapeHtml(dateText)} · View transcript</span>`;
         button.onclick = () => openHistoryTranscript(call);
-        history.appendChild(button);
+        row.appendChild(button);
+        if (call.status === "ended" && call.translatorId && currentProfile.role !== "translator") {
+            const reviewButton = document.createElement("button");
+            reviewButton.type = "button";
+            reviewButton.className = "secondary conversation-review-button";
+            reviewButton.textContent = "Review interpreter";
+            reviewButton.onclick = () => openReviewModal(call);
+            row.appendChild(reviewButton);
+        }
+        history.appendChild(row);
+    }
+}
+
+function openReviewModal(call) {
+    reviewCall = call;
+    $("reviewRating").value = "5";
+    $("reviewText").value = "";
+    $("reviewStatus").textContent = "";
+    openModal("reviewModal");
+}
+
+async function submitInterpreterReview(event) {
+    event.preventDefault();
+    if (!reviewCall?.translatorId) return;
+    const button = $("submitReview");
+    button.disabled = true;
+    $("reviewStatus").textContent = "Submitting review…";
+    try {
+        await apiFetch(`/api/reviews/interpreters/${encodeURIComponent(reviewCall.translatorId)}`, {
+            method: "POST",
+            body: JSON.stringify({
+                callId: reviewCall.id,
+                rating: Number($("reviewRating").value),
+                text: $("reviewText").value.trim()
+            })
+        });
+        $("reviewStatus").textContent = "Thank you. Your review is now visible.";
+        window.setTimeout(() => closeModal("reviewModal"), 700);
+    } catch (error) {
+        $("reviewStatus").textContent = error.message;
+    } finally {
+        button.disabled = false;
     }
 }
 

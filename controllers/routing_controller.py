@@ -1,9 +1,9 @@
 from flask import jsonify
 
 from controllers.controller_utils import identity_or_response, json_body
+from models.call import CallModel
 from models.session import SessionModel
 from models.translator import TranslatorModel
-from services.firebase_service import get_db
 
 
 LANGUAGE_NAMES = {
@@ -48,11 +48,11 @@ def recommend():
         profiles = TranslatorModel.search(language=language, specialty=data.get("specialty"), available_now=False)
     recommendations = [_recommendation(profile, language_confidence) for profile in profiles[:5]]
     if call_id:
-        get_db().collection("calls").document(call_id).set({
-            "detectedLanguage": language,
-            "detectedLanguageConfidence": language_confidence,
-            "translationStatus": "requested",
-            "routingStatus": "matched" if recommendations else "unmatched",
-            "recommendedTranslatorIds": [profile["id"] for profile in recommendations],
-        }, merge=True)
+        CallModel.request_translator(
+            call_id,
+            language=language,
+            language_confidence=language_confidence,
+            specialty=data.get("specialty"),
+            recommended_ids=[profile["id"] for profile in recommendations],
+        )
     return jsonify({"detectedLanguage": language, "languageConfidence": language_confidence, "recommendations": recommendations, "count": len(recommendations)})

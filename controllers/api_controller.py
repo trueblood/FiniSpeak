@@ -50,3 +50,24 @@ def firebase_config():
     if any(not config[key] for key in required):
         return jsonify({"error": "Firebase web configuration is incomplete", "config": config}), 503
     return jsonify(config)
+
+
+def openapi():
+    return jsonify({
+        "openapi": "3.0.3",
+        "info": {"title": "FiniSpeak API", "version": "1.0.0", "description": "Authenticated account, discovery, interpreter, call, session, review, and administration APIs."},
+        "servers": [{"url": "/api"}],
+        "security": [{"firebaseBearer": []}],
+        "components": {"securitySchemes": {"firebaseBearer": {"type": "http", "scheme": "bearer", "bearerFormat": "Firebase ID token"}}},
+        "paths": {
+            "/accounts/me": {"get": {"summary": "Get the signed-in account"}},
+            "/discovery": {"get": {"summary": "Find verified interpreters"}},
+            "/calls/": {"post": {"summary": "Create an authenticated call"}},
+            "/calls/{callId}/state": {"patch": {"summary": "Advance call state"}},
+            "/calls/{callId}/translator-request": {"post": {"summary": "Request interpretation"}},
+            "/calls/{callId}/translator-claim": {"post": {"summary": "Claim an interpretation request"}},
+            "/sessions": {"get": {"summary": "List the caller's sessions"}, "post": {"summary": "Create a session"}},
+            "/reviews/interpreters/{interpreterId}": {"get": {"summary": "List public reviews"}, "post": {"summary": "Submit a completed-session review"}},
+            "/admin/organizations": {"get": {"summary": "List organizations"}, "post": {"summary": "Create an organization"}},
+        },
+    })

@@ -1,7 +1,8 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app import create_app
+from models.translator import TranslatorModel
 
 
 class MilestoneOneApiTests(unittest.TestCase):
@@ -80,6 +81,21 @@ class MilestoneOneApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         set_verification.assert_called_once_with("interpreter-1", "verified", "admin-1", "Documents confirmed")
+
+    @patch("models.translator.TranslatorModel.get")
+    @patch("models.translator.get_db")
+    def test_verification_updates_the_full_onboarding_lifecycle(self, get_db, get_profile):
+        reference = MagicMock()
+        reference.get.return_value.exists = True
+        get_db.return_value.collection.return_value.document.return_value = reference
+        get_profile.return_value = {"id": "interpreter-1", "verificationStatus": "verified"}
+
+        TranslatorModel.set_verification("interpreter-1", "verified", "admin-1", "Checked")
+
+        payload = reference.set.call_args_list[0].args[0]
+        self.assertEqual(payload["verificationStatus"], "verified")
+        self.assertEqual(payload["credentialStatus"], "approved")
+        self.assertEqual(payload["onboardingStatus"], "verified")
 
 
 if __name__ == "__main__":

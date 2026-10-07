@@ -1,4 +1,5 @@
 import os
+import uuid
 
 from flask import Flask
 from flask_sock import Sock
@@ -44,6 +45,15 @@ def create_app():
     app.register_blueprint(routing_bp, url_prefix="/api/routing")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(web_bp)
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
+        response.headers.setdefault("X-Request-ID", str(uuid.uuid4()))
+        return response
 
     return app
 

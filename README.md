@@ -32,6 +32,8 @@ python -m unittest discover -s tests
 - Mute, camera, request translator, copy Call ID, and end-call controls
 - STUN configured for development; TURN is intentionally deferred
 - Firebase Storage for interpreter profile photos; FCM is intentionally deferred
+- Interpreter onboarding with draft, profile-complete, submitted, changes-requested, rejected, and verified states
+- Private credential evidence uploads with interpreter view/remove controls and administrator review
 
 ## Run locally
 
@@ -64,14 +66,36 @@ or WebP images smaller than 5 MB.
 Deploy both rule files after Storage is created:
 
 ```bash
-firebase deploy --only firestore:rules,storage --project finispeak
+firebase deploy --only firestore,storage --project finispeak
 ```
+
+## Interpreter onboarding and verification
+
+Interpreters can save an incomplete draft, save a complete profile, or submit a complete profile and credential evidence for administrator review. Submission requires a name, bio, language, specialty, years of experience, valid weekly availability, at least one credential, and at least one credential document. Administrators can approve the profile or request changes. Approved profiles become visible in discovery; a returned profile can be edited and submitted again.
+
+Credential files are private under `interpreter-credentials/{userId}/`. Interpreters can view or remove their own files. To replace a file, remove it, choose the replacement, and save or resubmit the profile.
 
 For local testing, create three accounts in separate browser profiles/incognito contexts: Customer 1, Customer 2, and Translator. Customer 1 creates a call using Customer 2's email address. Customer 2 joins using the Call ID. Press Request Translator, then the Translator joins using the same Call ID.
 
-## Production work still required
+## Deployment-ready branch
 
-Add TURN/coturn, stricter Firestore security rules, server-authoritative call state, translator discovery/availability, billing, push notifications, verification, abuse controls, and mobile incoming-call behavior before production use.
+The `deployment-ready` branch includes the current web MVP plus the production code foundations that do not depend on the pending DigitalOcean infrastructure:
+
+- Call creation, state transitions, interpreter requests, and interpreter claims go through authenticated API endpoints and transactional server-side logic.
+- Public interpreter documents are separated from private contact and credential evidence data in `interpreterPrivate/{userId}`.
+- Public profile detail endpoints return verified interpreters only, and public profiles include moderated recent reviews.
+- Customers can submit a review from completed-call history; administrators can moderate reviews.
+- Administrators can create and update organization records, alongside account, interpreter, session, and review oversight.
+- `/api/openapi.json`, security response headers, Firestore indexes, and a deployment regression-test gate are included.
+
+Before enabling production traffic, complete the Firebase Emulator/rules acceptance pass, browser acceptance testing with three real accounts, transcript consent/retention review, and the DigitalOcean networking/TURN work when that infrastructure is available. Billing, push notifications, abuse controls, and native mobile incoming-call behavior remain intentionally outside this branch's infrastructure scope.
+
+To migrate legacy interpreter documents that still contain private fields, preview first and then apply the migration with the production Firebase credentials:
+
+```bash
+python scripts/migrate_interpreter_privacy.py --dry-run
+python scripts/migrate_interpreter_privacy.py --apply
+```
 
 
 ## Customer lookup

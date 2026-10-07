@@ -26,6 +26,36 @@ service cloud.firestore {
         && request.resource.data.active == true && request.resource.data.seeded == false
         && request.resource.data.createdBy == request.auth.uid && request.resource.data.createdAt == request.time;
     }
+    function validInterpreterSubmission() {
+      let profile = request.resource.data;
+      return profile.displayName is string && profile.displayName.size() > 0
+        && profile.bio is string && profile.bio.size() > 0
+        && profile.languages is list && profile.languages.size() > 0
+        && profile.specialties is list && profile.specialties.size() > 0
+        && profile.yearsExperience is number && profile.yearsExperience >= 0 && profile.yearsExperience <= 80
+        && profile.credentials is list && profile.credentials.size() > 0
+        && profile.credentialDocuments is list && profile.credentialDocuments.size() > 0
+        && profile.availability is map
+        && profile.availability.days is list && profile.availability.days.size() > 0
+        && profile.availability.start is string && profile.availability.start.size() > 0
+        && profile.availability.end is string && profile.availability.end.size() > 0
+        && profile.onboardingStatus == 'submitted';
+    }
+    function validInterpreterOwnerUpdate() {
+      let credentialStatus = request.resource.data.credentialStatus;
+      let onboardingStatus = request.resource.data.onboardingStatus;
+      return credentialStatus in ['unsubmitted', 'submitted', 'needs_changes', 'approved', 'rejected']
+        && (credentialStatus == 'submitted'
+          || (credentialStatus == 'unsubmitted' && !('credentialStatus' in resource.data))
+          || ('credentialStatus' in resource.data && credentialStatus == resource.data.credentialStatus))
+        && (onboardingStatus == resource.data.onboardingStatus || onboardingStatus in ['draft', 'complete', 'submitted'])
+        && (credentialStatus != 'submitted' || validInterpreterSubmission());
+    }
+    function hasNoPrivateInterpreterFields() {
+      return !request.resource.data.keys().hasAny([
+        'email', 'phone', 'credentialDocuments', 'verificationNotes'
+      ]);
+    }
 
     match /users/{userId} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
@@ -36,20 +66,27 @@ service cloud.firestore {
     }
 
     match /emailDirectory/{email} {
-      allow read: if isActive();
+      // Exact lookup is required for customer-to-customer calling. Collection
+      // listing would expose the entire account directory.
+      allow get: if isActive();
+      allow list: if false;
       allow create, update: if isActive() && request.resource.data.uid == request.auth.uid;
       allow delete: if isAdmin() || (isActive() && resource.data.uid == request.auth.uid);
     }
 
     match /translators/{translatorId} {
-      allow read: if isActive();
-      allow create: if isActive() && request.auth.uid == translatorId && request.resource.data.verificationStatus == 'unverified';
+      allow read: if isAdmin()
+        || (isActive() && request.auth.uid == translatorId)
+        || (isActive() && resource.data.verificationStatus == 'verified');
+      allow create: if isActive() && request.auth.uid == translatorId
+        && request.resource.data.verificationStatus == 'unverified'
+        && hasNoPrivateInterpreterFields();
       allow update: if isAdmin() || (isActive() && request.auth.uid == translatorId
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'email', 'phone', 'bio', 'languages', 'dialects', 'specialties',
           'yearsExperience', 'credentials', 'credentialDocuments', 'credentialStatus', 'availability',
-          'photoUrl', 'onboardingStatus', 'updatedAt'
-        ]));
+          'photoUrl', 'onboardingStatus', 'updatedAt', 'verificationNotes'
+        ]) && validInterpreterOwnerUpdate() && hasNoPrivateInterpreterFields());
       allow delete: if isAdmin() || (isActive() && request.auth.uid == translatorId);
 
       match /reviews/{reviewId} {
@@ -58,21 +95,31 @@ service cloud.firestore {
       }
     }
 
+    match /interpreterPrivate/{translatorId} {
+      allow read: if isAdmin() || (isActive() && request.auth.uid == translatorId);
+      allow create: if isAdmin() || (isActive() && request.auth.uid == translatorId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'phone', 'credentialDocuments', 'createdAt', 'updatedAt'
+        ]));
+      allow update: if isAdmin() || (isActive() && request.auth.uid == translatorId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid', 'email', 'phone', 'credentialDocuments', 'createdAt', 'updatedAt'
+        ]));
+      allow delete: if isAdmin() || (isActive() && request.auth.uid == translatorId);
+    }
+
     match /reference_languages/{itemId} { allow read: if true; allow create: if validReferenceItem(); allow update, delete: if isAdmin(); }
     match /reference_dialects/{itemId} { allow read: if true; allow create: if validReferenceItem(); allow update, delete: if isAdmin(); }
     match /reference_specialties/{itemId} { allow read: if true; allow create: if validReferenceItem(); allow update, delete: if isAdmin(); }
 
     match /calls/{callId} {
-      allow create: if isActive() && request.resource.data.callerId == request.auth.uid;
+      // Call documents are created and transitioned by the authenticated API.
+      // Clients retain real-time reads and write only scoped signaling data.
+      allow create: if isAdmin();
       allow read: if isAdmin() || isCallParticipant(callId) || (isTranslator() && resource.data.translationStatus == 'requested');
-      allow update: if isAdmin() || (isActive() && (
-          isCallParticipant(callId)
-          || (isTranslator() && resource.data.translationStatus == 'requested'
-            && (resource.data.translatorId == null || resource.data.translatorId == request.auth.uid))
-        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'translationStatus', 'translatorId', 'startedAt', 'endedAt',
-          'detectedLanguage', 'detectedLanguageConfidence', 'routingStatus', 'recommendedTranslatorIds'
-        ]));
+      allow update: if isAdmin();
       allow delete: if isAdmin();
 
       match /participants/{participantId} {
