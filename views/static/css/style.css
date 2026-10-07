@@ -140,6 +140,7 @@ code { background:#e2e8f0; padding:3px 6px; border-radius:6px; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(3,8,18,.78); display: grid; place-items: center; padding: 1rem; backdrop-filter: blur(8px); }
 .modal-backdrop.hidden { display: none; }
 .modal-card { width: min(520px, 100%); background: #111827; border: 1px solid rgba(255,255,255,.14); border-radius: 22px; padding: 1.5rem; box-shadow: 0 24px 80px rgba(0,0,0,.45); }
+.modal-card h2 { color:#f8fafc; }
 .modal-card .actions { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1.25rem; }
 .transcript-modal-card { width: min(760px, 100%); max-height: 85vh; display: flex; flex-direction: column; }
 .history-transcript-list { min-height: 260px; max-height: 58vh; overflow-y: auto; }
@@ -215,6 +216,7 @@ button:disabled { cursor:wait; opacity:.72; }
 #requestTranslatorButton:disabled { cursor:not-allowed; opacity:.52; }
 @keyframes button-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .button-spinner { animation-duration:1.4s; } }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:.01ms!important; animation-duration:.01ms!important; animation-iteration-count:1!important; } }
 .onboarding-progress { height:10px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin:0 0 8px; }
 .onboarding-progress-bar { height:100%; width:0; background:var(--primary); transition:width .2s ease; }
 .pending-badge { background:#fef3c7; color:#92400e; border-color:#fde68a; }

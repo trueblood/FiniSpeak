@@ -4,6 +4,8 @@ import urllib.error
 
 from services.participant_verification_service import verify_participant
 from services.transcription_service import transcribe_pcm
+from services.language_reliability_service import LanguageEvidenceTracker
+from services.language_monitoring_service import record_language_event
 
 
 def handle_socket(ws):
@@ -20,8 +22,10 @@ def handle_socket(ws):
         token = start.get("token", "")
         call_id = start.get("callId", "")
         sample_rate = int(start.get("sampleRate") or 48000)
-        language = (start.get("language") or "").strip() or None
-        language_confidence = None
+        confirmed_language = (start.get("language") or "").strip() or None
+        tracker = LanguageEvidenceTracker()
+        if confirmed_language:
+            tracker.confirm(confirmed_language)
         if not token or not call_id:
             raise RuntimeError("Missing transcription authentication or call ID.")
 
@@ -47,8 +51,9 @@ def handle_socket(ws):
                 if control.get("type") == "language":
                     confirmed_language = str(control.get("language") or "").strip().casefold()
                     if confirmed_language:
-                        language = confirmed_language
-                        language_confidence = 1.0
+                        previous = tracker.snapshot().get("primaryLanguage")
+                        tracker.confirm(confirmed_language)
+                        record_language_event(call_id, "confirmation", previous, tracker.snapshot().get("primaryConfidence"), confirmed_language, tracker.snapshot().get("sampleCount"))
                 continue
 
             buffer.extend(message)
@@ -60,21 +65,21 @@ def handle_socket(ws):
                 raw = bytes(buffer)
                 buffer.clear()
                 ws.send(json.dumps({"type": "processing"}))
-                result = transcribe_pcm(raw, sample_rate, language, language_confidence)
+                result = transcribe_pcm(raw, sample_rate, confirmed_language, 1.0 if confirmed_language else None)
                 if result["text"]:
-                    if result.get("language"):
-                        language = result["language"]
-                    if result.get("languageConfidence") is not None:
-                        language_confidence = result["languageConfidence"]
-                    ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence")}))
+                    evidence = tracker.add(result.get("language"), result.get("languageConfidence"), len(result["text"]))
+                    record_language_event(call_id, "sample", evidence.get("primaryLanguage"), evidence.get("primaryConfidence"), confirmed_language, evidence.get("sampleCount"))
+                    ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence"), "languageEvidence": evidence}))
                 else:
                     ws.send(json.dumps({"type": "listening"}))
 
         if buffer:
             ws.send(json.dumps({"type": "processing"}))
-            result = transcribe_pcm(bytes(buffer), sample_rate, language, language_confidence)
+            result = transcribe_pcm(bytes(buffer), sample_rate, confirmed_language, 1.0 if confirmed_language else None)
             if result["text"]:
-                ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence")}))
+                evidence = tracker.add(result.get("language"), result.get("languageConfidence"), len(result["text"]))
+                record_language_event(call_id, "sample", evidence.get("primaryLanguage"), evidence.get("primaryConfidence"), confirmed_language, evidence.get("sampleCount"))
+                ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence"), "languageEvidence": evidence}))
     except urllib.error.HTTPError as exc:
         try:
             detail = exc.read().decode("utf-8")

@@ -1,9 +1,11 @@
-from flask import jsonify
+from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
 from models.account import AccountModel
 from models.review import ReviewModel
 from models.translator import TranslatorModel
+from models.api_key import ApiKeyModel
+from services.language_monitoring_service import language_metrics_summary
 from services.firebase_service import get_db
 
 
@@ -77,3 +79,37 @@ def moderate_review(interpreter_id, review_id):
         return (jsonify({"review": review}), 200) if review else (jsonify({"error": "Review not found"}), 404)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+def api_keys():
+    identity, error = identity_or_response(admin=True)
+    if error:
+        return error
+    if request.method == "POST":
+        try:
+            return jsonify({"apiKey": ApiKeyModel.create(json_body(), identity["uid"])}), 201
+        except (RuntimeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+    return jsonify({"apiKeys": ApiKeyModel.all()})
+
+
+def revoke_api_key(key_id):
+    identity, error = identity_or_response(admin=True)
+    if error:
+        return error
+    api_key = ApiKeyModel.revoke(key_id, identity["uid"])
+    return (jsonify({"apiKey": api_key}), 200) if api_key else (jsonify({"error": "API key not found."}), 404)
+
+
+def api_usage():
+    _, error = identity_or_response(admin=True)
+    if error:
+        return error
+    return jsonify(ApiKeyModel.usage_summary())
+
+
+def language_metrics():
+    _, error = identity_or_response(admin=True)
+    if error:
+        return error
+    return jsonify(language_metrics_summary())
