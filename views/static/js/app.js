@@ -202,6 +202,9 @@ function openModal(id) {
     modalReturnFocus = document.activeElement;
     activeModal = modal;
     modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+    $("mainContent")?.setAttribute("inert", "");
+    document.querySelector(".site-header")?.setAttribute("inert", "");
     const target = modal.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
     window.requestAnimationFrame(() => target?.focus());
 }
@@ -210,6 +213,9 @@ function closeModal(id) {
     const modal = $(id);
     if (!modal) return;
     modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+    $("mainContent")?.removeAttribute("inert");
+    document.querySelector(".site-header")?.removeAttribute("inert");
     activeModal = null;
     if (modalReturnFocus?.focus) modalReturnFocus.focus();
     modalReturnFocus = null;
@@ -1806,19 +1812,7 @@ async function startTranscription(callId) {
         const token = await currentUser.getIdToken();
         transcriptionAudioContext = new (window.AudioContext || window.webkitAudioContext)();
         const sampleRate = transcriptionAudioContext.sampleRate;
-        const processorCode = `
-            class FiniSpeakPCMProcessor extends AudioWorkletProcessor {
-                process(inputs) {
-                    const channel = inputs[0] && inputs[0][0];
-                    if (channel) this.port.postMessage(new Float32Array(channel));
-                    return true;
-                }
-            }
-            registerProcessor('finispeak-pcm', FiniSpeakPCMProcessor);
-        `;
-        const blobUrl = URL.createObjectURL(new Blob([processorCode], { type: "application/javascript" }));
-        await transcriptionAudioContext.audioWorklet.addModule(blobUrl);
-        URL.revokeObjectURL(blobUrl);
+        await transcriptionAudioContext.audioWorklet.addModule("/static/js/pcm-worklet.js");
 
         transcriptionSource = transcriptionAudioContext.createMediaStreamSource(new MediaStream(localStream.getAudioTracks()));
         transcriptionNode = new AudioWorkletNode(transcriptionAudioContext, "finispeak-pcm");
@@ -1842,23 +1836,30 @@ async function startTranscription(callId) {
             if (message.type === "error") { status.textContent = `Transcription: ${message.message}`; return; }
             if (message.type === "final" && message.text?.trim() && activeCallId === callId) {
                 status.textContent = "Listening 🎤";
-                const confidence = normalizeLanguageConfidence(message.languageConfidence);
-                if (message.language) updateDetectedLanguage(message.language, confidence);
+                const rawConfidence = normalizeLanguageConfidence(message.languageConfidence);
+                const evidence = message.languageEvidence || null;
+                const stableLanguage = evidence?.primaryLanguage || message.language;
+                const stableConfidence = normalizeLanguageConfidence(evidence?.primaryConfidence ?? message.languageConfidence);
+                if (stableLanguage) updateDetectedLanguage(stableLanguage, stableConfidence, evidence?.confirmed === true);
                 await addDoc(collection(db, "calls", callId, "transcripts"), {
                     speakerId: currentUser.uid,
                     speakerRole: currentCallRole,
                     speakerName: currentProfile.displayName || currentProfile.email,
                     language: message.language || null,
-                    languageConfidence: confidence,
+                    languageConfidence: rawConfidence,
+                    primaryLanguage: stableLanguage || null,
+                    primaryLanguageConfidence: stableConfidence,
+                    languageSampleCount: Number(evidence?.sampleCount || 1),
+                    languageConfirmationRequired: evidence?.requiresConfirmation === true,
                     text: message.text.trim(),
                     isFinal: true,
                     createdAt: serverTimestamp(),
                     clientCreatedAt: Date.now()
                 });
-                const routeKey = languageRouteKey(callId, message.language);
-                if (message.language && !routedLanguageCalls.has(routeKey)) {
+                const routeKey = languageRouteKey(callId, stableLanguage);
+                if (stableLanguage && evidence?.requiresConfirmation !== true && !routedLanguageCalls.has(routeKey)) {
                     routedLanguageCalls.add(routeKey);
-                    routeDetectedLanguage(callId, message.language, confidence).catch(error => {
+                    routeDetectedLanguage(callId, stableLanguage, stableConfidence).catch(error => {
                         routedLanguageCalls.delete(routeKey);
                         console.warn("Automatic language routing unavailable:", error);
                     });
@@ -2178,8 +2179,8 @@ async function requestTranslator(event) {
         submit.disabled = selectedRequestLanguages.size === 0;
     }
 }
-function toggleMute() { const t = localStream?.getAudioTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("muteButton").textContent = t.enabled ? "Mute" : "Unmute"; }
-function toggleCamera() { const t = localStream?.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("cameraButton").textContent = t.enabled ? "Camera Off" : "Camera On"; }
+function toggleMute() { const t = localStream?.getAudioTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("muteButton").textContent = t.enabled ? "Mute" : "Unmute"; $("muteButton").setAttribute("aria-pressed", String(!t.enabled)); }
+function toggleCamera() { const t = localStream?.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("cameraButton").textContent = t.enabled ? "Camera Off" : "Camera On"; $("cameraButton").setAttribute("aria-pressed", String(!t.enabled)); }
 async function endCall() {
     if (activeCallId) {
         await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/state`, {
@@ -2201,6 +2202,8 @@ function cleanupCall(stopMedia = true) {
     resetDetectedLanguage();
     $("requestTranslatorButton").disabled = false;
     $("requestTranslatorButton").title = "";
+    $("muteButton").setAttribute("aria-pressed", "false");
+    $("cameraButton").setAttribute("aria-pressed", "false");
 }
 
 

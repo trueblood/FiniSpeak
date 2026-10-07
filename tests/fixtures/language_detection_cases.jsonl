@@ -1,0 +1,10 @@
+{"expectedLanguage":"en","predictedLanguage":"en","confidence":0.98,"confirmedLanguage":"en"}
+{"expectedLanguage":"es","predictedLanguage":"es","confidence":0.96,"confirmedLanguage":"es"}
+{"expectedLanguage":"fr","predictedLanguage":"fr","confidence":0.94,"confirmedLanguage":"fr"}
+{"expectedLanguage":"ar","predictedLanguage":"ar","confidence":0.93,"confirmedLanguage":"ar"}
+{"expectedLanguage":"vi","predictedLanguage":"vi","confidence":0.92,"confirmedLanguage":"vi"}
+{"expectedLanguage":"zh","predictedLanguage":"zh","confidence":0.91,"confirmedLanguage":"zh"}
+{"expectedLanguage":"pt","predictedLanguage":"pt","confidence":0.9,"confirmedLanguage":"pt"}
+{"expectedLanguage":"de","predictedLanguage":"de","confidence":0.89,"confirmedLanguage":"de"}
+{"expectedLanguage":"hi","predictedLanguage":"hi","confidence":0.88,"confirmedLanguage":"hi"}
+{"expectedLanguage":"so","predictedLanguage":"so","confidence":0.86,"confirmedLanguage":"so"}

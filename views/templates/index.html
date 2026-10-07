@@ -320,15 +320,15 @@
             <button id="copyCallId" class="secondary" type="button">Copy Call ID</button>
         </div>
         <div id="videoGrid" class="video-grid">
-            <article class="video-card local" data-role="local"><video id="localVideo" autoplay muted playsinline></video><div class="video-label video-label-local"><span class="video-role">You</span></div></article>
+            <article class="video-card local" data-role="local"><video id="localVideo" autoplay muted playsinline aria-label="Your camera preview"></video><div class="video-label video-label-local"><span class="video-role">You</span></div></article>
         </div>
         <div class="call-controls">
-            <button id="muteButton" class="secondary" type="button">Mute</button>
-            <button id="cameraButton" class="secondary" type="button">Camera Off</button>
+            <button id="muteButton" class="secondary" type="button" aria-pressed="false">Mute</button>
+            <button id="cameraButton" class="secondary" type="button" aria-pressed="false">Camera Off</button>
             <button id="requestTranslatorButton" type="button">Request Translator</button>
             <button id="endCallButton" class="danger" type="button">End Call</button>
         </div>
-        <p id="callStatus" class="status centered"></p>
+        <p id="callStatus" class="status centered" role="status" aria-live="polite"></p>
         <section id="interpreterMatches" class="interpreter-matches hidden" aria-live="polite">
             <div class="interpreter-matches-heading"><div><span class="eyebrow">Available now</span><h3>Interpreter matches</h3></div><span id="interpreterMatchSummary"></span></div>
             <div id="interpreterMatchList" class="interpreter-match-list"></div>
@@ -349,12 +349,12 @@
                 <label for="confirmedLanguage">Is this the right language? Confirm it or choose the correct one. Your conversation and interpreter matching will continue while you decide.</label>
                 <div><select id="confirmedLanguage"><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="ar">Arabic</option><option value="zh">Mandarin Chinese</option><option value="vi">Vietnamese</option><option value="so">Somali</option><option value="pt">Portuguese</option><option value="hi">Hindi</option></select><button id="confirmDetectedLanguage" type="button">Confirm language</button></div>
             </div>
-            <div id="transcriptList" class="transcript-list"><p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p></div>
+            <div id="transcriptList" class="transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live call transcript"><p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p></div>
             <p class="transcript-note">Only finalized text is saved to Firestore. Raw microphone audio is not stored by FiniSpeak.</p>
         </section>
     </section>
 </main>
-    <div id="incomingCallModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="incomingCallTitle">
+    <div id="incomingCallModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="incomingCallTitle" aria-describedby="incomingCallDetails">
         <div class="modal-card">
             <span class="eyebrow" id="incomingCallEyebrow">Incoming FiniSpeak call</span>
             <h2 id="incomingCallTitle">Someone is calling you</h2>
@@ -366,24 +366,24 @@
         </div>
     </div>
 
-    <div id="transcriptModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="historyTranscriptTitle">
+    <div id="transcriptModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="historyTranscriptTitle" aria-describedby="historyTranscriptMeta">
         <div class="modal-card transcript-modal-card">
             <div class="transcript-header">
                 <div><span class="eyebrow">Previous conversation</span><h2 id="historyTranscriptTitle">Call transcript</h2></div>
                 <button id="closeTranscriptModal" class="secondary" type="button">Close</button>
             </div>
             <p id="historyTranscriptMeta"></p>
-            <div id="historyTranscriptList" class="transcript-list history-transcript-list"></div>
+            <div id="historyTranscriptList" class="transcript-list history-transcript-list" role="log" aria-label="Previous call transcript"></div>
         </div>
     </div>
 
-    <div id="translatorRequestModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="translatorRequestTitle">
+    <div id="translatorRequestModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="translatorRequestTitle" aria-describedby="translatorRequestDescription">
         <div class="modal-card translator-request-modal-card">
             <div class="transcript-header">
                 <div><span class="eyebrow">Language matching</span><h2 id="translatorRequestTitle">Request a translator</h2></div>
                 <button id="closeTranslatorRequestModal" class="secondary" type="button">Close</button>
             </div>
-            <p>Choose every language being used in this call. Languages detected from the conversation are selected automatically.</p>
+            <p id="translatorRequestDescription">Choose every language being used in this call. Languages detected from the conversation are selected automatically.</p>
             <form id="translatorRequestForm">
                 <section class="request-language-section" aria-labelledby="detectedRequestLanguagesLabel">
                     <div class="request-language-heading"><strong id="detectedRequestLanguagesLabel">Detected in this call</strong><span id="detectedRequestLanguageCount"></span></div>
@@ -401,7 +401,7 @@
         </div>
     </div>
 
-    <div id="reviewModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
+    <div id="reviewModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reviewModalTitle">
         <div class="modal-card">
             <div class="transcript-header">
                 <div><span class="eyebrow">Interpreter feedback</span><h2 id="reviewModalTitle">Review your interpreter</h2></div>

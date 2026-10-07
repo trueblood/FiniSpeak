@@ -90,6 +90,10 @@ The `deployment-ready` branch includes the current web MVP plus the production c
 
 Before enabling production traffic, complete the Firebase Emulator/rules acceptance pass, browser acceptance testing with three real accounts, transcript consent/retention review, and the DigitalOcean networking/TURN work when that infrastructure is available. Billing, push notifications, abuse controls, and native mobile incoming-call behavior remain intentionally outside this branch's infrastructure scope.
 
+Production-hardening controls and the remaining evidence checklist are documented in [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md). Commercial API operations are in [`docs/COMMERCIAL_API.md`](docs/COMMERCIAL_API.md), the internal accessibility audit is in [`docs/ACCESSIBILITY_AUDIT.md`](docs/ACCESSIBILITY_AUDIT.md), and language reliability/evaluation is in [`docs/LANGUAGE_DETECTION.md`](docs/LANGUAGE_DETECTION.md).
+
+Run the static readiness gate locally with `python scripts/production_readiness_check.py`. In the deployed environment, use `python scripts/production_readiness_check.py --production --language-dataset <approved.jsonl>` and require `/api/ready` to return HTTP 200 before routing traffic.
+
 To migrate legacy interpreter documents that still contain private fields, preview first and then apply the migration with the production Firebase credentials:
 
 ```bash

@@ -16,9 +16,10 @@ class FakeSocket:
 
 
 class TranscriptionControllerTests(unittest.TestCase):
+    @patch("controllers.transcription_controller.record_language_event")
     @patch("controllers.transcription_controller.transcribe_pcm")
     @patch("controllers.transcription_controller.verify_participant")
-    def test_confirmed_language_updates_live_transcription(self, verify_participant, transcribe_pcm):
+    def test_confirmed_language_updates_live_transcription(self, verify_participant, transcribe_pcm, record_language_event):
         from controllers.transcription_controller import handle_socket
 
         transcribe_pcm.return_value = {

@@ -11,3 +11,7 @@ admin_bp.add_url_rule("/interpreters/<interpreter_id>/reviews/<review_id>", view
 admin_bp.add_url_rule("/organizations", view_func=organizations_controller.index, methods=["GET"])
 admin_bp.add_url_rule("/organizations", view_func=organizations_controller.create, methods=["POST"])
 admin_bp.add_url_rule("/organizations/<organization_id>", view_func=organizations_controller.update, methods=["PATCH"])
+admin_bp.add_url_rule("/api-keys", view_func=admin_controller.api_keys, methods=["GET", "POST"])
+admin_bp.add_url_rule("/api-keys/<key_id>/revoke", view_func=admin_controller.revoke_api_key, methods=["POST"])
+admin_bp.add_url_rule("/api-usage", view_func=admin_controller.api_usage, methods=["GET"])
+admin_bp.add_url_rule("/language-metrics", view_func=admin_controller.language_metrics, methods=["GET"])
