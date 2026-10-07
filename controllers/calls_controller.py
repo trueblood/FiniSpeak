@@ -88,6 +88,7 @@ def request_translator(call_id):
     updated = CallModel.request_translator(
         call_id,
         language=data.get("language"),
+        languages=data.get("languages"),
         dialect=data.get("dialect"),
         specialty=data.get("specialty"),
     )

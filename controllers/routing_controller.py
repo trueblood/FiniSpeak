@@ -34,25 +34,32 @@ def recommend():
         return error
     data = json_body()
     language_confidence = _confidence(data.get("languageConfidence"))
-    detected = str(data.get("detectedLanguage") or "").strip().casefold()
-    language = LANGUAGE_NAMES.get(detected, detected.title())
-    if not language:
-        return jsonify({"error": "detectedLanguage is required"}), 400
+    requested = data.get("languages") if isinstance(data.get("languages"), list) else []
+    languages = []
+    for value in requested or [data.get("detectedLanguage")]:
+        normalized = str(value or "").strip().casefold()
+        language = LANGUAGE_NAMES.get(normalized, normalized.title())
+        if language and language not in languages:
+            languages.append(language)
+    if not languages:
+        return jsonify({"error": "At least one language is required"}), 400
     call_id = data.get("callId")
     if call_id:
         session = SessionModel.get(call_id)
         if not session or (identity.get("role") != "admin" and identity["uid"] not in {session.get("callerId"), session.get("receiverId"), session.get("translatorId")}):
             return jsonify({"error": "Session not found or access denied"}), 403
-    profiles = TranslatorModel.search(language=language, specialty=data.get("specialty"), available_now=True)
+    search_args = {"language": languages[0]} if len(languages) == 1 else {"languages": languages}
+    profiles = TranslatorModel.search(**search_args, specialty=data.get("specialty"), available_now=True)
     if not profiles:
-        profiles = TranslatorModel.search(language=language, specialty=data.get("specialty"), available_now=False)
+        profiles = TranslatorModel.search(**search_args, specialty=data.get("specialty"), available_now=False)
     recommendations = [_recommendation(profile, language_confidence) for profile in profiles[:5]]
     if call_id:
         CallModel.request_translator(
             call_id,
-            language=language,
+            language=languages[0],
+            languages=languages,
             language_confidence=language_confidence,
             specialty=data.get("specialty"),
             recommended_ids=[profile["id"] for profile in recommendations],
         )
-    return jsonify({"detectedLanguage": language, "languageConfidence": language_confidence, "recommendations": recommendations, "count": len(recommendations)})
+    return jsonify({"detectedLanguage": languages[0], "languages": languages, "languageConfidence": language_confidence, "recommendations": recommendations, "count": len(recommendations)})

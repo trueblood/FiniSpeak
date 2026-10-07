@@ -40,8 +40,11 @@ class TranslatorModel:
         return {"id": document.id, **document.to_dict()} if document.exists else {"id": translator_id}
 
     @classmethod
-    def search(cls, language=None, dialect=None, specialty=None, available_now=False, minimum_rating=0):
-        language = (language or "").casefold()
+    def search(cls, language=None, languages=None, dialect=None, specialty=None, available_now=False, minimum_rating=0):
+        requested_languages = [str(value).casefold() for value in (languages or []) if str(value).strip()]
+        if language:
+            requested_languages.append(str(language).casefold())
+        requested_languages = set(requested_languages)
         dialect = (dialect or "").casefold()
         specialty = (specialty or "").casefold()
         profiles = []
@@ -49,7 +52,8 @@ class TranslatorModel:
             data = document.to_dict()
             if data.get("verificationStatus") != "verified":
                 continue
-            if language and language not in [str(value).casefold() for value in data.get("languages", [])]:
+            profile_languages = {str(value).casefold() for value in data.get("languages", [])}
+            if requested_languages and not requested_languages.issubset(profile_languages):
                 continue
             if dialect and dialect not in [str(value).casefold() for value in data.get("dialects", [])]:
                 continue
