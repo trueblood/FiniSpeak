@@ -20,6 +20,8 @@ let languageConfirmationPending = false;
 let confirmedDetectedLanguage = null;
 let activeTranslatorConnected = false;
 let interpreterMatchesByLanguage = new Map();
+let detectedCallLanguages = new Map();
+let selectedRequestLanguages = new Set();
 let activeModal = null, modalReturnFocus = null;
 let reviewCall = null;
 const taxonomy = { languages: [], dialects: [], specialties: [] };
@@ -113,7 +115,11 @@ function bindUI() {
     $("copyCallId").onclick = () => navigator.clipboard.writeText(activeCallId || "");
     $("muteButton").onclick = toggleMute;
     $("cameraButton").onclick = toggleCamera;
-    $("requestTranslatorButton").onclick = requestTranslator;
+    $("requestTranslatorButton").onclick = openTranslatorRequest;
+    $("closeTranslatorRequestModal").onclick = () => closeModal("translatorRequestModal");
+    $("cancelTranslatorRequest").onclick = () => closeModal("translatorRequestModal");
+    $("translatorRequestForm").onsubmit = requestTranslator;
+    $("translatorLanguageSearch").oninput = renderTranslatorLanguageOptions;
     $("confirmDetectedLanguage").onclick = confirmDetectedLanguage;
     $("endCallButton").onclick = endCall;
     $("acceptIncomingCall").onclick = acceptIncomingCall;
@@ -1898,6 +1904,65 @@ async function routeDetectedLanguage(callId, detectedLanguage, languageConfidenc
     return result;
 }
 
+function requestLanguageCatalog() {
+    return [...new Set([
+        ...detectedCallLanguages.keys(),
+        ...taxonomy.languages,
+        ...defaultTaxonomy.languages,
+        ...Object.values(detectedLanguageNames),
+    ].map(value => String(value || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function openTranslatorRequest() {
+    if (!activeCallId || activeTranslatorConnected) return;
+    selectedRequestLanguages = new Set(detectedCallLanguages.keys());
+    $("translatorLanguageSearch").value = "";
+    $("translatorRequestError").classList.add("hidden");
+    renderTranslatorRequestLanguages();
+    openModal("translatorRequestModal");
+}
+
+function renderTranslatorRequestLanguages() {
+    const detected = [...detectedCallLanguages.entries()].sort(([a], [b]) => a.localeCompare(b));
+    $("detectedRequestLanguageCount").textContent = detected.length ? `${detected.length} found` : "Still listening";
+    $("detectedRequestLanguages").innerHTML = detected.length
+        ? detected.map(([language, confidence]) => `<span class="request-language-chip">${escapeHtml(language)}${confidence === null ? "" : ` · ${Math.round(confidence * 100)}%`}</span>`).join("")
+        : '<span class="request-language-empty">No language detected yet. Search and choose languages below.</span>';
+    renderTranslatorLanguageOptions();
+}
+
+function renderTranslatorLanguageOptions() {
+    const query = $("translatorLanguageSearch").value.trim().toLowerCase();
+    const options = requestLanguageCatalog().filter(language => language.toLowerCase().includes(query));
+    const container = $("translatorLanguageOptions");
+    container.innerHTML = options.length ? "" : '<span class="request-language-empty">No languages match that search.</span>';
+    for (const language of options) {
+        const label = document.createElement("label");
+        label.className = `request-language-option${detectedCallLanguages.has(language) ? " detected" : ""}`;
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = selectedRequestLanguages.has(language);
+        checkbox.value = language;
+        checkbox.onchange = () => {
+            if (checkbox.checked) selectedRequestLanguages.add(language);
+            else selectedRequestLanguages.delete(language);
+            $("translatorRequestError").classList.add("hidden");
+            updateSelectedRequestLanguageCount();
+        };
+        const name = document.createElement("span");
+        name.textContent = language;
+        label.append(checkbox, name);
+        container.appendChild(label);
+    }
+    updateSelectedRequestLanguageCount();
+}
+
+function updateSelectedRequestLanguageCount() {
+    const count = selectedRequestLanguages.size;
+    $("selectedRequestLanguageCount").textContent = `${count} selected`;
+    $("submitTranslatorRequest").disabled = count === 0;
+}
+
 function renderInterpreterMatches() {
     const panel = $("interpreterMatches"), list = $("interpreterMatchList");
     const matches = new Map();
@@ -1933,6 +1998,20 @@ function detectedLanguageLabel(language) {
     return detectedLanguageNames[value.toLowerCase()] || value || "Not detected yet";
 }
 
+function rememberDetectedLanguage(language, confidence) {
+    if (!language) return;
+    const languageLabel = detectedLanguageLabel(language);
+    const normalizedConfidence = normalizeLanguageConfidence(confidence);
+    const previousConfidence = detectedCallLanguages.get(languageLabel);
+    if (!detectedCallLanguages.has(languageLabel) || (normalizedConfidence !== null && (previousConfidence === null || normalizedConfidence > previousConfidence))) {
+        detectedCallLanguages.set(languageLabel, normalizedConfidence);
+        if (!$("translatorRequestModal").classList.contains("hidden")) {
+            selectedRequestLanguages.add(languageLabel);
+            renderTranslatorRequestLanguages();
+        }
+    }
+}
+
 function resetDetectedLanguage() {
     languageConfirmationPending = false;
     confirmedDetectedLanguage = null;
@@ -1941,6 +2020,8 @@ function resetDetectedLanguage() {
     $("detectedLanguageConfidence").textContent = "Waiting for enough speech";
     $("languageConfirmation").classList.add("hidden");
     interpreterMatchesByLanguage.clear();
+    detectedCallLanguages.clear();
+    selectedRequestLanguages.clear();
     $("interpreterMatches").classList.add("hidden");
     $("interpreterMatchList").innerHTML = "";
 }
@@ -1948,6 +2029,7 @@ function resetDetectedLanguage() {
 function updateDetectedLanguage(language, confidence, confirmed = false) {
     confirmed = confirmed || String(confirmedDetectedLanguage || "").toLowerCase() === String(language || "").toLowerCase();
     const normalizedConfidence = normalizeLanguageConfidence(confidence);
+    rememberDetectedLanguage(language, normalizedConfidence);
     const lowConfidence = normalizedConfidence === null || normalizedConfidence < 0.7;
     languageConfirmationPending = !confirmed;
     $("detectedLanguageCard").className = `language-detection${lowConfidence && !confirmed ? " low" : ""}`;
@@ -2024,7 +2106,11 @@ function renderTranscript(rows) {
 
 function updateParticipantLanguageBadges(rows) {
     const latestBySpeaker = new Map();
-    for (const row of rows) if (row.speakerId && row.language) latestBySpeaker.set(row.speakerId, row);
+    for (const row of rows) {
+        if (!row.language) continue;
+        rememberDetectedLanguage(row.language, row.languageConfidence);
+        if (row.speakerId) latestBySpeaker.set(row.speakerId, row);
+    }
     document.querySelectorAll(".video-card[data-speaker]").forEach(card => {
         const row = latestBySpeaker.get(card.dataset.speaker);
         let badge = card.querySelector(".video-language");
@@ -2059,10 +2145,38 @@ function formatTranscriptRole(role) {
     return role || "Participant";
 }
 
-async function requestTranslator() {
+async function requestTranslator(event) {
+    event?.preventDefault();
     if (!activeCallId) return;
-    await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/translator-request`, { method: "POST", body: "{}" });
-    $("callStatus").textContent = "Translator requested. Available translators will receive a request.";
+    const languages = [...selectedRequestLanguages];
+    if (!languages.length) {
+        $("translatorRequestError").textContent = "Choose at least one language to continue.";
+        $("translatorRequestError").classList.remove("hidden");
+        return;
+    }
+    const submit = $("submitTranslatorRequest");
+    submit.disabled = true;
+    submit.textContent = "Finding…";
+    try {
+        const result = await apiFetch("/api/routing/recommend", {
+            method: "POST",
+            body: JSON.stringify({ callId: activeCallId, languages }),
+        });
+        interpreterMatchesByLanguage.clear();
+        interpreterMatchesByLanguage.set(languages.join(" + "), result.recommendations || []);
+        renderInterpreterMatches();
+        closeModal("translatorRequestModal");
+        const count = Number(result.count || 0);
+        $("callStatus").textContent = count
+            ? `Translator requested for ${languages.join(", ")} · ${count} matching interpreter${count === 1 ? "" : "s"} found.`
+            : `Translator requested for ${languages.join(", ")} · no exact match is available yet.`;
+    } catch (error) {
+        $("translatorRequestError").textContent = error.message || "Translator matching is unavailable right now.";
+        $("translatorRequestError").classList.remove("hidden");
+    } finally {
+        submit.textContent = "Find translators";
+        submit.disabled = selectedRequestLanguages.size === 0;
+    }
 }
 function toggleMute() { const t = localStream?.getAudioTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("muteButton").textContent = t.enabled ? "Mute" : "Unmute"; }
 function toggleCamera() { const t = localStream?.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("cameraButton").textContent = t.enabled ? "Camera Off" : "Camera On"; }

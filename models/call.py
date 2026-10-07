@@ -76,7 +76,7 @@ class CallModel:
         return apply_transition(transaction)
 
     @classmethod
-    def request_translator(cls, call_id, language=None, language_confidence=None, dialect=None, specialty=None, recommended_ids=None):
+    def request_translator(cls, call_id, language=None, languages=None, language_confidence=None, dialect=None, specialty=None, recommended_ids=None):
         ref = get_db().collection(cls.collection_name).document(call_id)
         if not ref.get().exists:
             return None
@@ -86,6 +86,9 @@ class CallModel:
         }
         if language:
             changes["detectedLanguage"] = language
+        if languages:
+            language_values = languages if isinstance(languages, (list, tuple, set)) else [languages]
+            changes["requestedLanguages"] = list(dict.fromkeys(str(value).strip() for value in language_values if str(value).strip()))
         if language_confidence is not None:
             changes["detectedLanguageConfidence"] = max(0.0, min(1.0, float(language_confidence)))
         if dialect:

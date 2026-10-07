@@ -70,6 +70,38 @@ class MilestoneOneApiTests(unittest.TestCase):
         self.assertEqual(response.get_json()["recommendations"][0]["matchConfidence"], 0.93)
         search.assert_called_once_with(language="Spanish", specialty=None, available_now=True)
 
+    @patch("controllers.routing_controller.CallModel.request_translator")
+    @patch("controllers.routing_controller.SessionModel.get")
+    @patch("controllers.routing_controller.TranslatorModel.search")
+    @patch("controllers.routing_controller.identity_or_response")
+    def test_multiple_languages_filter_for_interpreters_who_cover_every_language(self, identity, search, get_session, request_translator):
+        identity.return_value = ({"uid": "customer-1", "role": "customer"}, None)
+        get_session.return_value = {"callerId": "customer-1", "receiverId": "customer-2", "translatorId": None}
+        search.return_value = [{"id": "interpreter-1", "displayName": "Amira", "rating": 5, "availability": {"availableNow": True}}]
+        response = self.client.post("/api/routing/recommend", json={"callId": "call-1", "languages": ["Spanish", "Arabic"]})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["languages"], ["Spanish", "Arabic"])
+        search.assert_called_once_with(languages=["Spanish", "Arabic"], specialty=None, available_now=True)
+        request_translator.assert_called_once_with(
+            "call-1",
+            language="Spanish",
+            languages=["Spanish", "Arabic"],
+            language_confidence=0.75,
+            specialty=None,
+            recommended_ids=["interpreter-1"],
+        )
+
+    @patch("models.translator.get_db")
+    def test_translator_search_requires_all_selected_languages(self, get_db):
+        spanish_arabic = MagicMock()
+        spanish_arabic.to_dict.return_value = {"verificationStatus": "verified", "languages": ["Spanish", "Arabic"], "availability": {"availableNow": True}}
+        spanish_only = MagicMock()
+        spanish_only.to_dict.return_value = {"verificationStatus": "verified", "languages": ["Spanish"], "availability": {"availableNow": True}}
+        get_db.return_value.collection.return_value.stream.return_value = [spanish_arabic, spanish_only]
+        with patch.object(TranslatorModel, "to_public", side_effect=lambda doc: {"id": "match" if doc is spanish_arabic else "single", "availability": {"availableNow": True}}):
+            results = TranslatorModel.search(languages=["Spanish", "Arabic"], available_now=True)
+        self.assertEqual([item["id"] for item in results], ["match"])
+
     @patch("controllers.admin_controller.TranslatorModel.set_verification")
     @patch("controllers.admin_controller.identity_or_response")
     def test_admin_can_approve_an_interpreter(self, identity, set_verification):

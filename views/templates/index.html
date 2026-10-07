@@ -377,6 +377,30 @@
         </div>
     </div>
 
+    <div id="translatorRequestModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="translatorRequestTitle">
+        <div class="modal-card translator-request-modal-card">
+            <div class="transcript-header">
+                <div><span class="eyebrow">Language matching</span><h2 id="translatorRequestTitle">Request a translator</h2></div>
+                <button id="closeTranslatorRequestModal" class="secondary" type="button">Close</button>
+            </div>
+            <p>Choose every language being used in this call. Languages detected from the conversation are selected automatically.</p>
+            <form id="translatorRequestForm">
+                <section class="request-language-section" aria-labelledby="detectedRequestLanguagesLabel">
+                    <div class="request-language-heading"><strong id="detectedRequestLanguagesLabel">Detected in this call</strong><span id="detectedRequestLanguageCount"></span></div>
+                    <div id="detectedRequestLanguages" class="request-language-chips"></div>
+                </section>
+                <label class="request-language-search" for="translatorLanguageSearch"><span>Search languages</span><input id="translatorLanguageSearch" type="search" autocomplete="off" placeholder="Start typing a language…"></label>
+                <div class="request-language-heading"><strong>Select one or more languages</strong><span id="selectedRequestLanguageCount">0 selected</span></div>
+                <div id="translatorLanguageOptions" class="request-language-options" role="group" aria-label="Languages to match"></div>
+                <p id="translatorRequestError" class="request-language-error hidden" role="alert"></p>
+                <div class="actions">
+                    <button id="cancelTranslatorRequest" class="secondary" type="button">Cancel</button>
+                    <button id="submitTranslatorRequest" type="submit">Find translators</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="reviewModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
         <div class="modal-card">
             <div class="transcript-header">
