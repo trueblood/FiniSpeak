@@ -277,7 +277,10 @@ function setAuthMode(signup) {
     $("authTitle").textContent = signup ? "Create account" : "Sign in";
     $("authSubmit").textContent = signup ? "Create account" : "Sign in";
     $("authToggle").textContent = signup ? "Already have an account? Sign in" : "Need an account? Create one";
-    $("nameField").classList.toggle("hidden", !signup); $("roleField").classList.toggle("hidden", !signup);
+    $("nameField").classList.toggle("hidden", !signup);
+    $("phoneField").classList.toggle("hidden", !signup);
+    $("signupPhone").required = signup;
+    $("roleField").classList.toggle("hidden", !signup);
 }
 
 
@@ -286,12 +289,14 @@ async function submitAuth(e) {
     try {
         const email = $("email").value.trim(), password = $("password").value;
         if (signupMode) {
+            const phone = $("signupPhone").value.trim();
+            const phoneNormalized = normalizePhoneNumber(phone);
             const result = await createUserWithEmailAndPassword(auth, email, password);
             const name = $("displayName").value.trim() || email.split("@")[0];
             const role = $("role").value;
             const normalizedEmail = email.toLowerCase();
             await updateProfile(result.user, { displayName: name });
-            await setDoc(doc(db, "users", result.user.uid), { uid: result.user.uid, email: normalizedEmail, displayName: name, role, status: "active", createdAt: serverTimestamp() });
+            await setDoc(doc(db, "users", result.user.uid), { uid: result.user.uid, email: normalizedEmail, phone, phoneNormalized, displayName: name, role, status: "active", createdAt: serverTimestamp() });
             await setDoc(doc(db, "emailDirectory", normalizedEmail), { uid: result.user.uid, displayName: name, role, email: normalizedEmail, updatedAt: serverTimestamp() });
             if (role === "translator") {
                 const batch = writeBatch(db);
@@ -303,7 +308,7 @@ async function submitAuth(e) {
                     rating: null, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
                 }, { merge: true });
                 batch.set(doc(db, "interpreterPrivate", result.user.uid), {
-                    uid: result.user.uid, email: normalizedEmail, phone: "", credentialDocuments: [],
+                    uid: result.user.uid, email: normalizedEmail, phone, credentialDocuments: [],
                     createdAt: serverTimestamp(), updatedAt: serverTimestamp()
                 }, { merge: true });
                 await batch.commit();
@@ -443,6 +448,7 @@ function hydrateDashboardProfile() {
     $("profileInitials").textContent = name.split(/\s+/).filter(Boolean).slice(0,2).map(part => part[0]).join("").toUpperCase() || "FS";
     $("profileDisplayName").value = currentProfile.displayName || "";
     $("profileEmail").value = currentProfile.email || currentUser?.email || "";
+    $("profilePhone").value = currentProfile.phone || "";
     $("profileRole").value = roleLabel;
     $("settingsEmail").textContent = currentProfile.email || currentUser?.email || "";
 }
@@ -653,8 +659,8 @@ function renderSelectedInterpreter() {
         ? selectedInterpreterProfile.displayName || "FiniSpeak interpreter"
         : "";
     $("callFormHelp").textContent = hasSelection
-        ? "Enter the other customer's FiniSpeak email address. Your selected interpreter will be requested when the call starts."
-        : "Enter the other customer's FiniSpeak email address. You can request a human interpreter after the call starts.";
+        ? "Enter the other customer's FiniSpeak email or saved phone number. Your selected interpreter will be requested when the call starts."
+        : "Enter the other customer's FiniSpeak email or saved phone number. You can request a human interpreter after the call starts.";
 }
 
 function setCallFormStatus(message = "", isError = false) {
@@ -951,6 +957,13 @@ function profileInitials(name = "") {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "FS";
 }
 
+function normalizePhoneNumber(value = "") {
+    const digits = String(value).replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.length < 7 || digits.length > 15) throw new Error("Enter a valid phone number with 7 to 15 digits.");
+    return digits;
+}
+
 function profileTimestampMillis(value) {
     if (!value) return 0;
     if (typeof value.toMillis === "function") return value.toMillis();
@@ -975,14 +988,16 @@ async function saveProfile(e) {
     e.preventDefault();
     const status = $("profileStatus");
     const displayName = $("profileDisplayName").value.trim();
+    const phone = $("profilePhone").value.trim();
     if (!displayName) { status.textContent = "Enter a display name."; return; }
     status.textContent = "Saving…";
     try {
         await updateProfile(currentUser, { displayName });
-        await setDoc(doc(db, "users", currentUser.uid), { displayName, updatedAt: serverTimestamp() }, { merge: true });
+        const phoneNormalized = normalizePhoneNumber(phone);
+        await setDoc(doc(db, "users", currentUser.uid), { displayName, phone, phoneNormalized, updatedAt: serverTimestamp() }, { merge: true });
         const email = (currentProfile.email || currentUser.email || "").toLowerCase();
         if (email) await setDoc(doc(db, "emailDirectory", email), { uid: currentUser.uid, displayName, role: currentProfile.role, email, updatedAt: serverTimestamp() }, { merge: true });
-        currentProfile = { ...currentProfile, displayName };
+        currentProfile = { ...currentProfile, displayName, phone, phoneNormalized };
         hydrateDashboardProfile();
         status.textContent = "Profile saved.";
     } catch (error) { status.textContent = `Could not save profile: ${error.message}`; }
@@ -1595,9 +1610,9 @@ async function createCall(e) {
     const submitButton = e.submitter || $("callForm").querySelector('button[type="submit"]');
     const originalButtonText = submitButton.textContent;
     submitButton.disabled = true;
-    submitButton.textContent = "Finding customer…";
+    submitButton.textContent = "Finding FiniSpeak user…";
     $("dashboardStatus").textContent = "";
-    setCallFormStatus("Looking up Customer 2…");
+    setCallFormStatus("Looking up the FiniSpeak account…");
     callLog(attemptId, stage, {
         authenticated: Boolean(currentUser),
         profileRole: currentProfile?.role || null,
@@ -1608,23 +1623,28 @@ async function createCall(e) {
     });
     try {
         const receiverEmail = $("receiverEmail").value.trim().toLowerCase();
-        if (!receiverEmail) throw new Error("Enter Customer 2's FiniSpeak email.");
+        const receiverPhone = $("receiverPhone").value.trim();
+        const phoneNormalized = receiverEmail ? "" : normalizePhoneNumber(receiverPhone);
+        if (!receiverEmail && !phoneNormalized) throw new Error("Enter a FiniSpeak email or saved phone number.");
         // Prefer the lightweight email directory created by newer registrations.
         // Older FiniSpeak accounts may predate that collection, so fall back to
         // the users collection instead of incorrectly reporting that they do not exist.
         stage = "customer-directory-lookup";
         callLog(attemptId, stage, { emailProvided: true });
-        const directorySnap = await getDoc(doc(db, "emailDirectory", receiverEmail));
-        let receiver = directorySnap.exists() ? directorySnap.data() : null;
+        const directorySnap = receiverEmail ? await getDoc(doc(db, "emailDirectory", receiverEmail)) : null;
+        let receiver = directorySnap?.exists() ? directorySnap.data() : null;
         let lookupSource = receiver ? "emailDirectory" : null;
 
         if (!receiver) {
             stage = "legacy-customer-lookup";
             callLog(attemptId, stage);
             try {
-                const lookup = await apiFetch(`/api/accounts/lookup?email=${encodeURIComponent(receiverEmail)}`);
+                const lookupQuery = receiverEmail
+                    ? `email=${encodeURIComponent(receiverEmail)}`
+                    : `phone=${encodeURIComponent(phoneNormalized)}`;
+                const lookup = await apiFetch(`/api/accounts/lookup?${lookupQuery}`);
                 receiver = lookup.account || null;
-                lookupSource = "users";
+                lookupSource = receiverEmail ? "users-email" : "users-phone";
             } catch (lookupError) {
                 if (!/not found/i.test(lookupError.message || "")) throw lookupError;
             }
@@ -1637,8 +1657,8 @@ async function createCall(e) {
             receiverRole: receiver?.role || null,
             receiverHasUid: Boolean(receiver?.uid)
         });
-        if (!receiver) throw new Error("No FiniSpeak account was found with that email. Ask them to sign in to FiniSpeak once, then try again.");
-        if (!["customer", "admin"].includes(receiver.role)) throw new Error("That email address is not registered to a customer or administrator account.");
+        if (!receiver) throw new Error(`No FiniSpeak account was found with that ${receiverEmail ? "email" : "phone number"}. Ask them to save it in their profile, then try again.`);
+        if (!["customer", "admin"].includes(receiver.role)) throw new Error("That contact belongs to an account that cannot receive customer calls.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
         const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
         submitButton.textContent = "Starting call…";

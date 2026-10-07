@@ -1,9 +1,14 @@
 from services.firebase_service import get_db
 
 
+def normalize_phone(value):
+    digits = "".join(character for character in str(value or "") if character.isdigit())
+    return digits if 7 <= len(digits) <= 15 else ""
+
+
 class AccountModel:
     collection_name = "users"
-    public_fields = {"uid", "displayName", "email", "role", "status", "createdAt", "updatedAt"}
+    public_fields = {"uid", "displayName", "email", "phone", "role", "status", "createdAt", "updatedAt"}
 
     @classmethod
     def get(cls, uid):
@@ -32,6 +37,24 @@ class AccountModel:
             "uid": documents[0].id,
             "displayName": data.get("displayName"),
             "email": data.get("email"),
+            "role": data.get("role"),
+            "status": data.get("status", "active"),
+        }
+
+    @classmethod
+    def find_by_phone(cls, phone):
+        normalized = normalize_phone(phone)
+        if not normalized:
+            return None
+        documents = list(get_db().collection(cls.collection_name).where("phoneNormalized", "==", normalized).limit(1).stream())
+        if not documents:
+            return None
+        data = documents[0].to_dict()
+        return {
+            "uid": documents[0].id,
+            "displayName": data.get("displayName"),
+            "email": data.get("email"),
+            "phone": data.get("phone"),
             "role": data.get("role"),
             "status": data.get("status", "active"),
         }

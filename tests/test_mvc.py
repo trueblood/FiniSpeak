@@ -50,6 +50,15 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('data-discovery-category="Business"', html)
         self.assertIn('data-dashboard-panel="directory"', html)
 
+    def test_phone_call_prototype_exposes_signup_profile_and_call_fields(self):
+        response = self.client.get("/")
+        html = response.get_data(as_text=True)
+        self.assertIn('id="signupPhone" type="tel"', html)
+        self.assertIn('id="profilePhone" type="tel"', html)
+        self.assertIn('id="receiverPhone" type="tel"', html)
+        self.assertIn('id="incomingCallModal"', html)
+        self.assertIn('id="acceptIncomingCall"', html)
+
     def test_call_validation_stays_in_controller(self):
         self.assertEqual(self.client.post("/api/calls/", json={}).status_code, 400)
         response = self.client.post(

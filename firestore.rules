@@ -61,7 +61,7 @@ service cloud.firestore {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
       allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role in ['customer', 'translator'];
       allow update: if isAdmin() || (signedIn() && request.auth.uid == userId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'email', 'updatedAt']));
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'email', 'phone', 'phoneNormalized', 'updatedAt']));
       allow delete: if isAdmin();
     }
 
