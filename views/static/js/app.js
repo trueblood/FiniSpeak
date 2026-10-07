@@ -5,7 +5,10 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObjec
 
 const $ = (id) => document.getElementById(id);
 const views = ["heroView", "authView", "dashboardView", "profileView", "callView"];
-const show = (id) => views.forEach(v => $(v).classList.toggle("hidden", v !== id));
+const show = (id) => {
+    views.forEach(v => $(v).classList.toggle("hidden", v !== id));
+    document.body.classList.toggle("dashboard-mode", id === "dashboardView");
+};
 let auth, db, storage, currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map();
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, currentCallRole = null;
@@ -182,6 +185,17 @@ function bindUI() {
     $("clearFeaturedFilters").onclick = clearFeaturedFilters;
     $("backToDirectory").onclick = openInterpreterDirectory;
     $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
+    $("openStartCall").onclick = () => {
+        $("callStartCard").scrollIntoView({ behavior: "smooth", block: "start" });
+        window.setTimeout(() => $("receiverEmail")?.focus(), 250);
+    };
+    document.querySelectorAll("[data-discovery-category]").forEach(button => {
+        button.onclick = () => {
+            openDashboardPanel("directory");
+            $("directorySearch").value = button.dataset.discoveryCategory;
+            filterInterpreterDirectory();
+        };
+    });
     $("profileStartCall").onclick = () => {
         if (!currentUser) {
             selectInterpreterForCall(activeDirectoryProfile);
@@ -368,6 +382,7 @@ async function handleAuthState(user) {
         // Administrators can also participate in calls. Keep the customer call
         // workspace available while exposing the additional admin dashboard.
         $("customerTools").classList.toggle("hidden", isTranslator);
+        $("openStartCall").classList.toggle("hidden", isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         // Show the dashboard before loading optional translator/profile data so
@@ -406,6 +421,7 @@ async function handleAuthState(user) {
         $("interpreterProfileNav").classList.add("hidden");
         $("translatorTools").classList.add("hidden");
         $("customerTools").classList.remove("hidden");
+        $("openStartCall").classList.remove("hidden");
         openDashboardPanel("home");
         show("dashboardView");
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;
@@ -420,6 +436,7 @@ function hydrateDashboardProfile() {
     const name = currentProfile.displayName || currentProfile.email || "FiniSpeak";
     const roleLabel = currentProfile.role === "admin" ? "Administrator" : currentProfile.role === "translator" ? "Translator" : "Customer";
     $("welcomeName").textContent = name;
+    $("appWelcomeName").textContent = name.split(/\s+/).filter(Boolean)[0] || "there";
     $("accountRole").textContent = `${roleLabel} account`;
     $("sidebarName").textContent = name;
     $("sidebarRole").textContent = roleLabel;
