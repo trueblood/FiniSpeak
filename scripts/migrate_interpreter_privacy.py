@@ -6,6 +6,15 @@ Run once with Application Default Credentials or FIREBASE_CREDENTIALS:
 """
 
 import argparse
+import sys
+from pathlib import Path
+
+# Running a file from scripts/ puts that directory—not the repository root—on
+# Python's import path. Add the root explicitly so the documented command works
+# without requiring callers to set PYTHONPATH.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from google.cloud import firestore
 
