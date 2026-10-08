@@ -60,8 +60,8 @@ def create_app():
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
-        response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self' https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss:; img-src 'self' data: blob: https:; media-src 'self' blob:; worker-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+        response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(self)")
+        response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self' https://www.gstatic.com https://unpkg.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.tile.openstreetmap.org wss:; img-src 'self' data: blob: https:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://unpkg.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
         if request.is_secure:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         response.headers.setdefault("X-Request-ID", str(uuid.uuid4()))

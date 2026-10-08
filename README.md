@@ -34,6 +34,27 @@ python -m unittest discover -s tests
 - Firebase Storage for interpreter profile photos; FCM is intentionally deferred
 - Interpreter onboarding with draft, profile-complete, submitted, changes-requested, rejected, and verified states
 - Private credential evidence uploads with interpreter view/remove controls and administrator review
+- Location-aware interpreter discovery with Leaflet, marker clustering, approximate public service areas, map/list/split views, radius filtering, and remote-video fallback
+
+## Interpreter discovery map
+
+The directory supports Nearby, Remote, and Both search modes. Browser coordinates are used only for the active search request and are not written to Firestore. Interpreter profiles may publish an approximate city/region centroid only after the interpreter enables **Show on map**; residential addresses are rejected.
+
+Public interpreter fields added by this feature:
+
+- `serviceLocation`: `city`, `state`, `country`, rounded `latitude`/`longitude`, `geohash`, and `showOnMap`
+- `serviceOptions`: `inPerson`, `remote`, and `radiusMiles`
+
+Deploy the included composite indexes before enabling geographic traffic. OpenStreetMap development tiles are the default. For production volume, configure a commercial/provider-hosted tile URL and its required attribution:
+
+```env
+MAP_TILE_URL=https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
+MAP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
+GEOCODING_BASE_URL=https://nominatim.openstreetmap.org/search
+GEOCODING_USER_AGENT=FiniSpeak/1.0 (support@finispeak.com)
+```
+
+Replace the example geocoding contact with a monitored address and review the chosen provider's production rate/usage terms. Existing interpreter documents remain compatible; interpreters opt into map visibility when they next update their profiles.
 
 ## Run locally
 
@@ -89,6 +110,16 @@ The `deployment-ready` branch includes the current web MVP plus the production c
 - `/api/openapi.json`, security response headers, Firestore indexes, and a deployment regression-test gate are included.
 
 Before enabling production traffic, complete the Firebase Emulator/rules acceptance pass, browser acceptance testing with three real accounts, transcript consent/retention review, and the DigitalOcean networking/TURN work when that infrastructure is available. Billing, push notifications, abuse controls, and native mobile incoming-call behavior remain intentionally outside this branch's infrastructure scope.
+
+For Google Cloud Run, build and deploy the existing container, then publish Firestore rules and indexes:
+
+```bash
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/finispeak/web
+gcloud run deploy finispeak --image REGION-docker.pkg.dev/PROJECT/finispeak/web --region REGION --allow-unauthenticated
+firebase deploy --only firestore:rules,firestore:indexes,storage --project PROJECT
+```
+
+Set the existing Firebase/OpenAI environment values plus the map/geocoder values above on the Cloud Run service. Grant its runtime service account Firestore and Storage access through least-privilege IAM.
 
 Production-hardening controls and the remaining evidence checklist are documented in [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md). Commercial API operations are in [`docs/COMMERCIAL_API.md`](docs/COMMERCIAL_API.md), the internal accessibility audit is in [`docs/ACCESSIBILITY_AUDIT.md`](docs/ACCESSIBILITY_AUDIT.md), and language reliability/evaluation is in [`docs/LANGUAGE_DETECTION.md`](docs/LANGUAGE_DETECTION.md).
 

@@ -9,6 +9,14 @@
       {"fieldPath": "translationStatus", "order": "ASCENDING"},
       {"fieldPath": "status", "order": "ASCENDING"},
       {"fieldPath": "createdAt", "order": "DESCENDING"}
+    ]},
+    {"collectionGroup": "translators", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "verificationStatus", "order": "ASCENDING"},
+      {"fieldPath": "serviceLocation.geohash", "order": "ASCENDING"}
+    ]},
+    {"collectionGroup": "translators", "queryScope": "COLLECTION", "fields": [
+      {"fieldPath": "verificationStatus", "order": "ASCENDING"},
+      {"fieldPath": "serviceOptions.remote", "order": "ASCENDING"}
     ]}
   ],
   "fieldOverrides": []

@@ -64,6 +64,12 @@ class MilestoneOneApiTests(unittest.TestCase):
             specialty="Medical",
             available_now=True,
             minimum_rating="4",
+            verified_only=False,
+            service_mode="both",
+            latitude=None,
+            longitude=None,
+            radius_miles=None,
+            limit=51,
         )
 
     @patch("controllers.sessions_controller.SessionModel.create")
@@ -114,7 +120,8 @@ class MilestoneOneApiTests(unittest.TestCase):
         spanish_arabic.to_dict.return_value = {"verificationStatus": "verified", "languages": ["Spanish", "Arabic"], "availability": {"availableNow": True}}
         spanish_only = MagicMock()
         spanish_only.to_dict.return_value = {"verificationStatus": "verified", "languages": ["Spanish"], "availability": {"availableNow": True}}
-        get_db.return_value.collection.return_value.stream.return_value = [spanish_arabic, spanish_only]
+        query = get_db.return_value.collection.return_value.where.return_value.limit.return_value
+        query.stream.return_value = [spanish_arabic, spanish_only]
         with patch.object(TranslatorModel, "to_public", side_effect=lambda doc: {"id": "match" if doc is spanish_arabic else "single", "availability": {"availableNow": True}}):
             results = TranslatorModel.search(languages=["Spanish", "Arabic"], available_now=True)
         self.assertEqual([item["id"] for item in results], ["match"])
