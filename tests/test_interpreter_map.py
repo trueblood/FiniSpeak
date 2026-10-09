@@ -81,6 +81,14 @@ class MapUiContractTests(unittest.TestCase):
         self.assertIn("Service location", self.html)
         self.assertIn('id="publicProfileLocation"', self.html)
 
+    def test_map_can_be_hidden_and_location_filters_can_be_cleared(self):
+        self.assertIn('id="hideDirectoryMap"', self.html)
+        self.assertIn('id="showAllInterpreters"', self.html)
+        self.assertIn('$("hideDirectoryMap").onclick = () => setDirectoryView("list")', self.javascript)
+        self.assertIn("async function showAllInterpreters()", self.javascript)
+        self.assertIn("directoryOrigin = null", self.javascript)
+        self.assertIn('$("directoryRadius").value = "anywhere"', self.javascript)
+
 
 if __name__ == "__main__":
     unittest.main()

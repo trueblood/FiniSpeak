@@ -187,6 +187,8 @@ function bindUI() {
     $("directoryMapView").onclick = () => setDirectoryView("map");
     $("directorySplitView").onclick = () => setDirectoryView("split");
     $("searchMapArea").onclick = searchCurrentMapArea;
+    $("hideDirectoryMap").onclick = () => setDirectoryView("list");
+    $("showAllInterpreters").onclick = showAllInterpreters;
     $("featuredSearch").addEventListener("input", filterFeaturedProfiles);
     $("featuredLanguage").addEventListener("change", filterFeaturedProfiles);
     $("featuredSpecialty").addEventListener("change", filterFeaturedProfiles);
@@ -885,10 +887,38 @@ async function refreshInterpreterDirectory() {
         directoryProfiles = await fetchDirectoryProfiles();
         hydrateDirectoryFilterOptions();
         filterInterpreterDirectory();
+        return true;
     } catch (error) {
         $("directoryResultCount").textContent = "Search unavailable";
         $("interpreterDirectory").innerHTML = `<div class="directory-empty">${escapeHtml(error.message)}</div>`;
+        return false;
     }
+}
+
+async function showAllInterpreters() {
+    const button = $("showAllInterpreters");
+    button.disabled = true;
+    button.textContent = "Loading…";
+    directoryOrigin = null;
+    $("manualLocation").value = "";
+    $("directorySearch").value = "";
+    $("directoryLanguage").value = "";
+    $("directoryDialect").value = "";
+    $("directorySpecialty").value = "";
+    $("directoryRating").value = "0";
+    $("directorySort").value = "top-rated";
+    $("directoryMode").value = "both";
+    $("directoryRadius").value = "anywhere";
+    $("directoryAvailable").checked = false;
+    $("directoryVerified").checked = false;
+    if (directoryMap && directoryUserMarker) directoryMap.removeLayer(directoryUserMarker);
+    directoryUserMarker = null;
+    $("searchMapArea").classList.add("hidden");
+    setDirectoryView("list");
+    const loaded = await refreshInterpreterDirectory();
+    if (loaded) $("directoryLocationStatus").textContent = "Showing all interpreters. Add a location anytime to find nearby in-person service.";
+    button.disabled = false;
+    button.textContent = "Show all interpreters";
 }
 
 function filterInterpreterDirectory() {
@@ -965,6 +995,7 @@ function setDirectoryView(view) {
     layout.className = `directory-results-layout ${view}-view`;
     $("interpreterDirectory").classList.toggle("hidden", view === "map");
     $("interpreterMapPanel").classList.toggle("hidden", view === "list");
+    $("hideDirectoryMap").classList.toggle("hidden", view === "list");
     [["directoryListView", "list"], ["directoryMapView", "map"], ["directorySplitView", "split"]].forEach(([id, value]) => {
         $(id).classList.toggle("active", view === value); $(id).setAttribute("aria-pressed", String(view === value));
     });
