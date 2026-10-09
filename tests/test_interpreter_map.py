@@ -73,6 +73,7 @@ class MapUiContractTests(unittest.TestCase):
         self.assertIn("#interpreterMap .leaflet-pane", self.css)
         self.assertIn("#interpreterMap .leaflet-tile { width:256px; height:256px", self.css)
         self.assertIn("directoryMap.invalidateSize({ pan: false })", self.javascript)
+        self.assertIn("sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=", self.html)
 
     def test_interpreter_location_is_part_of_profile_workflow(self):
         self.assertIn('data-wizard-step="4"', self.html)
