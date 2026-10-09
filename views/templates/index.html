@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-map-tile-url="{{ map_tile_url }}" data-map-attribution="{{ map_attribution }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FiniSpeak</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQ3ynhWPfTAhQ6zMZc6pFHRIp5V8S/8=" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -204,15 +207,25 @@
                 </div>
 
                 <div id="dashboardDirectory" class="dashboard-panel hidden">
-                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search profiles and compare expertise, ratings, and availability.</p></div></div>
+                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search nearby or remote profiles and compare expertise, ratings, and availability.</p></div><div class="directory-view-switch" role="group" aria-label="Directory view"><button id="directoryListView" class="secondary active" type="button" aria-pressed="true">List</button><button id="directoryMapView" class="secondary" type="button" aria-pressed="false">Map</button><button id="directorySplitView" class="secondary" type="button" aria-pressed="false">Split</button></div></div>
                     <div class="directory-filters card" aria-label="Interpreter filters">
                         <label class="directory-search" for="directorySearch">Search<input id="directorySearch" type="search" placeholder="Name, language, specialty, or keyword"></label>
+                        <label for="directoryLanguage">Language<select id="directoryLanguage"><option value="">All languages</option></select></label>
+                        <label for="directoryDialect">Dialect<select id="directoryDialect"><option value="">All dialects</option></select></label>
+                        <label for="directorySpecialty">Specialty<select id="directorySpecialty"><option value="">All specialties</option></select></label>
                         <label for="directoryRating">Minimum rating<select id="directoryRating"><option value="0">Any rating</option><option value="3">3+ stars</option><option value="4">4+ stars</option><option value="4.5">4.5+ stars</option></select></label>
+                        <label for="directoryMode">Service<select id="directoryMode"><option value="both">Nearby + remote</option><option value="nearby">Nearby</option><option value="remote">Remote video</option></select></label>
+                        <label for="directoryRadius">Distance<select id="directoryRadius"><option value="5">5 miles</option><option value="10">10 miles</option><option value="25" selected>25 miles</option><option value="50">50 miles</option><option value="100">100 miles</option><option value="anywhere">Anywhere</option></select></label>
                         <label for="directorySort">Sort by<select id="directorySort"><option value="top-rated">Top rated</option><option value="experience">Most experienced</option><option value="name">Name</option></select></label>
                         <label class="directory-available"><input id="directoryAvailable" type="checkbox"> Available now</label>
+                        <label class="directory-available"><input id="directoryVerified" type="checkbox"> Verified only</label>
                     </div>
-                    <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p></div>
-                    <div id="interpreterDirectory" class="interpreter-directory" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div></div>
+                    <div class="directory-location-bar card"><button id="useMyLocation" type="button">Use my location</button><form id="manualLocationForm"><label for="manualLocation">Or enter a city, state, or ZIP<span class="location-entry"><input id="manualLocation" placeholder="Indianapolis, IN"><button class="secondary" type="submit">Search</button></span></label></form><span id="directoryLocationStatus" role="status" aria-live="polite">Location is optional for remote search.</span></div>
+                    <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p><button id="searchMapArea" class="secondary hidden" type="button">Search this area</button></div>
+                    <div id="directoryResultsLayout" class="directory-results-layout list-view">
+                        <div id="interpreterDirectory" class="interpreter-directory" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div></div>
+                        <div id="interpreterMapPanel" class="interpreter-map-panel hidden"><div id="interpreterMap" aria-label="Map of interpreter service areas" role="application"></div><p class="map-privacy-note">Locations are approximate public service areas. Your precise location is never shared.</p></div>
+                    </div>
                 </div>
 
                 <div id="dashboardInterpreter" class="dashboard-panel hidden">
@@ -224,15 +237,16 @@
                         <li><button type="button" data-wizard-step="0" aria-current="step"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 1</small>Personal info</span></button></li>
                         <li><button type="button" data-wizard-step="1"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 2</small>Languages</span></button></li>
                         <li><button type="button" data-wizard-step="2"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 3</small>Credentials</span></button></li>
-                        <li><button type="button" data-wizard-step="3"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 4</small>Availability</span></button></li>
+                        <li><button type="button" data-wizard-step="3"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 4</small>Service location</span></button></li>
+                        <li><button type="button" data-wizard-step="4"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 5</small>Availability</span></button></li>
                     </ol>
                     <form id="interpreterProfileForm" class="interpreter-form">
-                        <div class="card form-section" data-wizard-panel="0"><span class="eyebrow">Step 1 of 4</span><h3 tabindex="-1">Personal information</h3>
+                        <div class="card form-section" data-wizard-panel="0"><span class="eyebrow">Step 1 of 5</span><h3 tabindex="-1">Personal information</h3>
                             <div class="profile-photo-row"><div id="interpreterPhotoPreview" class="interpreter-photo-placeholder" aria-hidden="true">Photo</div><div><label for="interpreterPhoto">Profile photo</label><input id="interpreterPhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="field-help">JPG, PNG, or WebP. Your current photo stays in place unless you choose a new one.</p></div></div>
                             <div class="form-grid"><label for="interpreterFullName">Full name<input id="interpreterFullName" autocomplete="name" required></label><label for="interpreterPhone">Phone number<input id="interpreterPhone" type="tel" autocomplete="tel" placeholder="(555) 555-5555"></label></div>
                             <label for="interpreterBio">Professional bio<textarea id="interpreterBio" rows="4" maxlength="800" placeholder="Tell customers about your interpretation background and approach." required></textarea></label>
                         </div>
-                        <div class="card form-section hidden" data-wizard-panel="1"><span class="eyebrow">Step 2 of 4</span><h3 tabindex="-1">Languages and specialties</h3>
+                        <div class="card form-section hidden" data-wizard-panel="1"><span class="eyebrow">Step 2 of 5</span><h3 tabindex="-1">Languages and specialties</h3>
                             <div class="tag-field" data-tag-field="languages">
                                 <label for="interpreterLanguages">Languages</label>
                                 <div id="interpreterLanguagesTags" class="tag-list" aria-live="polite"></div>
@@ -250,19 +264,23 @@
                                 <div class="tag-entry-row"><div class="tag-entry-input"><input id="interpreterSpecialties" placeholder="Search or add a specialty" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="specialtiesOptions"><div id="specialtiesOptions" class="tag-suggestions hidden" role="listbox"></div></div><button class="secondary tag-add-button" type="button" data-add-tag="specialties">Add</button></div>
                             </div>
                         </div>
-                        <div class="card form-section hidden" data-wizard-panel="2"><span class="eyebrow">Step 3 of 4</span><h3 tabindex="-1">Experience and credentials</h3>
+                        <div class="card form-section hidden" data-wizard-panel="2"><span class="eyebrow">Step 3 of 5</span><h3 tabindex="-1">Experience and credentials</h3>
                             <div class="form-grid"><label for="interpreterYears">Years of experience<input id="interpreterYears" type="number" min="0" max="80" step="1" required></label><div><span class="field-label">Credential review</span><strong id="interpreterCredentialStatus" class="credential-review-status">Not submitted</strong></div></div>
                             <label for="interpreterCredentials">Credentials / certifications<textarea id="interpreterCredentials" rows="4" placeholder="One credential per line, for example: CCHI Certified Healthcare Interpreter"></textarea></label>
                             <label for="interpreterCredentialFiles">Credential documents<input id="interpreterCredentialFiles" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" aria-describedby="credentialFilesHelp"></label>
                             <p id="credentialFilesHelp" class="field-help">Upload PDF, JPG, PNG, or WebP evidence. Each private document must be under 10 MB and is visible only to you and administrators. To replace a file, remove it and choose the replacement before saving.</p>
                             <div id="credentialDocumentList" class="credential-document-list" aria-live="polite"></div>
                         </div>
-                        <div class="card form-section hidden" data-wizard-panel="3"><span class="eyebrow">Step 4 of 4</span><h3 tabindex="-1">Availability</h3>
+                        <div class="card form-section hidden" data-wizard-panel="3"><span class="eyebrow">Step 4 of 5</span><h3 tabindex="-1">Service location</h3>
+                            <p class="field-help service-location-intro">Add the city or region where you provide in-person interpretation. FiniSpeak publishes only an approximate service area—never a street address or your live location.</p>
+                            <fieldset class="service-area-settings"><legend>How you provide interpretation</legend><div class="form-grid"><label class="inline-check"><input id="interpreterInPerson" type="checkbox"> In-person interpretation</label><label class="inline-check"><input id="interpreterRemote" type="checkbox" checked> Remote video interpretation</label></div><div class="form-grid"><label for="interpreterServiceArea">Public service city, state/province, or ZIP<input id="interpreterServiceArea" placeholder="Indianapolis, IN" autocomplete="address-level2"><small>Use a public service area—not a residential address.</small></label><label for="interpreterServiceRadius">In-person service radius<select id="interpreterServiceRadius"><option value="5">5 miles</option><option value="10">10 miles</option><option value="25" selected>25 miles</option><option value="50">50 miles</option><option value="100">100 miles</option></select></label></div><label class="inline-check"><input id="interpreterShowOnMap" type="checkbox"> Show my approximate public service area on the map</label><p class="field-help map-sharing-note">Map visibility is optional. Remote interpreters can leave the service area blank.</p></fieldset>
+                        </div>
+                        <div class="card form-section hidden" data-wizard-panel="4"><span class="eyebrow">Step 5 of 5</span><h3 tabindex="-1">Availability</h3>
                             <fieldset><legend>Available days</legend><div class="day-options"><label><input type="checkbox" name="availabilityDay" value="monday"> Monday</label><label><input type="checkbox" name="availabilityDay" value="tuesday"> Tuesday</label><label><input type="checkbox" name="availabilityDay" value="wednesday"> Wednesday</label><label><input type="checkbox" name="availabilityDay" value="thursday"> Thursday</label><label><input type="checkbox" name="availabilityDay" value="friday"> Friday</label><label><input type="checkbox" name="availabilityDay" value="saturday"> Saturday</label><label><input type="checkbox" name="availabilityDay" value="sunday"> Sunday</label></div></fieldset>
                             <div class="form-grid"><label for="availabilityStart">Available from<input id="availabilityStart" type="time"></label><label for="availabilityEnd">Available until<input id="availabilityEnd" type="time"></label></div>
                             <label class="inline-check"><input id="interpreterAvailableNow" type="checkbox"> Available for interpretation requests now</label>
                         </div>
-                        <div class="wizard-navigation"><button id="interpreterWizardBack" class="secondary" type="button">Back</button><span id="interpreterWizardPosition">Step 1 of 4</span><button id="saveInterpreterDraft" class="secondary" type="button">Save draft</button><button id="interpreterWizardNext" type="button">Next</button></div>
+                        <div class="wizard-navigation"><button id="interpreterWizardBack" class="secondary" type="button">Back</button><span id="interpreterWizardPosition">Step 1 of 5</span><button id="saveInterpreterDraft" class="secondary" type="button">Save draft</button><button id="interpreterWizardNext" type="button">Next</button></div>
                         <div id="interpreterFinalActions" class="form-actions hidden"><button id="submitInterpreterVerification" type="button">Submit for verification</button><button id="saveInterpreterProfile" class="secondary" type="submit">Save profile</button></div>
                     </form>
                     <p id="interpreterProfileStatus" class="status" aria-live="polite"></p>
@@ -333,7 +351,7 @@
                         <section><span class="eyebrow">Expertise</span><h2>Languages and specialties</h2><div id="publicProfileLanguages" class="profile-tag-group"></div><div id="publicProfileSpecialties" class="profile-tag-group"></div></section>
                         <section><div class="reviews-heading"><div><span class="eyebrow">Community feedback</span><h2>Most recent reviews</h2></div><div id="publicProfileReviewSummary" class="review-summary"></div></div><div id="publicProfileReviews" class="review-list"><p>No reviews yet.</p></div></section>
                     </div>
-                    <aside class="profile-facts card"><h3>Profile details</h3><dl><div><dt>Experience</dt><dd id="publicProfileExperience">—</dd></div><div><dt>Credentials</dt><dd id="publicProfileCredentials">—</dd></div><div><dt>Schedule</dt><dd id="publicProfileSchedule">—</dd></div><div><dt>Verification</dt><dd id="publicProfileVerification">—</dd></div></dl></aside>
+                    <aside class="profile-facts card"><h3>Profile details</h3><dl><div><dt>Experience</dt><dd id="publicProfileExperience">—</dd></div><div><dt>Credentials</dt><dd id="publicProfileCredentials">—</dd></div><div><dt>Service location</dt><dd id="publicProfileLocation">Remote only</dd></div><div><dt>Schedule</dt><dd id="publicProfileSchedule">—</dd></div><div><dt>Verification</dt><dd id="publicProfileVerification">—</dd></div></dl></aside>
                 </div>
             </article>
         </div>
@@ -446,6 +464,8 @@
         </div>
     </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

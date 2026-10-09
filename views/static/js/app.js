@@ -14,6 +14,8 @@ let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = 
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, currentCallRole = null;
 let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
 let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterProfile = null;
+let directoryMap = null, directoryMarkerLayer = null, directoryUserMarker = null;
+let directoryOrigin = null, directoryView = "list", directoryMarkers = new Map(), filteredDirectoryProfiles = [];
 let featuredProfilesData = [];
 let callAttemptSequence = 0;
 let routedLanguageCalls = new Set();
@@ -175,9 +177,16 @@ function bindUI() {
     $("refreshAdmin").onclick = loadAdminDashboard;
     $("organizationForm").onsubmit = createOrganization;
     $("directorySearch").addEventListener("input", filterInterpreterDirectory);
-    $("directoryRating").addEventListener("change", filterInterpreterDirectory);
+    $("directoryRating").addEventListener("change", refreshInterpreterDirectory);
     $("directorySort").addEventListener("change", filterInterpreterDirectory);
-    $("directoryAvailable").addEventListener("change", filterInterpreterDirectory);
+    $("directoryAvailable").addEventListener("change", refreshInterpreterDirectory);
+    ["directoryLanguage", "directoryDialect", "directorySpecialty", "directoryMode", "directoryRadius", "directoryVerified"].forEach(id => $(id).addEventListener("change", refreshInterpreterDirectory));
+    $("useMyLocation").onclick = useDirectoryLocation;
+    $("manualLocationForm").onsubmit = useManualDirectoryLocation;
+    $("directoryListView").onclick = () => setDirectoryView("list");
+    $("directoryMapView").onclick = () => setDirectoryView("map");
+    $("directorySplitView").onclick = () => setDirectoryView("split");
+    $("searchMapArea").onclick = searchCurrentMapArea;
     $("featuredSearch").addEventListener("input", filterFeaturedProfiles);
     $("featuredLanguage").addEventListener("change", filterFeaturedProfiles);
     $("featuredSpecialty").addEventListener("change", filterFeaturedProfiles);
@@ -808,12 +817,77 @@ async function loadInterpreterDirectory() {
     container.innerHTML = '<div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div>';
     $("directoryResultCount").textContent = "Loading interpreters…";
     try {
-        directoryProfiles = await fetchPublicProfiles();
+        directoryProfiles = await fetchDirectoryProfiles();
+        hydrateDirectoryFilterOptions();
         filterInterpreterDirectory();
     } catch (error) {
         console.error("Interpreter directory failed:", error);
         $("directoryResultCount").textContent = "Directory unavailable";
         container.innerHTML = `<div class="directory-empty">Could not load interpreter profiles: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+async function fetchDirectoryProfiles() {
+    const params = new URLSearchParams({
+        mode: $("directoryMode").value,
+        radius: $("directoryRadius").value,
+        minimumRating: $("directoryRating").value,
+        limit: "100"
+    });
+    if ($("directoryLanguage").value) params.set("language", $("directoryLanguage").value);
+    if ($("directoryDialect").value) params.set("dialect", $("directoryDialect").value);
+    if ($("directorySpecialty").value) params.set("specialty", $("directorySpecialty").value);
+    if ($("directoryAvailable").checked) params.set("available", "now");
+    if ($("directoryVerified").checked) params.set("verified", "true");
+    if (directoryOrigin) {
+        params.set("latitude", String(directoryOrigin.latitude));
+        params.set("longitude", String(directoryOrigin.longitude));
+    } else if ($("directoryRadius").value !== "anywhere" && $("directoryMode").value !== "remote") {
+        params.delete("radius");
+    }
+    let response = await fetch(`/api/discovery?${params}`);
+    let payload = await response.json().catch(() => ({}));
+    if (!response.ok && directoryOrigin && $("directoryMode").value === "both") {
+        const remoteParams = new URLSearchParams(params);
+        remoteParams.set("mode", "remote");
+        remoteParams.delete("latitude");
+        remoteParams.delete("longitude");
+        remoteParams.delete("radius");
+        response = await fetch(`/api/discovery?${remoteParams}`);
+        payload = await response.json().catch(() => ({}));
+        if (response.ok) payload.locationSearchUnavailable = true;
+    }
+    if (!response.ok) throw new Error(payload.error || "Could not search interpreter profiles");
+    $("directoryLocationStatus").textContent = payload.remoteFallback
+        ? "No nearby interpreters matched, so remote video interpreters are shown."
+        : payload.locationSearchUnavailable
+            ? "Nearby search is temporarily unavailable, so remote video interpreters are shown."
+        : (directoryOrigin?.label || "Location is optional for remote search.");
+    return (payload.interpreters || []).filter(profile => profile.displayName);
+}
+
+function hydrateDirectoryFilterOptions() {
+    const fill = (id, values) => {
+        const select = $(id), current = select.value, first = select.options[0];
+        select.replaceChildren(first, ...[...new Set(values.filter(Boolean))].sort((a,b) => a.localeCompare(b)).map(value => {
+            const option = document.createElement("option"); option.value = value; option.textContent = value; return option;
+        }));
+        select.value = current;
+    };
+    fill("directoryLanguage", directoryProfiles.flatMap(profile => profile.languages || []));
+    fill("directoryDialect", directoryProfiles.flatMap(profile => profile.dialects || []));
+    fill("directorySpecialty", directoryProfiles.flatMap(profile => profile.specialties || []));
+}
+
+async function refreshInterpreterDirectory() {
+    $("interpreterDirectory").innerHTML = '<div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Updating results…</div>';
+    try {
+        directoryProfiles = await fetchDirectoryProfiles();
+        hydrateDirectoryFilterOptions();
+        filterInterpreterDirectory();
+    } catch (error) {
+        $("directoryResultCount").textContent = "Search unavailable";
+        $("interpreterDirectory").innerHTML = `<div class="directory-empty">${escapeHtml(error.message)}</div>`;
     }
 }
 
@@ -838,7 +912,9 @@ function filterInterpreterDirectory() {
         if (sort === "name") return String(a.displayName || "").localeCompare(String(b.displayName || ""));
         return Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0);
     });
+    filteredDirectoryProfiles = profiles;
     renderInterpreterDirectory(profiles);
+    renderDirectoryMap(profiles);
 }
 
 function renderInterpreterDirectory(profiles) {
@@ -852,7 +928,8 @@ function renderInterpreterDirectory(profiles) {
         const card = document.createElement("button");
         card.type = "button";
         card.className = "interpreter-card";
-        card.setAttribute("aria-label", `View ${profile.displayName}'s interpreter profile`);
+        card.dataset.interpreterId = profile.id;
+        card.setAttribute("aria-label", `Select ${profile.displayName} and view their interpreter profile`);
         const languages = [...(profile.languages || []), ...(profile.dialects || [])].slice(0, 3);
         const specialties = (profile.specialties || []).slice(0, 2);
         const tags = [...languages, ...specialties];
@@ -862,12 +939,117 @@ function renderInterpreterDirectory(profiles) {
                 <div class="interpreter-card-header"><div><h3>${escapeHtml(profile.displayName)}</h3>${ratingMarkup(profile.rating, profile.ratingCount)}</div><span class="availability-dot${profile.availability?.availableNow ? " available" : ""}" title="${profile.availability?.availableNow ? "Available now" : "Currently unavailable"}"></span></div>
                 <p class="card-bio">${escapeHtml(profile.bio || "Professional FiniSpeak interpreter profile.")}</p>
                 <div class="directory-tags">${tags.map(tag => `<span class="directory-tag">${escapeHtml(tag)}</span>`).join("")}</div>
-                <div class="directory-meta"><span>${Number(profile.yearsExperience || 0)} years experience</span><span>${escapeHtml((profile.verificationStatus || "unverified").replace(/_/g, " "))}</span></div>
+                <div class="directory-meta"><span>${Number(profile.yearsExperience || 0)} years experience</span><span>${escapeHtml((profile.verificationStatus || "unverified").replace(/_/g, " "))}</span>${profile.distanceMiles != null ? `<span>${Number(profile.distanceMiles).toFixed(1)} miles away</span>` : ""}<span>${profile.serviceOptions?.remote ? "Remote" : "In person"}</span></div>
             </div>`;
         setProfileAvatar(card.querySelector(".directory-avatar"), profile);
-        card.onclick = () => openPublicProfile(profile);
+        card.onclick = () => selectDirectoryProfile(profile, true);
         return card;
     }));
+}
+
+function selectDirectoryProfile(profile, openProfile = false) {
+    document.querySelectorAll(".interpreter-card.selected").forEach(card => card.classList.remove("selected"));
+    document.querySelector(`.interpreter-card[data-interpreter-id="${CSS.escape(profile.id)}"]`)?.classList.add("selected");
+    const marker = directoryMarkers.get(profile.id);
+    if (marker && directoryMap) {
+        directoryMap.panTo(marker.getLatLng());
+        marker.openPopup();
+    }
+    if (openProfile && directoryView === "list") openPublicProfile(profile);
+}
+
+function setDirectoryView(view) {
+    if (view === "split" && window.matchMedia("(max-width: 900px)").matches) view = "map";
+    directoryView = view;
+    const layout = $("directoryResultsLayout");
+    layout.className = `directory-results-layout ${view}-view`;
+    $("interpreterDirectory").classList.toggle("hidden", view === "map");
+    $("interpreterMapPanel").classList.toggle("hidden", view === "list");
+    [["directoryListView", "list"], ["directoryMapView", "map"], ["directorySplitView", "split"]].forEach(([id, value]) => {
+        $(id).classList.toggle("active", view === value); $(id).setAttribute("aria-pressed", String(view === value));
+    });
+    if (view !== "list") {
+        initializeDirectoryMap();
+        window.setTimeout(() => { directoryMap.invalidateSize(); renderDirectoryMap(filteredDirectoryProfiles); }, 0);
+    }
+}
+
+function initializeDirectoryMap() {
+    if (directoryMap || !window.L) return;
+    directoryMap = L.map("interpreterMap", { scrollWheelZoom: false }).setView([39.8, -98.6], 4);
+    const tileUrl = document.documentElement.dataset.mapTileUrl || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+    const attribution = document.documentElement.dataset.mapAttribution || '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+    L.tileLayer(tileUrl, { maxZoom: 19, attribution }).addTo(directoryMap);
+    directoryMarkerLayer = L.markerClusterGroup ? L.markerClusterGroup({ showCoverageOnHover: false }) : L.layerGroup();
+    directoryMarkerLayer.addTo(directoryMap);
+    directoryMap.on("moveend", () => $("searchMapArea").classList.remove("hidden"));
+    requestAnimationFrame(() => directoryMap?.invalidateSize({ pan: false }));
+}
+
+function renderDirectoryMap(profiles) {
+    if (!directoryMap || !directoryMarkerLayer) return;
+    directoryMap.invalidateSize({ pan: false });
+    directoryMarkerLayer.clearLayers(); directoryMarkers.clear();
+    const bounds = [];
+    profiles.forEach(profile => {
+        const location = profile.serviceLocation;
+        if (!location?.showOnMap || location.latitude == null || location.longitude == null) return;
+        const available = Boolean(profile.availability?.availableNow);
+        const marker = L.marker([location.latitude, location.longitude], { icon: L.divIcon({
+            className: "interpreter-map-marker-wrap", html: `<span class="interpreter-map-marker ${available ? "available" : "unavailable"}" aria-hidden="true"></span>`, iconSize: [28, 38], iconAnchor: [14, 38]
+        }) });
+        const distance = profile.distanceMiles != null ? `${Number(profile.distanceMiles).toFixed(1)} miles away` : "Distance available after choosing your location";
+        const photo = profile.photoUrl ? `<img src="${escapeHtml(profile.photoUrl)}" alt="">` : `<span class="map-popup-avatar" aria-hidden="true">${escapeHtml(profileInitials(profile.displayName))}</span>`;
+        marker.bindPopup(`<article class="map-profile-popup"><header>${photo}<strong>${escapeHtml(profile.displayName)}</strong></header><span>${escapeHtml([...(profile.languages || []), ...(profile.dialects || [])].slice(0,3).join(" · "))}</span><span>${escapeHtml((profile.specialties || []).slice(0,2).join(" · "))}</span><span>${Number(profile.yearsExperience || 0)} years · ${Number(profile.rating || 0).toFixed(1)} ★ (${Number(profile.ratingCount || 0)})</span><span>${escapeHtml(profile.verificationStatus === "verified" ? "Verified" : "")}${available ? " · Available now" : ""}</span><span>${escapeHtml(distance)}</span><div><button type="button" data-map-profile="${escapeHtml(profile.id)}">View profile</button><button type="button" data-map-request="${escapeHtml(profile.id)}">Request interpreter</button></div></article>`);
+        marker.on("click", () => selectDirectoryProfile(profile));
+        marker.on("popupopen", event => {
+            const popup = event.popup.getElement();
+            popup?.querySelector("[data-map-profile]")?.addEventListener("click", () => openPublicProfile(profile));
+            popup?.querySelector("[data-map-request]")?.addEventListener("click", () => { selectInterpreterForCall(profile); openDashboardPanel("home"); });
+        });
+        directoryMarkers.set(profile.id, marker); directoryMarkerLayer.addLayer(marker); bounds.push([location.latitude, location.longitude]);
+    });
+    if (directoryOrigin) {
+        if (directoryUserMarker) directoryMap.removeLayer(directoryUserMarker);
+        directoryUserMarker = L.circleMarker([directoryOrigin.latitude, directoryOrigin.longitude], { radius: 8, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }).addTo(directoryMap).bindTooltip("Your approximate location");
+        bounds.push([directoryOrigin.latitude, directoryOrigin.longitude]);
+    }
+    if (bounds.length) directoryMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 11 });
+}
+
+function useDirectoryLocation() {
+    const status = $("directoryLocationStatus");
+    if (!navigator.geolocation) { status.textContent = "Location is not supported here. Enter a city, state, or ZIP instead."; return; }
+    status.textContent = "Requesting your location…";
+    navigator.geolocation.getCurrentPosition(async position => {
+        directoryOrigin = { latitude: position.coords.latitude, longitude: position.coords.longitude, label: "Using your approximate current location." };
+        status.textContent = directoryOrigin.label;
+        await refreshInterpreterDirectory(); setDirectoryView("map");
+    }, error => {
+        status.textContent = error.code === 1 ? "Location permission was denied. Enter a city, state, or ZIP instead." : "Could not determine your location. Enter it manually instead.";
+        $("manualLocation").focus();
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+}
+
+async function useManualDirectoryLocation(event) {
+    event.preventDefault();
+    const status = $("directoryLocationStatus"), query = $("manualLocation").value.trim();
+    if (!query) return;
+    status.textContent = "Finding that area…";
+    try {
+        const response = await fetch(`/api/discovery/geocode?q=${encodeURIComponent(query)}`), payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Location not found");
+        directoryOrigin = { ...payload.location, label: `Searching near ${payload.location.label}.` };
+        await refreshInterpreterDirectory(); setDirectoryView("map");
+    } catch (error) { status.textContent = error.message; }
+}
+
+async function searchCurrentMapArea() {
+    if (!directoryMap) return;
+    const center = directoryMap.getCenter();
+    directoryOrigin = { latitude: center.lat, longitude: center.lng, label: "Searching the visible map area." };
+    $("searchMapArea").classList.add("hidden");
+    await refreshInterpreterDirectory();
 }
 
 async function openPublicProfile(profile) {
@@ -886,6 +1068,11 @@ async function openPublicProfile(profile) {
     renderProfileTags($("publicProfileSpecialties"), "Specialties", profile.specialties || []);
     $("publicProfileExperience").textContent = `${Number(profile.yearsExperience || 0)} years`;
     $("publicProfileCredentials").textContent = (profile.credentials || []).join(", ") || "Not listed";
+    const serviceLocation = profile.serviceLocation || {};
+    const publicArea = [serviceLocation.city, serviceLocation.state, serviceLocation.country].filter(Boolean).join(", ");
+    $("publicProfileLocation").textContent = profile.serviceOptions?.inPerson && publicArea
+        ? `${publicArea} · within ${Number(profile.serviceOptions.radiusMiles || 25)} miles`
+        : "Remote video";
     $("publicProfileVerification").textContent = profileVerificationLabel(profile);
     $("publicProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
@@ -1181,6 +1368,13 @@ function hydrateInterpreterProfile(profile = {}) {
     $("availabilityStart").value = availability.start || "";
     $("availabilityEnd").value = availability.end || "";
     $("interpreterAvailableNow").checked = Boolean(availability.availableNow);
+    const serviceLocation = p.serviceLocation || {};
+    const serviceOptions = p.serviceOptions || {};
+    $("interpreterServiceArea").value = [serviceLocation.city, serviceLocation.state, serviceLocation.country].filter(Boolean).join(", ");
+    $("interpreterServiceRadius").value = String(serviceOptions.radiusMiles || 25);
+    $("interpreterInPerson").checked = Boolean(serviceOptions.inPerson);
+    $("interpreterRemote").checked = serviceOptions.remote !== false;
+    $("interpreterShowOnMap").checked = Boolean(serviceLocation.showOnMap);
     setInterpreterPhoto(p.photoUrl || "");
     updateInterpreterCompletion();
     renderInterpreterLifecycle(p);
@@ -1398,6 +1592,13 @@ function interpreterFormData() {
         specialties: [...selectedTags.specialties],
         yearsExperience: experienceValue === "" ? null : Number(experienceValue),
         credentials: splitList($("interpreterCredentials").value),
+        serviceArea: $("interpreterServiceArea").value.trim(),
+        serviceOptions: {
+            inPerson: $("interpreterInPerson").checked,
+            remote: $("interpreterRemote").checked,
+            radiusMiles: Number($("interpreterServiceRadius").value || 25)
+        },
+        showOnMap: $("interpreterShowOnMap").checked,
         availability: {
             days: [...document.querySelectorAll('input[name="availabilityDay"]:checked')].map(input => input.value),
             start: $("availabilityStart").value,
@@ -1417,7 +1618,8 @@ function interpreterWizardSteps(data = interpreterFormData()) {
         { label: "Personal info", complete: Boolean(data.displayName && data.bio), message: "Add your full name and professional bio before continuing." },
         { label: "Languages", complete: Boolean(data.languages.length && data.specialties.length), message: "Add at least one language and one specialty before continuing." },
         { label: "Credentials", complete: Boolean(hasValidExperience && data.credentials.length && (existingDocuments.length || selectedDocuments.length)), message: "Add your years of experience, at least one credential, and a supporting document before continuing." },
-        { label: "Availability", complete: Boolean(hasValidSchedule), message: "Choose at least one available day and a valid start and end time before continuing." }
+        { label: "Service location", complete: Boolean(data.serviceOptions.remote || (data.serviceOptions.inPerson && data.serviceArea)), message: "Choose remote or in-person service. In-person service requires a public city, state/province, or ZIP." },
+        { label: "Availability", complete: Boolean(hasValidSchedule), message: "Choose at least one day and a valid start and end time." }
     ];
 }
 
@@ -1450,7 +1652,7 @@ function renderInterpreterWizard(data = interpreterFormData()) {
 }
 
 function showInterpreterWizardStep(index, focus = true) {
-    currentInterpreterWizardStep = Math.max(0, Math.min(3, Number(index) || 0));
+    currentInterpreterWizardStep = Math.max(0, Math.min(interpreterWizardSteps().length - 1, Number(index) || 0));
     renderInterpreterWizard();
     if (focus) document.querySelector(`[data-wizard-panel="${currentInterpreterWizardStep}"] h3`)?.focus();
 }
@@ -1477,7 +1679,8 @@ function updateInterpreterCompletion(data = interpreterFormData()) {
     renderInterpreterWizard(data);
     $("interpreterProgressBar").style.width = `${pct}%`;
     const completeSteps = interpreterWizardSteps(data).filter(step => step.complete).length;
-    $("interpreterProgressText").textContent = pct === 100 ? "All 4 profile steps are complete." : `${completeSteps} of 4 steps complete · Finish the steps marked ✕.`;
+    const totalSteps = interpreterWizardSteps(data).length;
+    $("interpreterProgressText").textContent = pct === 100 ? `All ${totalSteps} profile steps are complete.` : `${completeSteps} of ${totalSteps} steps complete · Finish the steps marked ✕.`;
     $("interpreterCompletionBadge").textContent = pct === 100 ? "Profile complete" : "Not complete";
     $("interpreterCompletionBadge").classList.toggle("pending-badge", pct !== 100);
     return pct;
@@ -1547,9 +1750,18 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
             : (currentInterpreterProfile?.verificationStatus === "verified"
                 ? (currentInterpreterProfile.onboardingStatus || "verified")
                 : (draft ? "draft" : (completion === 100 ? "complete" : "draft")));
-        const { phone, ...publicData } = data;
+        let serviceLocation = currentInterpreterProfile?.serviceLocation || {};
+        const savedServiceArea = [serviceLocation.city, serviceLocation.state, serviceLocation.country].filter(Boolean).join(", ");
+        if (data.serviceArea && (data.serviceArea !== savedServiceArea || !serviceLocation.geohash)) {
+            const geocodeResponse = await fetch(`/api/discovery/geocode?q=${encodeURIComponent(data.serviceArea)}`);
+            const geocodePayload = await geocodeResponse.json();
+            if (!geocodeResponse.ok) throw new Error(geocodePayload.error || "Could not locate the public service area.");
+            serviceLocation = geocodePayload.location;
+        }
+        serviceLocation = data.serviceArea ? { ...serviceLocation, showOnMap: Boolean(data.showOnMap && data.serviceOptions.inPerson) } : {};
+        const { phone, serviceArea, showOnMap, ...publicData } = data;
         const payload = {
-            ...publicData, uid: currentUser.uid, photoUrl,
+            ...publicData, serviceLocation, uid: currentUser.uid, photoUrl,
             credentialStatus, onboardingStatus,
             verificationStatus: currentInterpreterProfile?.verificationStatus || "unverified",
             rating: currentInterpreterProfile?.rating ?? null, ratingCount: currentInterpreterProfile?.ratingCount || 0,

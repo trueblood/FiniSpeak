@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from services.firebase_service import get_db
+from services.geo_service import geohash_prefixes, haversine_miles, validate_coordinates
 
 
 class TranslatorModel:
@@ -15,6 +16,8 @@ class TranslatorModel:
         "photoUrl",
         "rating",
         "ratingCount",
+        "serviceLocation",
+        "serviceOptions",
         "specialties",
         "verificationStatus",
         "yearsExperience",
@@ -40,15 +43,61 @@ class TranslatorModel:
         return {"id": document.id, **document.to_dict()} if document.exists else {"id": translator_id}
 
     @classmethod
-    def search(cls, language=None, languages=None, dialect=None, specialty=None, available_now=False, minimum_rating=0):
+    def search(cls, language=None, languages=None, dialect=None, specialty=None, available_now=False,
+               minimum_rating=0, verified_only=False, service_mode="both", latitude=None,
+               longitude=None, radius_miles=None, limit=100):
         requested_languages = [str(value).casefold() for value in (languages or []) if str(value).strip()]
         if language:
             requested_languages.append(str(language).casefold())
         requested_languages = set(requested_languages)
         dialect = (dialect or "").casefold()
         specialty = (specialty or "").casefold()
+        service_mode = str(service_mode or "both").casefold()
+        if service_mode not in {"nearby", "remote", "both"}:
+            raise ValueError("Search mode must be nearby, remote, or both.")
+        radius = None if radius_miles in (None, "", "anywhere") else float(radius_miles)
+        if radius is not None and radius not in {5, 10, 25, 50, 100}:
+            raise ValueError("Distance must be 5, 10, 25, 50, 100, or anywhere.")
+        has_origin = latitude not in (None, "") and longitude not in (None, "")
+        if has_origin:
+            latitude, longitude = validate_coordinates(latitude, longitude)
+        elif service_mode == "nearby" or radius is not None:
+            raise ValueError("A location is required for a nearby search.")
+
+        collection = get_db().collection(cls.collection_name)
+        documents = []
+        # Geographic requests use indexed geohash prefix ranges so they do not
+        # download the entire interpreter collection. Remote profiles are read
+        # from a bounded verified query and merged by id.
+        if has_origin and radius is not None and service_mode in {"nearby", "both"}:
+            seen = set()
+            for prefix in geohash_prefixes(latitude, longitude, radius):
+                query = (collection.where("verificationStatus", "==", "verified")
+                         .where("serviceLocation.geohash", ">=", prefix)
+                         .where("serviceLocation.geohash", "<=", prefix + "\uf8ff")
+                         .limit(max(20, min(int(limit), 100))))
+                for document in query.stream():
+                    if document.id not in seen:
+                        seen.add(document.id)
+                        documents.append(document)
+            if service_mode == "both":
+                remote_query = (collection.where("verificationStatus", "==", "verified")
+                                .limit(max(20, min(int(limit), 100))))
+                for document in remote_query.stream():
+                    if document.id not in seen:
+                        seen.add(document.id)
+                        documents.append(document)
+        elif service_mode == "remote":
+            documents = list(collection.where("verificationStatus", "==", "verified")
+                             .limit(max(20, min(int(limit), 100))).stream())
+        else:
+            # Unlocated/anywhere browsing is still bounded and verified at the
+            # query layer instead of scanning every interpreter document.
+            documents = list(collection.where("verificationStatus", "==", "verified")
+                             .limit(max(20, min(int(limit), 100))).stream())
+
         profiles = []
-        for document in get_db().collection(cls.collection_name).stream():
+        for document in documents:
             data = document.to_dict()
             if data.get("verificationStatus") != "verified":
                 continue
@@ -63,9 +112,33 @@ class TranslatorModel:
                 continue
             if float(data.get("rating") or 0) < float(minimum_rating or 0):
                 continue
-            profiles.append(cls.to_public(document))
+            if verified_only and data.get("verificationStatus") != "verified":
+                continue
+            service_options = data.get("serviceOptions") or {}
+            location = data.get("serviceLocation") or {}
+            map_visible = bool(location.get("showOnMap"))
+            distance = None
+            if has_origin and map_visible and location.get("latitude") is not None and location.get("longitude") is not None:
+                distance = haversine_miles(latitude, longitude, location["latitude"], location["longitude"])
+            interpreter_radius = float(service_options.get("radiusMiles") or 25)
+            effective_radius = interpreter_radius if radius is None else min(radius, interpreter_radius)
+            nearby_match = bool(service_options.get("inPerson") and map_visible and distance is not None and distance <= effective_radius)
+            # Profiles created before serviceOptions existed were remote-capable
+            # in FiniSpeak, so preserve that behavior during migration.
+            remote_match = bool(service_options.get("remote", True))
+            if service_mode == "nearby" and not nearby_match:
+                continue
+            if service_mode == "remote" and not remote_match:
+                continue
+            if service_mode == "both" and has_origin and radius is not None and not (nearby_match or remote_match):
+                continue
+            profile = cls.to_public(document)
+            if distance is not None:
+                profile["distanceMiles"] = round(distance, 1)
+            profile["matchType"] = "nearby" if nearby_match else "remote" if remote_match else "anywhere"
+            profiles.append(profile)
         profiles.sort(key=lambda profile: (bool(profile.get("availability", {}).get("availableNow")), float(profile.get("rating") or 0), int(profile.get("ratingCount") or 0)), reverse=True)
-        return profiles
+        return profiles[:max(1, min(int(limit), 100))]
 
     @classmethod
     def pending_verification(cls):
@@ -123,6 +196,19 @@ class TranslatorModel:
             "days": availability.get("days", []) if isinstance(availability.get("days", []), list) else [],
             "start": availability.get("start", ""),
             "end": availability.get("end", ""),
+        }
+        location = data.get("serviceLocation") or {}
+        if location.get("showOnMap"):
+            profile["serviceLocation"] = {
+                key: location.get(key) for key in ("city", "state", "country", "latitude", "longitude", "geohash", "showOnMap")
+            }
+        else:
+            profile.pop("serviceLocation", None)
+        options = data.get("serviceOptions") or {}
+        profile["serviceOptions"] = {
+            "inPerson": bool(options.get("inPerson", False)),
+            "remote": bool(options.get("remote", True)),
+            "radiusMiles": int(options.get("radiusMiles") or 25),
         }
         visible_reviews = []
         try:

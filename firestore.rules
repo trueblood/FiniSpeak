@@ -53,8 +53,31 @@ service cloud.firestore {
     }
     function hasNoPrivateInterpreterFields() {
       return !request.resource.data.keys().hasAny([
-        'email', 'phone', 'credentialDocuments', 'verificationNotes'
+        'email', 'phone', 'credentialDocuments', 'verificationNotes', 'serviceArea', 'address'
       ]);
+    }
+    function validServiceSettings() {
+      let profile = request.resource.data;
+      return !('serviceOptions' in profile) || (
+        profile.serviceOptions is map
+        && profile.serviceOptions.inPerson is bool
+        && profile.serviceOptions.remote is bool
+        && profile.serviceOptions.radiusMiles in [5, 10, 25, 50, 100]
+        && (!('serviceLocation' in profile) || profile.serviceLocation == null || (
+          profile.serviceLocation is map
+          && (!('showOnMap' in profile.serviceLocation) || (
+            profile.serviceLocation.showOnMap is bool
+            && (!profile.serviceLocation.showOnMap || (
+            profile.serviceOptions.inPerson == true
+            && profile.serviceLocation.latitude is number
+            && profile.serviceLocation.latitude >= -90 && profile.serviceLocation.latitude <= 90
+            && profile.serviceLocation.longitude is number
+            && profile.serviceLocation.longitude >= -180 && profile.serviceLocation.longitude <= 180
+            && profile.serviceLocation.geohash is string
+            ))
+          ))
+        ))
+      );
     }
 
     match /users/{userId} {
@@ -80,13 +103,14 @@ service cloud.firestore {
         || (isActive() && resource.data.verificationStatus == 'verified');
       allow create: if isActive() && request.auth.uid == translatorId
         && request.resource.data.verificationStatus == 'unverified'
-        && hasNoPrivateInterpreterFields();
+        && hasNoPrivateInterpreterFields() && validServiceSettings();
       allow update: if isAdmin() || (isActive() && request.auth.uid == translatorId
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'email', 'phone', 'bio', 'languages', 'dialects', 'specialties',
           'yearsExperience', 'credentials', 'credentialDocuments', 'credentialStatus', 'availability',
-          'photoUrl', 'onboardingStatus', 'updatedAt', 'verificationNotes'
-        ]) && validInterpreterOwnerUpdate() && hasNoPrivateInterpreterFields());
+          'photoUrl', 'onboardingStatus', 'updatedAt', 'verificationNotes',
+          'serviceArea', 'serviceLocation', 'serviceOptions'
+        ]) && validInterpreterOwnerUpdate() && hasNoPrivateInterpreterFields() && validServiceSettings());
       allow delete: if isAdmin() || (isActive() && request.auth.uid == translatorId);
 
       match /reviews/{reviewId} {
