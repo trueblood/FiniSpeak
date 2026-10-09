@@ -845,11 +845,23 @@ async function fetchDirectoryProfiles() {
     } else if ($("directoryRadius").value !== "anywhere" && $("directoryMode").value !== "remote") {
         params.delete("radius");
     }
-    const response = await fetch(`/api/discovery?${params}`);
-    const payload = await response.json();
+    let response = await fetch(`/api/discovery?${params}`);
+    let payload = await response.json().catch(() => ({}));
+    if (!response.ok && directoryOrigin && $("directoryMode").value === "both") {
+        const remoteParams = new URLSearchParams(params);
+        remoteParams.set("mode", "remote");
+        remoteParams.delete("latitude");
+        remoteParams.delete("longitude");
+        remoteParams.delete("radius");
+        response = await fetch(`/api/discovery?${remoteParams}`);
+        payload = await response.json().catch(() => ({}));
+        if (response.ok) payload.locationSearchUnavailable = true;
+    }
     if (!response.ok) throw new Error(payload.error || "Could not search interpreter profiles");
     $("directoryLocationStatus").textContent = payload.remoteFallback
         ? "No nearby interpreters matched, so remote video interpreters are shown."
+        : payload.locationSearchUnavailable
+            ? "Nearby search is temporarily unavailable, so remote video interpreters are shown."
         : (directoryOrigin?.label || "Location is optional for remote search.");
     return (payload.interpreters || []).filter(profile => profile.displayName);
 }
@@ -971,10 +983,12 @@ function initializeDirectoryMap() {
     directoryMarkerLayer = L.markerClusterGroup ? L.markerClusterGroup({ showCoverageOnHover: false }) : L.layerGroup();
     directoryMarkerLayer.addTo(directoryMap);
     directoryMap.on("moveend", () => $("searchMapArea").classList.remove("hidden"));
+    requestAnimationFrame(() => directoryMap?.invalidateSize({ pan: false }));
 }
 
 function renderDirectoryMap(profiles) {
     if (!directoryMap || !directoryMarkerLayer) return;
+    directoryMap.invalidateSize({ pan: false });
     directoryMarkerLayer.clearLayers(); directoryMarkers.clear();
     const bounds = [];
     profiles.forEach(profile => {
@@ -1054,6 +1068,11 @@ async function openPublicProfile(profile) {
     renderProfileTags($("publicProfileSpecialties"), "Specialties", profile.specialties || []);
     $("publicProfileExperience").textContent = `${Number(profile.yearsExperience || 0)} years`;
     $("publicProfileCredentials").textContent = (profile.credentials || []).join(", ") || "Not listed";
+    const serviceLocation = profile.serviceLocation || {};
+    const publicArea = [serviceLocation.city, serviceLocation.state, serviceLocation.country].filter(Boolean).join(", ");
+    $("publicProfileLocation").textContent = profile.serviceOptions?.inPerson && publicArea
+        ? `${publicArea} · within ${Number(profile.serviceOptions.radiusMiles || 25)} miles`
+        : "Remote video";
     $("publicProfileVerification").textContent = profileVerificationLabel(profile);
     $("publicProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
@@ -1599,7 +1618,8 @@ function interpreterWizardSteps(data = interpreterFormData()) {
         { label: "Personal info", complete: Boolean(data.displayName && data.bio), message: "Add your full name and professional bio before continuing." },
         { label: "Languages", complete: Boolean(data.languages.length && data.specialties.length), message: "Add at least one language and one specialty before continuing." },
         { label: "Credentials", complete: Boolean(hasValidExperience && data.credentials.length && (existingDocuments.length || selectedDocuments.length)), message: "Add your years of experience, at least one credential, and a supporting document before continuing." },
-        { label: "Availability", complete: Boolean(hasValidSchedule && (data.serviceOptions.remote || (data.serviceOptions.inPerson && data.serviceArea))), message: "Choose a valid schedule and at least one service option. In-person service requires a public service area." }
+        { label: "Service location", complete: Boolean(data.serviceOptions.remote || (data.serviceOptions.inPerson && data.serviceArea)), message: "Choose remote or in-person service. In-person service requires a public city, state/province, or ZIP." },
+        { label: "Availability", complete: Boolean(hasValidSchedule), message: "Choose at least one day and a valid start and end time." }
     ];
 }
 
@@ -1632,7 +1652,7 @@ function renderInterpreterWizard(data = interpreterFormData()) {
 }
 
 function showInterpreterWizardStep(index, focus = true) {
-    currentInterpreterWizardStep = Math.max(0, Math.min(3, Number(index) || 0));
+    currentInterpreterWizardStep = Math.max(0, Math.min(interpreterWizardSteps().length - 1, Number(index) || 0));
     renderInterpreterWizard();
     if (focus) document.querySelector(`[data-wizard-panel="${currentInterpreterWizardStep}"] h3`)?.focus();
 }
@@ -1659,7 +1679,8 @@ function updateInterpreterCompletion(data = interpreterFormData()) {
     renderInterpreterWizard(data);
     $("interpreterProgressBar").style.width = `${pct}%`;
     const completeSteps = interpreterWizardSteps(data).filter(step => step.complete).length;
-    $("interpreterProgressText").textContent = pct === 100 ? "All 4 profile steps are complete." : `${completeSteps} of 4 steps complete · Finish the steps marked ✕.`;
+    const totalSteps = interpreterWizardSteps(data).length;
+    $("interpreterProgressText").textContent = pct === 100 ? `All ${totalSteps} profile steps are complete.` : `${completeSteps} of ${totalSteps} steps complete · Finish the steps marked ✕.`;
     $("interpreterCompletionBadge").textContent = pct === 100 ? "Profile complete" : "Not complete";
     $("interpreterCompletionBadge").classList.toggle("pending-badge", pct !== 100);
     return pct;
@@ -1730,7 +1751,8 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
                 ? (currentInterpreterProfile.onboardingStatus || "verified")
                 : (draft ? "draft" : (completion === 100 ? "complete" : "draft")));
         let serviceLocation = currentInterpreterProfile?.serviceLocation || {};
-        if (data.serviceArea && (data.serviceArea !== currentInterpreterProfile?.serviceArea || !serviceLocation.geohash)) {
+        const savedServiceArea = [serviceLocation.city, serviceLocation.state, serviceLocation.country].filter(Boolean).join(", ");
+        if (data.serviceArea && (data.serviceArea !== savedServiceArea || !serviceLocation.geohash)) {
             const geocodeResponse = await fetch(`/api/discovery/geocode?q=${encodeURIComponent(data.serviceArea)}`);
             const geocodePayload = await geocodeResponse.json();
             if (!geocodeResponse.ok) throw new Error(geocodePayload.error || "Could not locate the public service area.");

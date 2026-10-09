@@ -63,10 +63,23 @@ class MapUiContractTests(unittest.TestCase):
     def test_remote_profiles_do_not_require_map_coordinates(self):
         self.assertIn('option value="remote">Remote video', self.html)
         self.assertIn("if (!location?.showOnMap", self.javascript)
+        self.assertIn("Nearby search is temporarily unavailable", self.javascript)
 
     def test_mobile_map_layout_is_responsive(self):
         self.assertIn("#interpreterMap { min-height:55vh", self.css)
         self.assertIn("#directorySplitView { display:none", self.css)
+
+    def test_map_has_local_leaflet_layout_fallback(self):
+        self.assertIn("#interpreterMap .leaflet-pane", self.css)
+        self.assertIn("#interpreterMap .leaflet-tile { width:256px; height:256px", self.css)
+        self.assertIn("directoryMap.invalidateSize({ pan: false })", self.javascript)
+        self.assertIn("sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=", self.html)
+
+    def test_interpreter_location_is_part_of_profile_workflow(self):
+        self.assertIn('data-wizard-step="4"', self.html)
+        self.assertIn('data-wizard-panel="3"', self.html)
+        self.assertIn("Service location", self.html)
+        self.assertIn('id="publicProfileLocation"', self.html)
 
 
 if __name__ == "__main__":

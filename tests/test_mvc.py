@@ -36,6 +36,8 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('id="submitInterpreterVerification"', html)
         self.assertIn('data-wizard-step="0"', html)
         self.assertIn('data-wizard-step="3"', html)
+        self.assertIn('data-wizard-step="4"', html)
+        self.assertIn('id="interpreterServiceArea"', html)
         self.assertIn('class="wizard-step-icon"', html)
         self.assertIn('id="interpreterWizardNext"', html)
         self.assertIn('id="interpreterWizardBack"', html)
