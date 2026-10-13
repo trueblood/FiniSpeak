@@ -32,10 +32,10 @@ jobs:
         with:
           project_id: finispeak-prod
 
-        - name: Verify OpenAI transcription secret
-          env:
-            OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          run: test -n "$OPENAI_API_KEY"
+      - name: Verify OpenAI transcription secret
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: test -n "$OPENAI_API_KEY"
 
       - name: Configure DigitalOcean SSH
         env:
