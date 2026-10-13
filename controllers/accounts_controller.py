@@ -1,7 +1,9 @@
 from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
-from models.account import AccountModel
+from repositories.provider import repository_proxy
+
+AccountModel = repository_proxy("accounts")
 
 
 def current():

@@ -3,6 +3,7 @@
 from firebase_admin import auth as firebase_auth
 
 from services.firebase_service import get_db
+from repositories.provider import get_repository
 
 
 class AuthenticationError(RuntimeError):
@@ -31,8 +32,7 @@ def authenticate_request(request):
     if not uid:
         raise AuthenticationError("The Firebase ID token has no user ID.")
 
-    user_document = get_db().collection("users").document(uid).get()
-    profile = user_document.to_dict() if user_document.exists else {}
+    profile = get_repository("accounts").get(uid) or {}
     role = "admin" if decoded.get("admin") is True else profile.get("role", "customer")
     if role != "admin" and profile.get("status", "active") == "suspended":
         raise AuthorizationError("This FiniSpeak account is suspended.")

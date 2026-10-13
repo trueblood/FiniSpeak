@@ -1,7 +1,9 @@
 from flask import jsonify
 
 from controllers.controller_utils import identity_or_response, json_body
-from models.organization import OrganizationModel
+from repositories.provider import repository_proxy
+
+OrganizationModel = repository_proxy("organizations")
 
 
 def index():

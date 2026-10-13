@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-from models.api_key import ApiKeyModel
+from repositories.provider import repository_proxy
+
+ApiKeyModel = repository_proxy("api_access")
 
 
 @dataclass

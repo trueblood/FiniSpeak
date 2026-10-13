@@ -1,7 +1,9 @@
 from flask import jsonify, request
 
-from models.translator import TranslatorModel
+from repositories.provider import repository_proxy
 from services.geo_service import geocode_public_area
+
+TranslatorModel = repository_proxy("translators")
 
 
 def index():

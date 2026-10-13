@@ -46,6 +46,11 @@ ordering, nested values, and legacy documents. Firebase Authentication,
 realtime call signaling, WebRTC, Cloud Storage, and Firebase security rules are
 outside this repository seam.
 
+Phase 2 routes backend application-data access through Firestore repository
+adapters and fails closed if a non-Firestore runtime provider is requested. See
+[the Phase 2 integration inventory](PHASE_2_REPOSITORY_INTEGRATION.md) for the
+remaining browser/realtime dependencies and later cutover order.
+
 ## Source inventory
 
 Firestore document IDs are stored unchanged as MySQL primary keys. Unknown legacy fields are retained in `raw_document` JSON so an unexpected field is not silently discarded.

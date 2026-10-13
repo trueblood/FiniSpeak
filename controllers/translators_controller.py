@@ -1,6 +1,8 @@
 from flask import jsonify
 
-from models.translator import TranslatorModel
+from repositories.provider import repository_proxy
+
+TranslatorModel = repository_proxy("translators")
 
 
 def index():

@@ -54,15 +54,17 @@ def verify_participant(token, call_id):
     if credential_path:
         from firebase_admin import auth as firebase_auth
         from services.firebase_service import get_db
+        from repositories.provider import get_repository
 
-        db = get_db()
+        # Keep explicit Firebase initialization for token verification. Call
+        # data itself is resolved through the application repository seam.
+        get_db()
         decoded = firebase_auth.verify_id_token(token)
         uid = decoded["uid"]
-        call = db.collection("calls").document(call_id).get()
-        if not call.exists:
+        call = get_repository("calls").get(call_id)
+        if not call:
             raise RuntimeError("Call not found.")
-        data = call.to_dict()
-        if uid not in [data.get("callerId"), data.get("receiverId"), data.get("translatorId")]:
+        if uid not in [call.get("callerId"), call.get("receiverId"), call.get("translatorId")]:
             raise RuntimeError("You are not a participant in this call.")
         return uid
     return _verify_with_firebase_rest(token, call_id)

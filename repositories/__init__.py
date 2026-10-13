@@ -11,6 +11,7 @@ from repositories.interfaces import (
     ReviewRepository, TaxonomyRepository, TranscriptRepository,
     TranslatorRepository,
 )
+from repositories.provider import get_repository, init_repositories, repository_proxy
 
 __all__ = [
     "AccountRepository", "ApiAccessRepository", "CallRepository",
@@ -18,6 +19,7 @@ __all__ = [
     "ParticipantRepository", "RepositoryBackend", "ReviewRepository",
     "TaxonomyRepository", "TranscriptRepository", "TranslatorRepository",
     "repository_backends",
+    "get_repository", "init_repositories", "repository_proxy",
 ]
 
 __all__ = ["RepositoryBackend", "repository_backends"]

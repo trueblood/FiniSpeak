@@ -1555,7 +1555,10 @@ async function updateDashboardAvailability() {
     $("translatorRequestStatus").textContent = "Updating availability…";
     try {
         const availability = { ...(currentInterpreterProfile?.availability || {}), availableNow };
-        await setDoc(doc(db, "translators", currentUser.uid), { availability, updatedAt: serverTimestamp() }, { merge: true });
+        await apiFetch("/api/availability", {
+            method: "PATCH",
+            body: JSON.stringify(availability)
+        });
         currentInterpreterProfile = { ...(currentInterpreterProfile || {}), availability };
         $("interpreterAvailableNow").checked = availableNow;
         $("translatorRequestStatus").textContent = availableNow ? "Ready for interpretation requests." : "You will not be shown as available for new requests.";
@@ -1939,9 +1942,9 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
         });
         currentCallRole = role === "translator" ? "translator" : (currentUser.uid === call.callerId ? "caller" : "receiver");
         stage = "participant-document-write";
-        await setDoc(doc(db, "calls", callId, "participants", currentUser.uid), {
-            uid: currentUser.uid, displayName: currentProfile.displayName || currentProfile.email,
-            role: currentCallRole, joinedAt: serverTimestamp()
+        await apiFetch(`/api/sessions/${encodeURIComponent(callId)}/participants`, {
+            method: "POST",
+            body: JSON.stringify({ role: currentCallRole })
         });
         stage = "call-watchers-start";
         watchCall(callId);

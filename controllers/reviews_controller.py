@@ -1,7 +1,9 @@
 from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
-from models.review import ReviewModel
+from repositories.provider import repository_proxy
+
+ReviewModel = repository_proxy("reviews")
 
 
 def create(interpreter_id):

@@ -148,6 +148,10 @@ class MySqlTranslatorRepository:
         rows = self.session.scalars(select(SqlTranslator).where(SqlTranslator.verification_status == "verified")).all()
         return [self._public(row) for row in rows]
 
+    def all(self):
+        return [_document(row, TRANSLATOR_FIELDS)
+                for row in self.session.scalars(select(SqlTranslator)).all()]
+
     def get(self, translator_id, public=True):
         row = self.session.get(SqlTranslator, translator_id)
         if not row or (public and row.verification_status != "verified"): return None
@@ -271,6 +275,10 @@ class MySqlCallRepository:
     @staticmethod
     def is_participant(call, uid): return uid in {call.get("callerId"), call.get("receiverId"), call.get("translatorId")}
 
+    def all(self):
+        return [_document(row, CALL_FIELDS)
+                for row in self.session.scalars(select(SqlCall)).all()]
+
     def create(self, caller, receiver, translator=None, language=None, dialect=None, specialty=None, purpose="", scheduled_at=None):
         now, call_id = _now(), _new_id()
         data = {"callerId": caller["uid"], "callerName": caller.get("displayName") or caller.get("email") or "FiniSpeak customer",
@@ -366,6 +374,9 @@ class MySqlTranscriptRepository:
 
 class MySqlReviewRepository:
     def __init__(self, session): self.session = session
+    def all(self):
+        rows = self.session.scalars(select(SqlReview)).all()
+        return [{"interpreterId": row.interpreter_id, **_document(row, REVIEW_FIELDS)} for row in rows]
     def for_interpreter(self, interpreter_id, visible_only=True, limit=20):
         stmt = select(SqlReview).where(SqlReview.interpreter_id == interpreter_id)
         if visible_only: stmt = stmt.where(SqlReview.moderation_status == "visible")

@@ -2,7 +2,9 @@ from flask import g, jsonify, request
 
 from controllers.controller_utils import api_identity_or_response, json_body
 from controllers.routing_controller import LANGUAGE_NAMES, _confidence, _recommendation
-from models.translator import TranslatorModel
+from repositories.provider import repository_proxy
+
+TranslatorModel = repository_proxy("translators")
 
 
 def interpreters():

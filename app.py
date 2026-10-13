@@ -9,6 +9,7 @@ from sqlalchemy.engine import URL
 
 from extensions import db
 from repositories.config import repository_backends
+from repositories.provider import init_repositories, repository_proxy
 
 from routes.api import api_bp
 from routes.users import users_bp
@@ -25,7 +26,7 @@ from routes.transcription import register_transcription_socket
 from routes.taxonomy import taxonomy_bp
 from routes.web import web_bp
 from routes.commercial_api import commercial_api_bp
-from models.api_key import ApiKeyModel
+ApiKeyModel = repository_proxy("api_access")
 
 load_dotenv()
 
@@ -58,7 +59,7 @@ def configure_optional_mysql(app):
     db.init_app(app)
 
 
-def create_app():
+def create_app(repository_overrides=None):
     app = Flask(
         __name__,
         template_folder="views/templates",
@@ -68,6 +69,7 @@ def create_app():
     # Phase 0 exposes the future repository selections for diagnostics and
     # tests only. Existing models remain Firestore-backed.
     app.config["REPOSITORY_BACKENDS"] = repository_backends()
+    init_repositories(app, repository_overrides)
     configure_optional_mysql(app)
     sock = Sock(app)
     register_transcription_socket(sock)

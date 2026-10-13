@@ -1,23 +1,25 @@
 from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
-from models.account import AccountModel
-from models.review import ReviewModel
-from models.translator import TranslatorModel
-from models.api_key import ApiKeyModel
+from repositories.provider import repository_proxy
 from services.language_monitoring_service import language_metrics_summary
-from services.firebase_service import get_db
+
+AccountModel = repository_proxy("accounts")
+CallModel = repository_proxy("calls")
+OrganizationModel = repository_proxy("organizations")
+ReviewModel = repository_proxy("reviews")
+TranslatorModel = repository_proxy("translators")
+ApiKeyModel = repository_proxy("api_access")
 
 
 def overview():
     _, error = identity_or_response(admin=True)
     if error:
         return error
-    db = get_db()
     accounts = AccountModel.all()
-    interpreters = [doc.to_dict() for doc in db.collection("translators").stream()]
-    calls = [doc.to_dict() for doc in db.collection("calls").stream()]
-    organizations = [doc.to_dict() for doc in db.collection("organizations").stream()]
+    interpreters = TranslatorModel.all()
+    calls = CallModel.all()
+    organizations = OrganizationModel.all()
     return jsonify({"metrics": {
         "accounts": len(accounts), "activeAccounts": sum(account.get("status", "active") == "active" for account in accounts),
         "verifiedInterpreters": sum(profile.get("verificationStatus") == "verified" for profile in interpreters),
@@ -38,14 +40,10 @@ def activity():
     _, error = identity_or_response(admin=True)
     if error:
         return error
-    db = get_db()
     accounts = AccountModel.all()
-    sessions = [{"id": doc.id, **doc.to_dict()} for doc in db.collection("calls").stream()]
-    organizations = [{"id": doc.id, **doc.to_dict()} for doc in db.collection("organizations").stream()]
-    reviews = []
-    for interpreter in db.collection("translators").stream():
-        for review in interpreter.reference.collection("reviews").stream():
-            reviews.append({"id": review.id, "interpreterId": interpreter.id, **review.to_dict()})
+    sessions = CallModel.all()
+    organizations = OrganizationModel.all()
+    reviews = ReviewModel.all()
 
     def newest(items):
         return sorted(items, key=lambda item: str(item.get("createdAt") or item.get("updatedAt") or ""), reverse=True)[:100]

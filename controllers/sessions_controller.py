@@ -1,7 +1,9 @@
 from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
-from models.session import SessionModel
+from repositories.provider import repository_proxy
+
+SessionModel = repository_proxy("sessions")
 
 
 def index():

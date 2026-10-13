@@ -1,7 +1,9 @@
 from flask import jsonify
 
 from controllers.controller_utils import identity_or_response, json_body
-from models.translator import TranslatorModel
+from repositories.provider import repository_proxy
+
+TranslatorModel = repository_proxy("translators")
 
 
 def update():

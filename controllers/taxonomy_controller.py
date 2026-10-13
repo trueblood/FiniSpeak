@@ -1,6 +1,8 @@
 from flask import jsonify
 
-from models.taxonomy import TaxonomyModel
+from repositories.provider import repository_proxy
+
+TaxonomyModel = repository_proxy("taxonomy")
 
 
 def index():

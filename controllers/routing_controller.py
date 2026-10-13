@@ -1,9 +1,11 @@
 from flask import jsonify
 
 from controllers.controller_utils import identity_or_response, json_body
-from models.call import CallModel
-from models.session import SessionModel
-from models.translator import TranslatorModel
+from repositories.provider import repository_proxy
+
+CallModel = repository_proxy("calls")
+SessionModel = repository_proxy("sessions")
+TranslatorModel = repository_proxy("translators")
 
 
 LANGUAGE_NAMES = {
