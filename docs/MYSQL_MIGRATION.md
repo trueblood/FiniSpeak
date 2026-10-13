@@ -2,6 +2,32 @@
 
 This phase creates a parallel MySQL 8 copy only. Firebase Authentication and every application read/write path remain unchanged. The importer never writes to or deletes from Firestore, and no migration runs during application startup or deployment.
 
+Phase 0 operational schema preparation is revision `20261013_0002`. It adds
+mutation metadata, synchronization checkpoints, tombstones, a transactional
+outbox, non-unique normalized-email lookup, and operational indexes. Deploying
+application code alone does not apply this revision or change the authoritative
+repository: every repository feature flag defaults to Firestore. Review the
+[DigitalOcean backup and restore runbook](DIGITALOCEAN_MYSQL_BACKUP_RESTORE.md)
+before scheduling the revision in a separately approved maintenance window.
+
+The normalized-email index is intentionally non-unique. Before proposing a
+future uniqueness revision, run a read-only collision count against a restored
+production backup and investigate any nonzero result in a restricted workspace:
+
+```sql
+SELECT COUNT(*) AS collision_groups
+FROM (
+  SELECT LOWER(TRIM(email)) AS normalized_email
+  FROM users
+  WHERE email IS NOT NULL AND TRIM(email) <> ''
+  GROUP BY LOWER(TRIM(email))
+  HAVING COUNT(*) > 1
+) AS collisions;
+```
+
+Normalized email values are contact data; do not print collision details into
+general deployment logs.
+
 ## Source inventory
 
 Firestore document IDs are stored unchanged as MySQL primary keys. Unknown legacy fields are retained in `raw_document` JSON so an unexpected field is not silently discarded.

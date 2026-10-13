@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from sqlalchemy.engine import URL
 
 from extensions import db
+from repositories.config import repository_backends
 
 from routes.api import api_bp
 from routes.users import users_bp
@@ -64,6 +65,9 @@ def create_app():
         static_folder="views/static",
         static_url_path="/static",
     )
+    # Phase 0 exposes the future repository selections for diagnostics and
+    # tests only. Existing models remain Firestore-backed.
+    app.config["REPOSITORY_BACKENDS"] = repository_backends()
     configure_optional_mysql(app)
     sock = Sock(app)
     register_transcription_socket(sock)

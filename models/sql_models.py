@@ -4,7 +4,8 @@ The live application remains Firestore-backed. These models are intentionally
 not imported by the existing domain models or controllers.
 """
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Computed, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy.dialects.mysql import DATETIME as MySqlDateTime
 from sqlalchemy.orm import relationship
 
 from extensions import db
@@ -13,6 +14,9 @@ from extensions import db
 class FirestoreDocumentMixin:
     raw_document = db.Column(JSON, nullable=False, default=dict)
     migrated_at = db.Column(DateTime(timezone=True), nullable=False)
+    mutation_version = db.Column(BigInteger, nullable=False, default=1, server_default=text("1"))
+    source_updated_at = db.Column(MySqlDateTime(fsp=6))
+    last_mutation_id = db.Column(String(128))
 
 
 class SqlUser(FirestoreDocumentMixin, db.Model):
@@ -21,6 +25,7 @@ class SqlUser(FirestoreDocumentMixin, db.Model):
     uid = db.Column(String(128), nullable=True, index=True)
     display_name = db.Column(String(255))
     email = db.Column(String(320), index=True)
+    email_normalized = db.Column(String(320), index=True)
     phone = db.Column(String(64))
     phone_normalized = db.Column(String(32), index=True)
     role = db.Column(String(32))
@@ -49,6 +54,19 @@ class SqlTranslator(FirestoreDocumentMixin, db.Model):
     credential_status = db.Column(String(32))
     service_location = db.Column(JSON)
     service_options = db.Column(JSON)
+    availability_now = db.Column(Boolean, Computed(
+        "CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(availability, '$.availableNow')) = 'true' THEN 1 ELSE 0 END",
+        persisted=True,
+    ))
+    service_remote = db.Column(Boolean, Computed(
+        "CASE WHEN JSON_EXTRACT(service_options, '$.remote') IS NULL THEN 1 "
+        "WHEN JSON_UNQUOTE(JSON_EXTRACT(service_options, '$.remote')) = 'true' THEN 1 ELSE 0 END",
+        persisted=True,
+    ))
+    service_geohash = db.Column(String(32), Computed(
+        "JSON_UNQUOTE(JSON_EXTRACT(service_location, '$.geohash'))",
+        persisted=True,
+    ))
     verified_by = db.Column(String(128), ForeignKey("users.id", ondelete="SET NULL"))
     verified_at = db.Column(DateTime(timezone=True))
     created_at = db.Column(DateTime(timezone=True))
@@ -236,5 +254,69 @@ class SqlTranscript(FirestoreDocumentMixin, db.Model):
     client_created_at = db.Column(DateTime(timezone=True))
 
 
+class SqlSyncCheckpoint(db.Model):
+    __tablename__ = "sync_checkpoints"
+    id = db.Column(String(128), primary_key=True)
+    source = db.Column(String(32), nullable=False)
+    collection_name = db.Column(String(128), nullable=False)
+    cursor = db.Column(JSON)
+    high_watermark = db.Column(MySqlDateTime(fsp=6))
+    status = db.Column(String(32), nullable=False, server_default=text("'idle'"))
+    records_scanned = db.Column(BigInteger, nullable=False, server_default=text("0"))
+    records_applied = db.Column(BigInteger, nullable=False, server_default=text("0"))
+    error_count = db.Column(Integer, nullable=False, server_default=text("0"))
+    last_error_code = db.Column(String(128))
+    created_at = db.Column(MySqlDateTime(fsp=6), nullable=False)
+    updated_at = db.Column(MySqlDateTime(fsp=6), nullable=False)
+    __table_args__ = (UniqueConstraint("source", "collection_name", name="uq_sync_checkpoint_source_collection"),)
+
+
+class SqlSyncTombstone(db.Model):
+    __tablename__ = "sync_tombstones"
+    entity_type = db.Column(String(64), primary_key=True)
+    record_key = db.Column(String(512), primary_key=True)
+    source = db.Column(String(32), nullable=False)
+    source_document_id = db.Column(String(255))
+    parent_document_id = db.Column(String(255))
+    mutation_version = db.Column(BigInteger, nullable=False)
+    mutation_id = db.Column(String(128), unique=True)
+    deleted_at = db.Column(MySqlDateTime(fsp=6), nullable=False)
+    recorded_at = db.Column(MySqlDateTime(fsp=6), nullable=False)
+
+
+class SqlTransactionalOutbox(db.Model):
+    __tablename__ = "transactional_outbox"
+    id = db.Column(BigInteger, primary_key=True, autoincrement=True)
+    event_id = db.Column(String(36), nullable=False, unique=True)
+    aggregate_type = db.Column(String(64), nullable=False)
+    aggregate_key = db.Column(String(512), nullable=False)
+    aggregate_version = db.Column(BigInteger, nullable=False)
+    event_type = db.Column(String(64), nullable=False)
+    payload = db.Column(JSON, nullable=False)
+    status = db.Column(String(24), nullable=False, server_default=text("'pending'"))
+    attempts = db.Column(Integer, nullable=False, server_default=text("0"))
+    available_at = db.Column(MySqlDateTime(fsp=6), nullable=False)
+    locked_at = db.Column(MySqlDateTime(fsp=6))
+    processed_at = db.Column(MySqlDateTime(fsp=6))
+    last_error_code = db.Column(String(128))
+    created_at = db.Column(MySqlDateTime(fsp=6), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("aggregate_type", "aggregate_key", "aggregate_version", "event_type",
+            name="uq_outbox_aggregate_version_event"),
+    )
+
+
 Index("ix_calls_status_created_at", SqlCall.status, SqlCall.created_at)
 Index("ix_calls_translation_status_created_at", SqlCall.translation_status, SqlCall.created_at)
+Index("ix_calls_caller_created_at", SqlCall.caller_id, SqlCall.created_at)
+Index("ix_calls_receiver_created_at", SqlCall.receiver_id, SqlCall.created_at)
+Index("ix_calls_receiver_status_created_at", SqlCall.receiver_id, SqlCall.status, SqlCall.created_at)
+Index("ix_calls_translator_created_at", SqlCall.translator_id, SqlCall.created_at)
+Index("ix_transcripts_call_created_id", SqlTranscript.call_id, SqlTranscript.created_at, SqlTranscript.id)
+Index("ix_translators_discovery_available", SqlTranslator.verification_status, SqlTranslator.availability_now, SqlTranslator.rating)
+Index("ix_translators_discovery_remote", SqlTranslator.verification_status, SqlTranslator.service_remote, SqlTranslator.rating)
+Index("ix_translators_discovery_geohash", SqlTranslator.verification_status, SqlTranslator.service_geohash)
+Index("ix_sync_checkpoints_status_updated", SqlSyncCheckpoint.status, SqlSyncCheckpoint.updated_at)
+Index("ix_sync_tombstones_deleted_at", SqlSyncTombstone.deleted_at)
+Index("ix_outbox_dispatch", SqlTransactionalOutbox.status, SqlTransactionalOutbox.available_at, SqlTransactionalOutbox.id)
+Index("ix_outbox_aggregate", SqlTransactionalOutbox.aggregate_type, SqlTransactionalOutbox.aggregate_key, SqlTransactionalOutbox.id)
