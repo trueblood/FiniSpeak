@@ -28,6 +28,24 @@ FROM (
 Normalized email values are contact data; do not print collision details into
 general deployment logs.
 
+## Phase 1 repository seam
+
+Phase 1 adds storage-independent contracts in `repositories/interfaces.py`
+and explicit-session MySQL implementations in `repositories/mysql.py`. They
+return the existing Firestore-shaped dictionaries so later controller adoption
+does not require an API contract change.
+
+Phase 1 deliberately contains no runtime repository selection. Existing models
+and controllers still call Firestore directly, and every repository flag still
+defaults to `firestore`. Setting a flag remains diagnostic only and does not
+route reads or writes to MySQL.
+
+Before wiring any domain, exercise its repository against an isolated restored
+database and compare results with Firestore for authorization, missing records,
+ordering, nested values, and legacy documents. Firebase Authentication,
+realtime call signaling, WebRTC, Cloud Storage, and Firebase security rules are
+outside this repository seam.
+
 ## Source inventory
 
 Firestore document IDs are stored unchanged as MySQL primary keys. Unknown legacy fields are retained in `raw_document` JSON so an unexpected field is not silently discarded.

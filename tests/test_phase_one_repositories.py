@@ -1,0 +1,167 @@
+import hashlib
+import hmac
+import unittest
+from datetime import datetime, timedelta, timezone
+
+from models.sql_models import SqlApiKey, SqlCall, SqlUser
+from repositories.config import REPOSITORY_DOMAINS, repository_backends
+from repositories.mysql import (
+    MySqlAccountRepository, MySqlApiAccessRepository, MySqlCallRepository,
+    MySqlLanguageMetricsRepository, MySqlOrganizationRepository,
+    MySqlParticipantRepository, MySqlReviewRepository,
+    MySqlTaxonomyRepository, MySqlTranscriptRepository,
+    MySqlTranslatorRepository,
+)
+
+
+class ScalarRows:
+    def __init__(self, rows): self.rows = rows
+    def all(self): return list(self.rows)
+
+
+class FakeSession:
+    def __init__(self, rows=None, scalar=None, scalar_rows=None, commit_error=None):
+        self.rows, self.scalar_value = rows or {}, scalar
+        self.scalar_rows, self.commit_error = list(scalar_rows or []), commit_error
+        self.added, self.commits, self.rollbacks, self.flushes = [], 0, 0, 0
+    def get(self, model, key): return self.rows.get((model, key))
+    def scalar(self, statement): return self.scalar_value
+    def scalars(self, statement): return ScalarRows(self.scalar_rows)
+    def add(self, row): self.added.append(row)
+    def flush(self): self.flushes += 1
+    def commit(self):
+        if self.commit_error: raise self.commit_error
+        self.commits += 1
+    def rollback(self): self.rollbacks += 1
+
+
+def sql_user(uid="user-1", **values):
+    now = datetime.now(timezone.utc)
+    return SqlUser(id=uid, uid=uid, display_name=values.get("display_name", "Ada"),
+        email=values.get("email", "ada@example.com"), email_normalized=values.get("email_normalized", "ada@example.com"),
+        phone=values.get("phone", "+1 317 555 0100"), phone_normalized=values.get("phone_normalized", "13175550100"),
+        role=values.get("role", "customer"), status=values.get("status", "active"),
+        raw_document=values.get("raw_document", {"legacyField": True}), migrated_at=now,
+        mutation_version=values.get("mutation_version", 1))
+
+
+def sql_call(call_id="call-1", **values):
+    now = datetime.now(timezone.utc)
+    return SqlCall(id=call_id, caller_id=values.get("caller_id", "customer-1"),
+        receiver_id=values.get("receiver_id", "customer-2"), translator_id=values.get("translator_id", "translator-1"),
+        status=values.get("status", "ended"), translation_status=values.get("translation_status", "connected"),
+        raw_document=values.get("raw_document", {}), migrated_at=now,
+        mutation_version=values.get("mutation_version", 1), created_at=now)
+
+
+class PhaseOneContractTests(unittest.TestCase):
+    def test_all_domains_still_default_to_firestore(self):
+        self.assertEqual(repository_backends({}), {domain: "firestore" for domain in REPOSITORY_DOMAINS})
+
+    def test_mysql_implementations_cover_every_repository_domain(self):
+        implementations = {
+            "accounts": MySqlAccountRepository, "translators": MySqlTranslatorRepository,
+            "calls": MySqlCallRepository, "participants": MySqlParticipantRepository,
+            "transcripts": MySqlTranscriptRepository, "reviews": MySqlReviewRepository,
+            "organizations": MySqlOrganizationRepository, "api_access": MySqlApiAccessRepository,
+            "taxonomy": MySqlTaxonomyRepository, "language_metrics": MySqlLanguageMetricsRepository,
+        }
+        self.assertEqual(set(implementations), set(REPOSITORY_DOMAINS))
+        self.assertTrue(all(callable(value) for value in implementations.values()))
+
+    def test_construction_does_not_open_a_connection(self):
+        session = object()
+        repositories = [MySqlAccountRepository(session), MySqlTranslatorRepository(session), MySqlCallRepository(session),
+            MySqlParticipantRepository(session), MySqlTranscriptRepository(session), MySqlReviewRepository(session),
+            MySqlOrganizationRepository(session), MySqlApiAccessRepository(session, pepper="test"),
+            MySqlTaxonomyRepository(session), MySqlLanguageMetricsRepository(session)]
+        self.assertTrue(all(repository.session is session for repository in repositories))
+
+
+class MySqlAccountRepositoryTests(unittest.TestCase):
+    def test_get_preserves_firestore_shape_and_unknown_fields(self):
+        row = sql_user(raw_document={"displayName": "Old", "custom": "preserved"})
+        result = MySqlAccountRepository(FakeSession({(SqlUser, "user-1"): row})).get("user-1")
+        self.assertEqual(result, {"uid": "user-1", "displayName": "Ada", "email": "ada@example.com",
+            "phone": "+1 317 555 0100", "phoneNormalized": "13175550100",
+            "role": "customer", "status": "active", "custom": "preserved"})
+
+    def test_missing_records_match_firestore_none_behavior(self):
+        repository = MySqlAccountRepository(FakeSession())
+        self.assertIsNone(repository.get("missing"))
+        self.assertIsNone(repository.update_status("missing", "active"))
+        self.assertIsNone(repository.find_by_email(""))
+        self.assertIsNone(repository.find_by_phone("not a phone"))
+
+    def test_failed_commit_rolls_back(self):
+        row = sql_user()
+        session = FakeSession({(SqlUser, "user-1"): row}, commit_error=RuntimeError("database unavailable"))
+        with self.assertRaisesRegex(RuntimeError, "database unavailable"):
+            MySqlAccountRepository(session).update_status("user-1", "suspended")
+        self.assertEqual(session.rollbacks, 1)
+        self.assertEqual(row.mutation_version, 2)
+
+
+class MySqlAuthorizationTests(unittest.TestCase):
+    def test_review_rejects_nonparticipant(self):
+        session = FakeSession({(SqlCall, "call-1"): sql_call()})
+        with self.assertRaisesRegex(PermissionError, "Only a customer"):
+            MySqlReviewRepository(session).create("translator-1", {"uid": "intruder"}, "call-1", 5, "text")
+        self.assertEqual(session.added, [])
+
+    def test_review_rejects_missing_call(self):
+        with self.assertRaisesRegex(ValueError, "completed session"):
+            MySqlReviewRepository(FakeSession()).create("translator-1", {"uid": "customer-1"}, "missing", 5, "text")
+
+    def test_call_claim_prevents_overwriting_interpreter(self):
+        row = sql_call(translation_status="requested", translator_id="translator-1")
+        session = FakeSession(scalar=row)
+        with self.assertRaisesRegex(PermissionError, "Another interpreter"):
+            MySqlCallRepository(session).claim_translator("call-1", {"uid": "translator-2"})
+        self.assertEqual(session.rollbacks, 1)
+
+    def test_missing_call_updates_return_none(self):
+        repository = MySqlCallRepository(FakeSession())
+        self.assertIsNone(repository.transition("missing", "ended"))
+        self.assertIsNone(repository.request_translator("missing"))
+
+    def test_missing_records_are_consistent_across_domains(self):
+        session = FakeSession()
+        self.assertIsNone(MySqlTranslatorRepository(session).get("missing"))
+        self.assertEqual(MySqlTranslatorRepository(session).get_private("missing"), {"id": "missing"})
+        self.assertIsNone(MySqlOrganizationRepository(session).update("missing", {"status": "active"}))
+        self.assertIsNone(MySqlReviewRepository(session).moderate("missing", "review", "hidden"))
+        self.assertIsNone(MySqlApiAccessRepository(session, pepper="test").revoke("missing", "admin"))
+
+    def test_empty_child_and_metrics_queries_preserve_response_shapes(self):
+        session = FakeSession()
+        self.assertEqual(MySqlParticipantRepository(session).for_call("missing"), [])
+        self.assertEqual(MySqlTranscriptRepository(session).for_call("missing"), [])
+        self.assertEqual(MySqlLanguageMetricsRepository(session).summary(), {
+            "sampleEvents": 0, "confirmationEvents": 0, "correctionRate": 0,
+            "lowConfidenceRate": 0, "byLanguage": {}, "recentEvents": [],
+        })
+
+
+class MySqlApiAccessRepositoryTests(unittest.TestCase):
+    def test_authentication_rejects_malformed_missing_revoked_and_expired(self):
+        token, now = "fs_live_key1_secret", datetime.now(timezone.utc)
+        self.assertIsNone(MySqlApiAccessRepository(FakeSession(), pepper="pepper").authenticate("bad"))
+        self.assertIsNone(MySqlApiAccessRepository(FakeSession(), pepper="pepper").authenticate(token))
+        digest = hmac.new(b"pepper", token.encode(), hashlib.sha256).hexdigest()
+        revoked = SqlApiKey(id="key1", token_hash=digest, status="revoked", raw_document={}, migrated_at=now, mutation_version=1)
+        self.assertIsNone(MySqlApiAccessRepository(FakeSession({(SqlApiKey, "key1"): revoked}), pepper="pepper").authenticate(token))
+        expired = SqlApiKey(id="key1", token_hash=digest, status="active", expires_at=now - timedelta(seconds=1), raw_document={}, migrated_at=now, mutation_version=1)
+        self.assertIsNone(MySqlApiAccessRepository(FakeSession({(SqlApiKey, "key1"): expired}), pepper="pepper").authenticate(token))
+
+    def test_authentication_never_exposes_hash(self):
+        token, now = "fs_live_key1_secret", datetime.now(timezone.utc)
+        digest = hmac.new(b"pepper", token.encode(), hashlib.sha256).hexdigest()
+        row = SqlApiKey(id="key1", token_hash=digest, status="active", scopes=["usage:read"],
+            expires_at=now + timedelta(days=1), raw_document={"tokenHash": digest}, migrated_at=now, mutation_version=1)
+        result = MySqlApiAccessRepository(FakeSession({(SqlApiKey, "key1"): row}), pepper="pepper").authenticate(token)
+        self.assertEqual(result["id"], "key1")
+        self.assertNotIn("tokenHash", result)
+
+
+if __name__ == "__main__": unittest.main()
