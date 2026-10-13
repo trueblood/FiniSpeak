@@ -470,6 +470,7 @@ function openDashboardPanel(panel) {
         button.classList.toggle("active", active);
         if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
     });
+    window.scrollTo({ top: 0, behavior: "auto" });
     if (panel === "directory") loadInterpreterDirectory();
     if (panel === "admin") loadAdminDashboard();
 }

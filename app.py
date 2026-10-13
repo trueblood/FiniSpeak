@@ -1,9 +1,12 @@
 import os
 import uuid
+import time
 
-from flask import Flask
+from flask import Flask, g, request
+from flask_sqlalchemy import SQLAlchemy
 from flask_sock import Sock
 from dotenv import load_dotenv
+from sqlalchemy.engine import URL
 
 from routes.api import api_bp
 from routes.users import users_bp
@@ -21,10 +24,37 @@ from routes.taxonomy import taxonomy_bp
 from routes.web import web_bp
 from routes.commercial_api import commercial_api_bp
 from models.api_key import ApiKeyModel
-from flask import g, request
-import time
 
 load_dotenv()
+
+db = SQLAlchemy()
+MYSQL_ENVIRONMENT_VARIABLES = (
+    "MYSQL_HOST",
+    "MYSQL_PORT",
+    "MYSQL_DATABASE",
+    "MYSQL_USER",
+    "MYSQL_PASSWORD",
+)
+
+
+def configure_optional_mysql(app):
+    mysql_config = {
+        name: os.environ.get(name)
+        for name in MYSQL_ENVIRONMENT_VARIABLES
+    }
+    if not all(mysql_config.values()):
+        return
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = URL.create(
+        drivername="mysql+pymysql",
+        username=mysql_config["MYSQL_USER"],
+        password=mysql_config["MYSQL_PASSWORD"],
+        host=mysql_config["MYSQL_HOST"],
+        port=int(mysql_config["MYSQL_PORT"]),
+        database=mysql_config["MYSQL_DATABASE"],
+    )
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(app)
 
 
 def create_app():
@@ -34,6 +64,7 @@ def create_app():
         static_folder="views/static",
         static_url_path="/static",
     )
+    configure_optional_mysql(app)
     sock = Sock(app)
     register_transcription_socket(sock)
     app.register_blueprint(api_bp, url_prefix="/api")
