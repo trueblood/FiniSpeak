@@ -76,6 +76,8 @@ Open http://127.0.0.1:5050
 4. Copy the Firebase web configuration values into `.env`.
 5. Publish `firestore.rules` for MVP testing. The call update rule is deliberately broad for development and must be tightened before production.
 
+The optional, parallel MySQL migration preparation is documented in [`docs/MYSQL_MIGRATION.md`](docs/MYSQL_MIGRATION.md). It does not replace Firebase application behavior or run automatically.
+
 ## Interpreter profile photos
 
 Create Firebase Storage in **production mode** and set `FIREBASE_STORAGE_BUCKET`

@@ -3,10 +3,11 @@ import uuid
 import time
 
 from flask import Flask, g, request
-from flask_sqlalchemy import SQLAlchemy
 from flask_sock import Sock
 from dotenv import load_dotenv
 from sqlalchemy.engine import URL
+
+from extensions import db
 
 from routes.api import api_bp
 from routes.users import users_bp
@@ -27,7 +28,6 @@ from models.api_key import ApiKeyModel
 
 load_dotenv()
 
-db = SQLAlchemy()
 MYSQL_ENVIRONMENT_VARIABLES = (
     "MYSQL_HOST",
     "MYSQL_PORT",
