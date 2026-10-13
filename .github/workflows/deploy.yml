@@ -32,24 +32,43 @@ jobs:
         with:
           project_id: finispeak-prod
 
-      - name: Verify OpenAI transcription secret
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: test -n "$OPENAI_API_KEY"
+        - name: Verify OpenAI transcription secret
+          env:
+            OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          run: test -n "$OPENAI_API_KEY"
 
-      - name: Deploy to Cloud Run
+      - name: Configure DigitalOcean SSH
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
-          gcloud run deploy finispeak \
-            --source . \
-            --project=finispeak-prod \
-            --region=us-east1 \
-            --allow-unauthenticated \
-            --memory=1Gi \
-            --update-env-vars="OPENAI_API_KEY=$OPENAI_API_KEY,OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe" \
-            --clear-base-image \
-            --quiet
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/finispeak_deploy
+          chmod 600 ~/.ssh/finispeak_deploy
+          printf '%s\n' "$DO_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy to DigitalOcean
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          rsync -az --delete \
+            --exclude='venv/' \
+            --exclude='.env' \
+            --exclude='.git/' \
+            -e "ssh -i $HOME/.ssh/finispeak_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
+            ./ "$DO_USER@$DO_HOST:/var/www/finispeak/"
+
+          ssh -i ~/.ssh/finispeak_deploy \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DO_USER@$DO_HOST" \
+            'set -e
+             /var/www/finispeak/venv/bin/python -m pip install -r /var/www/finispeak/requirements.txt
+             sudo /usr/bin/systemctl restart finispeak.service
+             sudo /usr/bin/systemctl is-active --quiet finispeak.service'
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
