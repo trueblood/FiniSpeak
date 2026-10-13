@@ -21,6 +21,7 @@ from models.sql_models import (
     SqlReferenceSpecialty, SqlReview, SqlTranscript, SqlTranslator, SqlUser,
 )
 from services.firebase_service import get_db as get_firestore_db
+from repositories.normalization import normalize_email
 
 
 LOGGER = logging.getLogger("finispeak.firestore_mysql_migration")
@@ -117,7 +118,8 @@ def map_value(value):
 
 def map_user(document_id, data, _parent=None):
     return SqlUser(id=document_id, uid=data.get("uid"), display_name=data.get("displayName"),
-        email=data.get("email"), phone=data.get("phone"), phone_normalized=data.get("phoneNormalized"),
+        email=data.get("email"), email_normalized=normalize_email(data.get("email")),
+        phone=data.get("phone"), phone_normalized=data.get("phoneNormalized"),
         role=data.get("role"), status=data.get("status"), created_at=as_datetime(data.get("createdAt")),
         updated_at=as_datetime(data.get("updatedAt")), **audit(data))
 

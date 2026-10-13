@@ -51,6 +51,10 @@ adapters and fails closed if a non-Firestore runtime provider is requested. See
 [the Phase 2 integration inventory](PHASE_2_REPOSITORY_INTEGRATION.md) for the
 remaining browser/realtime dependencies and later cutover order.
 
+Phase 3 adds an opt-in, operator-run Firestore-primary snapshot mirror and a
+read-only canonical reconciliation tool. It remains disabled by default and is
+documented in [the Phase 3 synchronization runbook](PHASE_3_FIRESTORE_MYSQL_SYNC.md).
+
 ## Source inventory
 
 Firestore document IDs are stored unchanged as MySQL primary keys. Unknown legacy fields are retained in `raw_document` JSON so an unexpected field is not silently discarded.

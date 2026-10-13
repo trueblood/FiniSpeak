@@ -10,6 +10,7 @@ from sqlalchemy.engine import URL
 from extensions import db
 from repositories.config import repository_backends
 from repositories.provider import init_repositories, repository_proxy
+from services.synchronization_config import synchronization_flags
 
 from routes.api import api_bp
 from routes.users import users_bp
@@ -69,6 +70,7 @@ def create_app(repository_overrides=None):
     # Phase 0 exposes the future repository selections for diagnostics and
     # tests only. Existing models remain Firestore-backed.
     app.config["REPOSITORY_BACKENDS"] = repository_backends()
+    app.config["FIRESTORE_MYSQL_SYNCHRONIZATION"] = synchronization_flags()
     init_repositories(app, repository_overrides)
     configure_optional_mysql(app)
     sock = Sock(app)
