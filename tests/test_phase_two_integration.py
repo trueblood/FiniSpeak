@@ -25,7 +25,7 @@ class PhaseTwoDependencyInjectionTests(unittest.TestCase):
 
     def test_non_firestore_runtime_flag_fails_closed(self):
         with patch.dict(os.environ, {"FINISPEAK_REPOSITORY_CALLS": "mysql"}, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "only permits Firestore"):
+            with self.assertRaisesRegex(RuntimeError, "require all MYSQL"):
                 create_app()
 
     def test_controller_resolves_injected_repository(self):
@@ -87,8 +87,9 @@ class FirestoreAdapterParityTests(unittest.TestCase):
             javascript = source.read()
         self.assertIn('apiFetch("/api/availability"', javascript)
         self.assertIn("/api/sessions/${encodeURIComponent(callId)}/participants", javascript)
-        self.assertIn('onSnapshot(collection(db, "calls", callId, "participants")', javascript)
-        self.assertIn('addDoc(collection(db, "calls", callId, "transcripts")', javascript)
+        self.assertIn("/api/calls/${encodeURIComponent(callId)}/transcripts", javascript)
+        self.assertNotIn('collection(db, "calls", callId, "transcripts")', javascript)
+        self.assertIn('doc(db, "calls", callId, "connections", pairId)', javascript)
 
 
 if __name__ == "__main__":

@@ -13,13 +13,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from models.account import normalize_phone
 from models.call import CallModel
 from models.sql_models import (
     SqlApiKey, SqlApiUsageCounter, SqlApiUsageEvent, SqlCall,
     SqlInterpreterPrivate, SqlLanguageDetectionMetric, SqlOrganization,
     SqlParticipant, SqlReferenceDialect, SqlReferenceLanguage,
-    SqlReferenceSpecialty, SqlReview, SqlTranscript, SqlTranslator, SqlUser,
+    SqlReferenceSpecialty, SqlReview, SqlTranscript, SqlTranslator, SqlTransactionalOutbox, SqlUser,
 )
 from repositories.normalization import normalize_email
 from services.geo_service import haversine_miles, validate_coordinates
@@ -62,10 +63,38 @@ def _touch(row, changes, fields):
 
 def _commit(session):
     try:
+        _enqueue_pending_mutations(session)
         session.commit()
     except Exception:
         session.rollback()
         raise
+
+
+def _enqueue_pending_mutations(session):
+    """Put non-sensitive change metadata in the outbox in the same transaction."""
+    try:
+        candidates = list(session.new) + list(session.dirty)
+    except (AttributeError, TypeError):
+        return
+    seen = set()
+    for row in candidates:
+        if isinstance(row, SqlTransactionalOutbox) or not hasattr(row, "__table__") or not hasattr(row, "mutation_version"):
+            continue
+        table = row.__table__.name
+        primary = [str(getattr(row, column.name, "")) for column in row.__mapper__.primary_key]
+        aggregate_key = "/".join(primary)
+        version = int(getattr(row, "mutation_version", None) or 1)
+        marker = (table, aggregate_key, version)
+        if not aggregate_key or marker in seen:
+            continue
+        seen.add(marker)
+        now = _now()
+        session.add(SqlTransactionalOutbox(
+            event_id=str(uuid.uuid4()), aggregate_type=table, aggregate_key=aggregate_key,
+            aggregate_version=version, event_type="mysql.upserted",
+            payload={"table": table, "documentId": aggregate_key, "mutationVersion": version},
+            status="pending", attempts=0, available_at=now, created_at=now,
+        ))
 
 
 ACCOUNT_FIELDS = {
@@ -134,6 +163,31 @@ class MySqlAccountRepository:
         if not row: return None
         _touch(row, {"status": status, "updatedAt": _now()}, ACCOUNT_FIELDS)
         _commit(self.session)
+        return _document(row, ACCOUNT_FIELDS, "uid")
+
+    def bootstrap(self, identity, data):
+        uid = identity["uid"]
+        existing = self.session.get(SqlUser, uid)
+        if existing:
+            return _document(existing, ACCOUNT_FIELDS, "uid")
+        role = "customer"
+        now = _now(); email = normalize_email(identity.get("email"))
+        phone = str(data.get("phone") or "").strip()
+        payload = {"uid": uid, "email": email, "displayName": str(data.get("displayName") or identity.get("displayName") or email).strip(),
+                   "phone": phone, "phoneNormalized": normalize_phone(phone), "role": role, "status": "active", "createdAt": now, "updatedAt": now}
+        try:
+            self.session.add(SqlUser(id=uid, email_normalized=email, raw_document=payload, migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in ACCOUNT_FIELDS.items()}))
+            _commit(self.session)
+        except Exception:
+            self.session.rollback(); raise
+        return payload
+
+    def update_profile(self, uid, data):
+        row = self.session.scalar(select(SqlUser).where(SqlUser.uid == uid).with_for_update())
+        if not row: return None
+        changes = {key: data[key] for key in ("displayName", "phone") if key in data}
+        if "phone" in changes: changes["phoneNormalized"] = normalize_phone(changes["phone"])
+        changes["updatedAt"] = _now(); _touch(row, changes, ACCOUNT_FIELDS); _commit(self.session)
         return _document(row, ACCOUNT_FIELDS, "uid")
 
 
@@ -219,7 +273,7 @@ class MySqlTranslatorRepository:
 
     def set_verification(self, translator_id, status, reviewer_id, notes=""):
         if status not in {"verified", "rejected", "needs_changes"}: raise ValueError("Invalid verification status.")
-        row = self.session.get(SqlTranslator, translator_id)
+        row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.id == translator_id).with_for_update())
         if not row: return None
         now = _now()
         _touch(row, {"verificationStatus": status, "credentialStatus": "approved" if status == "verified" else status,
@@ -228,15 +282,65 @@ class MySqlTranslatorRepository:
         if private:
             fields = {"verificationNotes": "verification_notes", "verifiedBy": "verified_by", "verifiedAt": "verified_at"}
             _touch(private, {"verificationNotes": notes, "verifiedBy": reviewer_id, "verifiedAt": now}, fields)
+        if status == "verified":
+            account = self.session.scalar(select(SqlUser).where(SqlUser.id == translator_id).with_for_update())
+            if not account:
+                self.session.rollback()
+                raise ValueError("Interpreter account not found.")
+            _touch(account, {"role": "translator", "updatedAt": now}, ACCOUNT_FIELDS)
         _commit(self.session)
         return _document(row, TRANSLATOR_FIELDS)
 
     def update_availability(self, translator_id, availability):
-        row = self.session.get(SqlTranslator, translator_id)
+        row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.id == translator_id).with_for_update())
         if not row: return None
         _touch(row, {"availability": dict(availability), "updatedAt": _now()}, TRANSLATOR_FIELDS)
         _commit(self.session)
         return _document(row, TRANSLATOR_FIELDS)
+
+    def save_profile(self, translator_id, public_data, private_data):
+        public = self.session.scalar(select(SqlTranslator).where(SqlTranslator.id == translator_id).with_for_update())
+        if not public:
+            raise ValueError("Interpreter profile not found.")
+        private = self.session.scalar(select(SqlInterpreterPrivate).where(SqlInterpreterPrivate.id == translator_id).with_for_update())
+        now = _now()
+        try:
+            raw = _raw(public)
+            for sensitive_key in ("email", "phone", "credentialDocuments", "verificationNotes"):
+                raw.pop(sensitive_key, None)
+            public.raw_document = raw
+            _touch(public, {**dict(public_data), "updatedAt": now}, TRANSLATOR_FIELDS)
+            fields = {"uid": "uid", "email": "email", "phone": "phone", "credentialDocuments": "credential_documents", "verificationNotes": "verification_notes", "verifiedBy": "verified_by", "verifiedAt": "verified_at", "createdAt": "created_at", "updatedAt": "updated_at"}
+            if private:
+                _touch(private, {**dict(private_data), "updatedAt": now}, fields)
+            else:
+                values = {**dict(private_data), "uid": translator_id, "updatedAt": now, "createdAt": now}
+                private = SqlInterpreterPrivate(id=translator_id, raw_document=values, migrated_at=now, mutation_version=1, **{column: values.get(api) for api, column in fields.items()})
+                self.session.add(private)
+            _commit(self.session)
+        except Exception:
+            self.session.rollback(); raise
+        return {"public": _document(public, TRANSLATOR_FIELDS), "private": _document(private, fields)}
+
+    def enroll(self, identity, phone=""):
+        uid = identity["uid"]
+        existing = self.session.get(SqlTranslator, uid)
+        if existing:
+            account = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
+            if account:
+                _touch(account, {"role": "translator" if existing.verification_status == "verified" else "translator_applicant", "updatedAt": _now()}, ACCOUNT_FIELDS)
+                _commit(self.session)
+            return _document(existing, TRANSLATOR_FIELDS)
+        account = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
+        if not account:
+            raise ValueError("Create the account before interpreter enrollment.")
+        now = _now(); public = {"uid": uid, "displayName": identity.get("displayName") or identity.get("email"), "onboardingStatus": "draft", "verificationStatus": "unverified", "languages": [], "dialects": [], "specialties": [], "credentials": [], "credentialStatus": "unsubmitted", "yearsExperience": 0, "availability": {"days": [], "start": "", "end": "", "availableNow": False}, "rating": None, "ratingCount": 0, "createdAt": now, "updatedAt": now}
+        private = {"uid": uid, "email": normalize_email(identity.get("email")), "phone": str(phone or ""), "credentialDocuments": [], "createdAt": now, "updatedAt": now}
+        self.session.add(SqlTranslator(id=uid, raw_document=public, migrated_at=now, mutation_version=1, **{column: public.get(api) for api, column in TRANSLATOR_FIELDS.items()}))
+        self.session.add(SqlInterpreterPrivate(id=uid, raw_document=private, migrated_at=now, mutation_version=1, uid=uid, email=private["email"], phone=private["phone"], credential_documents=[], created_at=now, updated_at=now))
+        _touch(account, {"role": "translator_applicant", "updatedAt": now}, ACCOUNT_FIELDS)
+        _commit(self.session)
+        return {"id": uid, **public}
 
     def _public(self, row):
         data = _document(row, TRANSLATOR_FIELDS)
@@ -279,8 +383,12 @@ class MySqlCallRepository:
         return [_document(row, CALL_FIELDS)
                 for row in self.session.scalars(select(SqlCall)).all()]
 
-    def create(self, caller, receiver, translator=None, language=None, dialect=None, specialty=None, purpose="", scheduled_at=None):
-        now, call_id = _now(), _new_id()
+    def create(self, caller, receiver, translator=None, language=None, dialect=None, specialty=None, purpose="", scheduled_at=None, idempotency_key=None):
+        now = _now()
+        call_id = "req_" + hashlib.sha256(f"{caller['uid']}:{idempotency_key}".encode()).hexdigest()[:48] if idempotency_key else _new_id()
+        existing = self.session.get(SqlCall, call_id)
+        if existing:
+            return _document(existing, CALL_FIELDS)
         data = {"callerId": caller["uid"], "callerName": caller.get("displayName") or caller.get("email") or "FiniSpeak customer",
             "receiverId": receiver["uid"], "receiverName": receiver.get("displayName") or receiver.get("email") or "FiniSpeak customer",
             "translatorId": translator.get("id") if translator else None, "translatorName": translator.get("displayName") if translator else None,
@@ -288,7 +396,16 @@ class MySqlCallRepository:
             "dialect": dialect, "specialty": specialty, "purpose": purpose, "scheduledAt": scheduled_at,
             "createdAt": now, "updatedAt": now, "startedAt": None, "endedAt": None}
         row = SqlCall(id=call_id, raw_document=data, migrated_at=now, mutation_version=1, **{column: data.get(api) for api, column in CALL_FIELDS.items()})
-        self.session.add(row); _commit(self.session)
+        self.session.add(row)
+        try:
+            _commit(self.session)
+        except IntegrityError:
+            if not idempotency_key:
+                raise
+            winner = self.session.get(SqlCall, call_id)
+            if not winner:
+                raise
+            return _document(winner, CALL_FIELDS)
         return {"id": call_id, **data}
 
     def get(self, call_id):
@@ -311,7 +428,7 @@ class MySqlCallRepository:
         return _document(row, CALL_FIELDS)
 
     def request_translator(self, call_id, language=None, languages=None, language_confidence=None, dialect=None, specialty=None, recommended_ids=None):
-        row = self.session.get(SqlCall, call_id)
+        row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
         if not row: return None
         changes = {"translationStatus": "requested", "updatedAt": _now()}
         if language: changes["detectedLanguage"] = language
@@ -358,6 +475,58 @@ class MySqlParticipantRepository:
         _commit(self.session); return {"id": uid, **data}
 
 
+class MySqlSessionRepository:
+    """Compatibility facade for the existing /api/sessions contract."""
+
+    allowed_states = {"ringing", "connected", "active", "ended", "declined", "cancelled"}
+
+    def __init__(self, session):
+        self.session = session
+        self.calls = MySqlCallRepository(session)
+        self.participant_records = MySqlParticipantRepository(session)
+
+    def create(self, requester, receiver_id=None, language=None, dialect=None, specialty=None,
+               purpose="", scheduled_at=None, translator_id=None):
+        receiver = self.session.get(SqlUser, receiver_id) if receiver_id else None
+        translator = self.session.get(SqlTranslator, translator_id) if translator_id else None
+        now, call_id = _now(), _new_id()
+        data = {
+            "callerId": requester["uid"],
+            "callerName": requester.get("displayName") or requester.get("email"),
+            "receiverId": receiver_id,
+            "receiverName": receiver.display_name if receiver else None,
+            "translatorId": translator_id,
+            "translatorName": translator.display_name if translator else None,
+            "status": "ringing" if receiver_id else "connected",
+            "translationStatus": "requested" if translator_id or language else "not_requested",
+            "language": language, "dialect": dialect, "specialty": specialty,
+            "purpose": purpose, "scheduledAt": scheduled_at, "createdAt": now,
+            "updatedAt": now, "startedAt": None, "endedAt": None,
+        }
+        row = SqlCall(id=call_id, raw_document=data, migrated_at=now, mutation_version=1,
+                      **{column: data.get(api) for api, column in CALL_FIELDS.items()})
+        self.session.add(row)
+        _commit(self.session)
+        return {"id": call_id, **data}
+
+    def get(self, session_id):
+        return self.calls.get(session_id)
+
+    def for_user(self, uid):
+        return self.calls.for_user(uid)
+
+    def update_state(self, session_id, state):
+        if state not in self.allowed_states:
+            raise ValueError("Unsupported session state.")
+        return self.calls.transition(session_id, state)
+
+    def participants(self, session_id):
+        return self.participant_records.for_call(session_id)
+
+    def add_participant(self, session_id, uid, role, display_name):
+        return self.participant_records.add(session_id, uid, role, display_name)
+
+
 class MySqlTranscriptRepository:
     def __init__(self, session): self.session = session
     def for_call(self, call_id, limit=500):
@@ -365,11 +534,17 @@ class MySqlTranscriptRepository:
         return [_document(row, TRANSCRIPT_FIELDS) for row in rows]
     def add(self, call_id, transcript_id, data):
         now = _now(); values = dict(data); row = self.session.get(SqlTranscript, (call_id, transcript_id))
-        if row: _touch(row, values, TRANSCRIPT_FIELDS)
-        else:
-            row = SqlTranscript(call_id=call_id, id=transcript_id, raw_document=values, migrated_at=now, mutation_version=1,
-                **{column: values.get(api) for api, column in TRANSCRIPT_FIELDS.items()}); self.session.add(row)
-        _commit(self.session); return {"id": transcript_id, **values}
+        if row: return _document(row, TRANSCRIPT_FIELDS)
+        row = SqlTranscript(call_id=call_id, id=transcript_id, raw_document=values, migrated_at=now, mutation_version=1,
+            **{column: values.get(api) for api, column in TRANSCRIPT_FIELDS.items()}); self.session.add(row)
+        try:
+            _commit(self.session)
+        except IntegrityError:
+            winner = self.session.get(SqlTranscript, (call_id, transcript_id))
+            if not winner:
+                raise
+            return _document(winner, TRANSCRIPT_FIELDS)
+        return {"id": transcript_id, **values}
 
 
 class MySqlReviewRepository:
@@ -400,7 +575,7 @@ class MySqlReviewRepository:
         return {"id": review_id, **data}
     def moderate(self, interpreter_id, review_id, status):
         if status not in {"visible", "flagged", "hidden"}: raise ValueError("Invalid moderation status.")
-        row = self.session.get(SqlReview, (interpreter_id, review_id))
+        row = self.session.scalar(select(SqlReview).where(SqlReview.interpreter_id == interpreter_id, SqlReview.id == review_id).with_for_update())
         if not row: return None
         _touch(row, {"moderationStatus": status}, REVIEW_FIELDS)
         try:
@@ -438,7 +613,7 @@ class MySqlOrganizationRepository:
         self.session.add(SqlOrganization(id=record_id, raw_document=payload, migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in ORGANIZATION_FIELDS.items()})); _commit(self.session)
         return {"id": record_id, **payload}
     def update(self, organization_id, data):
-        row = self.session.get(SqlOrganization, organization_id)
+        row = self.session.scalar(select(SqlOrganization).where(SqlOrganization.id == organization_id).with_for_update())
         if not row: return None
         changes = {key: str(data.get(key) or "").strip() for key in ("name", "contactEmail", "domain", "notes") if key in data}
         for key in ("contactEmail", "domain"):
@@ -474,7 +649,7 @@ class MySqlApiAccessRepository:
         rows = [{"id": row.id, **self._public(_document(row, API_KEY_FIELDS))} for row in self.session.scalars(select(SqlApiKey).order_by(SqlApiKey.created_at.desc())).all()]
         return rows
     def revoke(self, key_id, actor_id):
-        row = self.session.get(SqlApiKey, key_id)
+        row = self.session.scalar(select(SqlApiKey).where(SqlApiKey.id == key_id).with_for_update())
         if not row: return None
         now = _now(); _touch(row, {"status": "revoked", "revokedBy": actor_id, "revokedAt": now, "updatedAt": now}, API_KEY_FIELDS); _commit(self.session)
         return self._public(_document(row, API_KEY_FIELDS))
@@ -522,6 +697,24 @@ class MySqlTaxonomyRepository:
             result[key] = sorted(self.session.scalars(select(model.name).where(model.active.is_(True))).all(), key=str.lower)
         return result
 
+    def create(self, kind, record_id, name, extra=None):
+        model = self.collections.get(kind)
+        if not model:
+            raise ValueError("Unsupported taxonomy collection.")
+        record_id, name = str(record_id or "").strip(), str(name or "").strip()
+        if not record_id or not name or len(record_id) > 128 or len(name) > 160:
+            raise ValueError("A valid taxonomy id and name are required.")
+        if self.session.get(model, record_id):
+            raise ValueError("Taxonomy record already exists.")
+        now = _now()
+        payload = {"name": name, "active": True, **dict(extra or {})}
+        columns = {"id": record_id, "name": name, "name_lower": name.casefold(), "active": True,
+                   "seeded": bool(payload.get("seeded", False)), "created_by": payload.get("createdBy"),
+                   "created_at": now, "raw_document": payload, "migrated_at": now, "mutation_version": 1}
+        self.session.add(model(**columns))
+        _commit(self.session)
+        return {"id": record_id, **payload}
+
 
 METRIC_FIELDS = {"callId": "call_id", "eventType": "event_type", "detectedLanguage": "detected_language", "confidence": "confidence", "confirmedLanguage": "confirmed_language", "corrected": "corrected", "sampleCount": "sample_count", "createdAt": "created_at"}
 
@@ -537,3 +730,25 @@ class MySqlLanguageMetricsRepository:
         events = [_document(row, METRIC_FIELDS) for row in rows]; samples = [e for e in events if e.get("eventType") == "sample"]; confirmations = [e for e in events if e.get("eventType") == "confirmation"]; corrections = [e for e in confirmations if e.get("corrected")]; low = [e for e in samples if e.get("confidence") is None or float(e.get("confidence") or 0) < .78]; by_language = {}
         for event in samples: by_language[event.get("detectedLanguage") or "unknown"] = by_language.get(event.get("detectedLanguage") or "unknown", 0) + 1
         return {"sampleEvents": len(samples), "confirmationEvents": len(confirmations), "correctionRate": round(len(corrections) / len(confirmations), 4) if confirmations else 0, "lowConfidenceRate": round(len(low) / len(samples), 4) if samples else 0, "byLanguage": by_language, "recentEvents": events[:100]}
+
+
+def mysql_repositories(session=None):
+    """Build repositories around Flask-SQLAlchemy's request-scoped session."""
+    if session is None:
+        from extensions import db
+        session = db.session
+    calls = MySqlCallRepository(session)
+    participants = MySqlParticipantRepository(session)
+    return {
+        "accounts": MySqlAccountRepository(session),
+        "translators": MySqlTranslatorRepository(session),
+        "calls": calls,
+        "sessions": MySqlSessionRepository(session),
+        "participants": participants,
+        "transcripts": MySqlTranscriptRepository(session),
+        "reviews": MySqlReviewRepository(session),
+        "organizations": MySqlOrganizationRepository(session),
+        "api_access": MySqlApiAccessRepository(session),
+        "taxonomy": MySqlTaxonomyRepository(session),
+        "language_metrics": MySqlLanguageMetricsRepository(session),
+    }

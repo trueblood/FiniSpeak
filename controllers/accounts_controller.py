@@ -14,6 +14,35 @@ def current():
     return jsonify({"account": account})
 
 
+def bootstrap():
+    identity, error = identity_or_response()
+    if error:
+        return error
+    data = json_body()
+    display_name = str(data.get("displayName") or identity.get("displayName") or "").strip()
+    phone = str(data.get("phone") or "").strip()
+    if not display_name or len(display_name) > 160:
+        return jsonify({"error": "A valid displayName is required"}), 400
+    try:
+        account = AccountModel.bootstrap(identity, {"displayName": display_name, "phone": phone})
+        return jsonify({"account": account}), 200
+    except (ValueError, RuntimeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+def update_current():
+    identity, error = identity_or_response()
+    if error:
+        return error
+    data = json_body()
+    display_name = str(data.get("displayName") or "").strip()
+    phone = str(data.get("phone") or "").strip()
+    if not display_name or len(display_name) > 160 or len(phone) > 64:
+        return jsonify({"error": "A valid displayName and phone are required"}), 400
+    account = AccountModel.update_profile(identity["uid"], {"displayName": display_name, "phone": phone})
+    return (jsonify({"account": account}), 200) if account else (jsonify({"error": "Account not found"}), 404)
+
+
 def list_accounts():
     _, error = identity_or_response(admin=True)
     if error:

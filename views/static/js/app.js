@@ -29,6 +29,7 @@ let detectedCallLanguages = new Map();
 let selectedRequestLanguages = new Set();
 let activeModal = null, modalReturnFocus = null;
 let reviewCall = null;
+const isInterpreterRole = role => role === "translator" || role === "translator_applicant";
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
 const taxonomySuggestionIndex = { languages: -1, dialects: -1, specialties: -1 };
@@ -299,28 +300,16 @@ async function submitAuth(e) {
         const email = $("email").value.trim(), password = $("password").value;
         if (signupMode) {
             const phone = $("signupPhone").value.trim();
-            const phoneNormalized = normalizePhoneNumber(phone);
+            normalizePhoneNumber(phone);
             const result = await createUserWithEmailAndPassword(auth, email, password);
             const name = $("displayName").value.trim() || email.split("@")[0];
             const role = $("role").value;
-            const normalizedEmail = email.toLowerCase();
             await updateProfile(result.user, { displayName: name });
-            await setDoc(doc(db, "users", result.user.uid), { uid: result.user.uid, email: normalizedEmail, phone, phoneNormalized, displayName: name, role, status: "active", createdAt: serverTimestamp() });
-            await setDoc(doc(db, "emailDirectory", normalizedEmail), { uid: result.user.uid, displayName: name, role, email: normalizedEmail, updatedAt: serverTimestamp() });
+            currentUser = result.user;
+            await apiFetch("/api/accounts/bootstrap", { method: "POST", body: JSON.stringify({ displayName: name, phone }) });
             if (role === "translator") {
-                const batch = writeBatch(db);
-                batch.set(doc(db, "translators", result.user.uid), {
-                    uid: result.user.uid, displayName: name,
-                    onboardingStatus: "draft", verificationStatus: "unverified",
-                    languages: [], dialects: [], specialties: [], credentials: [], credentialStatus: "unsubmitted",
-                    yearsExperience: 0, availability: { days: [], start: "", end: "", availableNow: false },
-                    rating: null, ratingCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-                }, { merge: true });
-                batch.set(doc(db, "interpreterPrivate", result.user.uid), {
-                    uid: result.user.uid, email: normalizedEmail, phone, credentialDocuments: [],
-                    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-                }, { merge: true });
-                await batch.commit();
+                await apiFetch("/api/translators/enroll", { method: "POST", body: JSON.stringify({ phone }) });
+                await handleAuthState(result.user);
             }
         } else await signInWithEmailAndPassword(auth, email, password);
         $("authStatus").textContent = "";
@@ -344,52 +333,22 @@ async function handleAuthState(user) {
     // missing/older profile document must never leave an authenticated user
     // stuck on the login screen.
     try {
-        const userRef = doc(db, "users", user.uid);
-        const translatorRef = doc(db, "translators", user.uid);
-        const translatorPrivateRef = doc(db, "interpreterPrivate", user.uid);
-        const [userSnap, translatorSnap, translatorPrivateSnap] = await Promise.all([
-            getDoc(userRef),
-            getDoc(translatorRef).catch(() => null),
-            getDoc(translatorPrivateRef).catch(() => null)
-        ]);
-
         const fallbackProfile = {
             uid: user.uid,
             email: (user.email || "").toLowerCase(),
             displayName: user.displayName || user.email || "FiniSpeak user",
-            role: translatorSnap?.exists() ? "translator" : "customer"
+            role: "customer"
         };
-        currentProfile = userSnap.exists() ? { ...fallbackProfile, ...userSnap.data() } : fallbackProfile;
-
-        // Older translator accounts may predate the role field in /users.
-        // The translator profile is authoritative for those accounts.
-        if (translatorSnap?.exists() && currentProfile.role !== "admin") currentProfile.role = "translator";
-        currentInterpreterProfile = currentProfile.role === "translator" && translatorSnap?.exists()
-            ? { ...translatorSnap.data(), ...(translatorPrivateSnap?.exists() ? translatorPrivateSnap.data() : {}) }
-            : null;
-
-        // Repair/migrate the signed-in user's basic profile and email lookup.
-        // Older accounts may exist in Firebase Auth without either Firestore
-        // document, which otherwise makes them impossible for callers to find.
-        const profileNeedsRepair = !userSnap.exists() || (currentProfile.role === "translator" && userSnap.data()?.role !== "translator");
-        const profileRepair = profileNeedsRepair ? setDoc(userRef, {
-                uid: user.uid,
-                email: fallbackProfile.email,
-                displayName: currentProfile.displayName,
-                role: currentProfile.role,
-                updatedAt: serverTimestamp()
-            }, { merge: true }) : Promise.resolve();
-        const directoryRepair = fallbackProfile.email ? setDoc(doc(db, "emailDirectory", fallbackProfile.email), {
-            uid: user.uid,
-            email: fallbackProfile.email,
-            displayName: currentProfile.displayName,
-            role: currentProfile.role,
-            updatedAt: serverTimestamp()
-        }, { merge: true }) : Promise.resolve();
-        await Promise.all([profileRepair, directoryRepair]).catch(error => console.warn("Account lookup migration skipped:", error));
+        const accountPayload = await apiFetch("/api/accounts/me");
+        currentProfile = { ...fallbackProfile, ...(accountPayload.account || {}) };
+        currentInterpreterProfile = null;
+        if (isInterpreterRole(currentProfile.role)) {
+            const profilePayload = await apiFetch("/api/translators/me/profile");
+            currentInterpreterProfile = { ...(profilePayload.profile || {}), ...(profilePayload.private || {}) };
+        }
 
         hydrateDashboardProfile();
-        const isTranslator = currentProfile.role === "translator";
+        const isTranslator = isInterpreterRole(currentProfile.role);
         const isAdmin = currentProfile.role === "admin";
         $("interpreterProfileNav").classList.toggle("hidden", !isTranslator);
         $("adminNav").classList.toggle("hidden", !isAdmin);
@@ -448,7 +407,7 @@ async function handleAuthState(user) {
 
 function hydrateDashboardProfile() {
     const name = currentProfile.displayName || currentProfile.email || "FiniSpeak";
-    const roleLabel = currentProfile.role === "admin" ? "Administrator" : currentProfile.role === "translator" ? "Translator" : "Customer";
+    const roleLabel = currentProfile.role === "admin" ? "Administrator" : isInterpreterRole(currentProfile.role) ? "Translator" : "Customer";
     $("welcomeName").textContent = name;
     $("appWelcomeName").textContent = name.split(/\s+/).filter(Boolean)[0] || "there";
     $("accountRole").textContent = `${roleLabel} account`;
@@ -1182,10 +1141,8 @@ async function saveProfile(e) {
     try {
         await updateProfile(currentUser, { displayName });
         const phoneNormalized = normalizePhoneNumber(phone);
-        await setDoc(doc(db, "users", currentUser.uid), { displayName, phone, phoneNormalized, updatedAt: serverTimestamp() }, { merge: true });
-        const email = (currentProfile.email || currentUser.email || "").toLowerCase();
-        if (email) await setDoc(doc(db, "emailDirectory", email), { uid: currentUser.uid, displayName, role: currentProfile.role, email, updatedAt: serverTimestamp() }, { merge: true });
-        currentProfile = { ...currentProfile, displayName, phone, phoneNormalized };
+        const result = await apiFetch("/api/accounts/me", { method: "PATCH", body: JSON.stringify({ displayName, phone }) });
+        currentProfile = { ...currentProfile, ...(result.account || {}), displayName, phone, phoneNormalized };
         hydrateDashboardProfile();
         status.textContent = "Profile saved.";
     } catch (error) { status.textContent = `Could not save profile: ${error.message}`; }
@@ -1206,12 +1163,9 @@ function taxonomyDocId(value) {
 
 async function loadTaxonomy() {
     try {
+        const payload = await apiFetch("/api/taxonomy");
         await Promise.all(Object.keys(taxonomyUI).map(async kind => {
-            const snapshot = await getDocs(collection(db, taxonomyCollections[kind]));
-            const values = snapshot.docs
-                .map(document => document.data())
-                .filter(item => item.active !== false && item.name)
-                .map(item => item.name);
+            const values = payload[kind] || [];
             taxonomy[kind] = (values.length ? values : defaultTaxonomy[kind])
                 .sort((a, b) => a.localeCompare(b));
             renderTaxonomyOptions(kind);
@@ -1322,17 +1276,10 @@ async function addTagFromInput(kind) {
         if (!existing) {
             const id = taxonomyDocId(name);
             if (!id) return;
-            const ref = doc(db, taxonomyCollections[kind], id);
-            const snap = await getDoc(ref);
-            if (!snap.exists()) await setDoc(ref, {
-                name,
-                nameLower: normalized,
-                active: true,
-                seeded: false,
-                createdBy: currentUser.uid,
-                createdAt: serverTimestamp()
-            });
-            const stored = snap.exists() ? (snap.data().name || name) : name;
+            const result = currentProfile.role === "admin"
+                ? await apiFetch(`/api/taxonomy/${encodeURIComponent(kind)}`, { method: "POST", body: JSON.stringify({ id, name, extra: { nameLower: normalized, seeded: false } }) })
+                : { record: { name } };
+            const stored = result.record?.name || name;
             if (!taxonomy[kind].some(v => normalizeTaxonomyValue(v) === normalizeTaxonomyValue(stored))) taxonomy[kind].push(stored);
             taxonomy[kind].sort((a,b) => a.localeCompare(b));
         }
@@ -1489,43 +1436,13 @@ async function uploadCredentialDocuments(existing = []) {
 }
 
 async function loadInterpreterProfile() {
-    const ref = doc(db, "translators", currentUser.uid);
-    const privateRef = doc(db, "interpreterPrivate", currentUser.uid);
-    const [snap, privateSnap] = await Promise.all([getDoc(ref), getDoc(privateRef).catch(() => null)]);
-    if (!snap.exists()) {
-        // Translator role exists but its onboarding document does not yet. This
-        // can happen with accounts created before interpreter onboarding.
-        const starter = {
-            uid: currentUser.uid,
-            displayName: currentProfile.displayName || currentUser.displayName || "",
-            onboardingStatus: "draft",
-            verificationStatus: "unverified",
-            languages: [], dialects: [], specialties: [], credentials: [], credentialStatus: "unsubmitted",
-            yearsExperience: 0,
-            availability: { days: [], start: "", end: "", availableNow: false, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" },
-            rating: null, ratingCount: 0,
-            createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-        };
-        const privateStarter = {
-            uid: currentUser.uid,
-            email: (currentUser.email || "").toLowerCase(),
-            phone: "",
-            credentialDocuments: [],
-            createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-        };
-        const batch = writeBatch(db);
-        batch.set(ref, starter, { merge: true });
-        batch.set(privateRef, privateStarter, { merge: true });
-        await batch.commit();
-        currentInterpreterProfile = { ...starter, ...privateStarter };
-    } else {
-        currentInterpreterProfile = { ...snap.data(), ...(privateSnap?.exists() ? privateSnap.data() : {}) };
-    }
+    const result = await apiFetch("/api/translators/me/profile");
+    currentInterpreterProfile = { ...(result.profile || {}), ...(result.private || {}) };
     hydrateInterpreterProfile(currentInterpreterProfile);
 }
 
 function renderTranslatorDashboard() {
-    if (currentProfile?.role !== "translator") return;
+    if (!isInterpreterRole(currentProfile?.role)) return;
     const p = currentInterpreterProfile || {};
     const completion = interpreterCompletion({
         displayName: p.displayName || currentProfile.displayName || "", bio: p.bio || "",
@@ -1548,7 +1465,7 @@ function renderTranslatorDashboard() {
 }
 
 async function updateDashboardAvailability() {
-    if (currentProfile?.role !== "translator") return;
+    if (!isInterpreterRole(currentProfile?.role)) return;
     const toggle = $("dashboardAvailableNow");
     const availableNow = toggle.checked;
     $("dashboardAvailabilityLabel").textContent = availableNow ? "Available now" : "Unavailable";
@@ -1717,7 +1634,7 @@ function setInterpreterSaveLoading(loading, draft = false, submitForVerification
 
 async function saveInterpreterProfile(e, draft = false, submitForVerification = false) {
     e?.preventDefault?.();
-    if (currentProfile?.role !== "translator") return;
+    if (!isInterpreterRole(currentProfile?.role)) return;
     const status = $("interpreterProfileStatus");
     const data = interpreterFormData();
     const completion = interpreterCompletion(data);
@@ -1769,30 +1686,24 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
             credentialStatus, onboardingStatus,
             verificationStatus: currentInterpreterProfile?.verificationStatus || "unverified",
             rating: currentInterpreterProfile?.rating ?? null, ratingCount: currentInterpreterProfile?.ratingCount || 0,
-            // Remove private fields from legacy profile documents as each
-            // interpreter saves after the privacy split migration.
-            email: deleteField(), phone: deleteField(), credentialDocuments: deleteField(), verificationNotes: deleteField(),
-            updatedAt: serverTimestamp()
+            // The authenticated backend allowlists public fields and scrubs
+            // legacy private fields before persisting this profile.
+            updatedAt: Date.now()
         };
         const privatePayload = {
             uid: currentUser.uid,
             email: (currentProfile.email || currentUser.email || "").toLowerCase(),
             phone,
             credentialDocuments,
-            updatedAt: serverTimestamp()
+            updatedAt: Date.now()
         };
-        const batch = writeBatch(db);
-        batch.set(doc(db, "translators", currentUser.uid), payload, { merge: true });
-        batch.set(doc(db, "interpreterPrivate", currentUser.uid), privatePayload, { merge: true });
-        await batch.commit();
+        await apiFetch("/api/translators/me/profile", { method: "PUT", body: JSON.stringify({ profile: payload, private: privatePayload }) });
         const removalPaths = [...pendingCredentialRemovalPaths];
         pendingCredentialRemovalPaths = new Set();
         if (storage) await Promise.allSettled(removalPaths.map(path => deleteObject(storageRef(storage, path))));
         if (data.displayName && data.displayName !== currentProfile.displayName) {
             await updateProfile(currentUser, { displayName: data.displayName });
-            await setDoc(doc(db, "users", currentUser.uid), { displayName: data.displayName, updatedAt: serverTimestamp() }, { merge: true });
-            const email = privatePayload.email;
-            if (email) await setDoc(doc(db, "emailDirectory", email), { displayName: data.displayName, updatedAt: serverTimestamp() }, { merge: true });
+            await apiFetch("/api/accounts/me", { method: "PATCH", body: JSON.stringify({ displayName: data.displayName, phone }) });
             currentProfile = { ...currentProfile, displayName: data.displayName };
             hydrateDashboardProfile();
         }
@@ -1842,29 +1753,12 @@ async function createCall(e) {
         const receiverPhone = $("receiverPhone").value.trim();
         const phoneNormalized = receiverEmail ? "" : normalizePhoneNumber(receiverPhone);
         if (!receiverEmail && !phoneNormalized) throw new Error("Enter a FiniSpeak email or saved phone number.");
-        // Prefer the lightweight email directory created by newer registrations.
-        // Older FiniSpeak accounts may predate that collection, so fall back to
-        // the users collection instead of incorrectly reporting that they do not exist.
         stage = "customer-directory-lookup";
         callLog(attemptId, stage, { emailProvided: true });
-        const directorySnap = receiverEmail ? await getDoc(doc(db, "emailDirectory", receiverEmail)) : null;
-        let receiver = directorySnap?.exists() ? directorySnap.data() : null;
-        let lookupSource = receiver ? "emailDirectory" : null;
-
-        if (!receiver) {
-            stage = "legacy-customer-lookup";
-            callLog(attemptId, stage);
-            try {
-                const lookupQuery = receiverEmail
-                    ? `email=${encodeURIComponent(receiverEmail)}`
-                    : `phone=${encodeURIComponent(phoneNormalized)}`;
-                const lookup = await apiFetch(`/api/accounts/lookup?${lookupQuery}`);
-                receiver = lookup.account || null;
-                lookupSource = receiverEmail ? "users-email" : "users-phone";
-            } catch (lookupError) {
-                if (!/not found/i.test(lookupError.message || "")) throw lookupError;
-            }
-        }
+        const lookupQuery = receiverEmail ? `email=${encodeURIComponent(receiverEmail)}` : `phone=${encodeURIComponent(phoneNormalized)}`;
+        const lookup = await apiFetch(`/api/accounts/lookup?${lookupQuery}`);
+        const receiver = lookup.account || null;
+        const lookupSource = receiverEmail ? "account-email" : "account-phone";
 
         stage = "customer-validation";
         callLog(attemptId, stage, {
@@ -1884,7 +1778,7 @@ async function createCall(e) {
         stage = "call-document-create";
         callLog(attemptId, stage, { interpreterRequested: Boolean(selectedInterpreter) });
         const created = await apiFetch("/api/calls/", {
-            method: "POST",
+            method: "POST", headers: { "Idempotency-Key": attemptId },
             body: JSON.stringify({
                 receiverId: receiver.uid,
                 translatorId: selectedInterpreter?.id || null
@@ -1910,9 +1804,9 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
     let stage = "call-document-read";
     callLog(attemptId, stage, { callId });
     try {
-        const callRef = doc(db, "calls", callId), snap = await getDoc(callRef);
-        if (!snap.exists()) throw new Error("Call not found.");
-        const call = snap.data();
+        const result = await apiFetch(`/api/calls/${encodeURIComponent(callId)}`);
+        const call = result.call;
+        if (!call) throw new Error("Call not found.");
         const role = currentProfile.role;
         const allowedCustomer = [call.callerId, call.receiverId].includes(currentUser.uid);
         stage = "participant-validation";
@@ -1967,9 +1861,14 @@ async function startMedia() {
 
 function watchCall(callId) {
     cleanupListeners();
-    callUnsubs.push(onSnapshot(doc(db, "calls", callId), snap => {
-        if (!snap.exists()) return;
-        const call = snap.data();
+    const refresh = async () => {
+      try {
+        const [callPayload, participantPayload, transcriptPayload] = await Promise.all([
+          apiFetch(`/api/calls/${encodeURIComponent(callId)}`),
+          apiFetch(`/api/sessions/${encodeURIComponent(callId)}/participants`),
+          apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`)
+        ]);
+        const call = callPayload.call;
         const translatorConnected = call.translationStatus === "connected";
         activeTranslatorConnected = translatorConnected;
         $("callTitle").textContent = call.status === "ended" ? "Call ended" : "Live conversation";
@@ -1984,22 +1883,22 @@ function watchCall(callId) {
                     : translatorConnected
                         ? ""
                         : "Customer call connected";
-        if (["ended", "declined"].includes(call.status)) { cleanupCall(); show("dashboardView"); loadConversationHistory(); }
-    }));
-    callUnsubs.push(onSnapshot(collection(db, "calls", callId, "participants"), snap => {
+        if (["ended", "declined"].includes(call.status)) { cleanupCall(); show("dashboardView"); loadConversationHistory(); return; }
         const ids = new Set();
-        snap.forEach(d => { if (d.id !== currentUser.uid) { ids.add(d.id); ensurePeer(callId, d.id, d.data()); } });
+        (participantPayload.participants || []).forEach(participant => { if (participant.id !== currentUser.uid) { ids.add(participant.id); ensurePeer(callId, participant.id, participant); } });
         for (const [uid, pc] of peerConnections) if (!ids.has(uid)) { pc.close(); peerConnections.delete(uid); removeRemoteVideo(uid); }
-    }));
-    callUnsubs.push(onSnapshot(collection(db, "calls", callId, "transcripts"), snap => {
-        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const rows = transcriptPayload.transcripts || [];
         rows.sort((a, b) => {
-            const aMs = a.createdAt?.toMillis?.() || a.clientCreatedAt || 0;
-            const bMs = b.createdAt?.toMillis?.() || b.clientCreatedAt || 0;
+            const aMs = profileTimestampMillis(a.createdAt) || a.clientCreatedAt || 0;
+            const bMs = profileTimestampMillis(b.createdAt) || b.clientCreatedAt || 0;
             return aMs - bMs;
         });
         renderTranscript(rows);
-    }));
+      } catch (error) { handleDashboardListenerError("active-call", error); }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2000);
+    callUnsubs.push(() => window.clearInterval(timer));
 }
 
 async function ensurePeer(callId, remoteUid, profile) {
@@ -2094,7 +1993,8 @@ async function startTranscription(callId) {
                 const stableLanguage = evidence?.primaryLanguage || message.language;
                 const stableConfidence = normalizeLanguageConfidence(evidence?.primaryConfidence ?? message.languageConfidence);
                 if (stableLanguage) updateDetectedLanguage(stableLanguage, stableConfidence, evidence?.confirmed === true);
-                await addDoc(collection(db, "calls", callId, "transcripts"), {
+                const transcriptId = `${currentUser.uid}-${Date.now()}-${crypto.randomUUID()}`;
+                await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`, { method: "POST", headers: { "Idempotency-Key": transcriptId }, body: JSON.stringify({ id: transcriptId,
                     speakerId: currentUser.uid,
                     speakerRole: currentCallRole,
                     speakerName: currentProfile.displayName || currentProfile.email,
@@ -2108,7 +2008,7 @@ async function startTranscription(callId) {
                     isFinal: true,
                     createdAt: serverTimestamp(),
                     clientCreatedAt: Date.now()
-                });
+                }) });
                 const routeKey = languageRouteKey(callId, stableLanguage);
                 if (stableLanguage && evidence?.requiresConfirmation !== true && !routedLanguageCalls.has(routeKey)) {
                     routedLanguageCalls.add(routeKey);
@@ -2492,50 +2392,39 @@ function startDashboardListeners() {
     cleanupDashboardListeners();
     if (!currentUser || !currentProfile) return;
 
-    if (["customer", "admin"].includes(currentProfile.role)) {
-        // Subscribe by receiver only and filter pending calls in the browser.
-        // This avoids a compound query/index failure and ensures the initial
-        // snapshot restores calls that were already ringing before page load.
-        const incoming = query(collection(db, "calls"), where("receiverId", "==", currentUser.uid));
-        dashboardUnsubs.push(onSnapshot(incoming, snap => {
-            const callDoc = newestPendingCall(snap);
-            console.info("[FiniSpeak incoming][customer] snapshot", {
-                matchingCalls: snap.size,
-                pendingCalls: snap.docs.filter(docSnapshot => docSnapshot.data().status === "ringing").length,
-                activeCall: Boolean(activeCallId)
-            });
-            if (!callDoc || activeCallId) {
+    const refresh = async () => {
+      try {
+        const rows = currentProfile.role === "translator"
+          ? (await apiFetch("/api/calls/pending")).calls || []
+          : (await apiFetch("/api/sessions")).sessions || [];
+        const pending = currentProfile.role === "translator"
+          ? rows[0]
+          : rows.filter(call => call.receiverId === currentUser.uid && call.status === "ringing").sort((a,b) => callMillis(b) - callMillis(a))[0];
+        if (!pending || activeCallId) {
                 clearPendingIncomingCall();
                 return;
             }
-            pendingIncomingCall = { id: callDoc.id, ...callDoc.data(), kind: "customer" };
+        if (["customer", "admin"].includes(currentProfile.role)) {
+            pendingIncomingCall = { ...pending, kind: "customer" };
             $("incomingCallEyebrow").textContent = "Incoming FiniSpeak call";
             $("incomingCallTitle").textContent = `${pendingIncomingCall.callerName || "A participant"} is calling you`;
             $("incomingCallDetails").textContent = "Accept to connect. Live transcription starts after you join the call.";
             $("acceptIncomingCall").textContent = "Accept";
             openModal("incomingCallModal");
-        }, error => handleDashboardListenerError("customer", error)));
-    } else if (currentProfile.role === "translator") {
-        const requests = query(collection(db, "calls"), where("translationStatus", "==", "requested"));
-        dashboardUnsubs.push(onSnapshot(requests, snap => {
-            const callDoc = snap.docs.find(d => {
-                const call = d.data();
-                const isAvailableToThisInterpreter = !call.translatorId || call.translatorId === currentUser.uid;
-                return isAvailableToThisInterpreter && !["ended", "declined"].includes(call.status);
-            });
-            if (!callDoc || activeCallId) {
-                clearPendingIncomingCall();
-                return;
-            }
-            pendingIncomingCall = { id: callDoc.id, ...callDoc.data(), kind: "translator" };
+        } else if (currentProfile.role === "translator") {
+            pendingIncomingCall = { ...pending, kind: "translator" };
             $("incomingCallEyebrow").textContent = "Interpretation request";
             $("incomingCallTitle").textContent = "A call needs a translator";
             $("incomingCallDetails").textContent = `${pendingIncomingCall.callerName || "Customer 1"} and ${pendingIncomingCall.receiverName || "Customer 2"} are requesting interpretation.`;
             $("translatorRequestStatus").textContent = "New interpretation request waiting — open it to join the call.";
             $("acceptIncomingCall").textContent = "Join Call";
             openModal("incomingCallModal");
-        }, error => handleDashboardListenerError("translator", error)));
-    }
+        }
+      } catch (error) { handleDashboardListenerError("poll", error); }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2500);
+    dashboardUnsubs.push(() => window.clearInterval(timer));
 }
 
 async function acceptIncomingCall() {
@@ -2573,14 +2462,13 @@ async function declineIncomingCall() {
 }
 
 async function loadConversationHistory() {
-    if (!currentUser || !db) return;
+    if (!currentUser) return;
     const history = $("conversationHistory");
     history.innerHTML = '<p class="transcript-empty">Loading conversations…</p>';
     try {
-        const fields = currentProfile.role === "translator" ? ["translatorId"] : ["callerId", "receiverId"];
-        const snapshots = await Promise.all(fields.map(field => getDocs(query(collection(db, "calls"), where(field, "==", currentUser.uid)))));
+        const payload = await apiFetch("/api/sessions");
         historyCalls.clear();
-        snapshots.forEach(snapshot => snapshot.forEach(d => historyCalls.set(d.id, { id: d.id, ...d.data() })));
+        (payload.sessions || []).forEach(call => historyCalls.set(call.id, call));
         const rows = [...historyCalls.values()]
             .filter(call => ["connected", "ended"].includes(call.status) || call.startedAt)
             .sort((a, b) => callMillis(b) - callMillis(a));
@@ -2591,7 +2479,7 @@ async function loadConversationHistory() {
 }
 
 function callMillis(call) {
-    return call.endedAt?.toMillis?.() || call.startedAt?.toMillis?.() || call.createdAt?.toMillis?.() || 0;
+    return profileTimestampMillis(call.endedAt) || profileTimestampMillis(call.startedAt) || profileTimestampMillis(call.createdAt) || 0;
 }
 
 function renderConversationHistory(rows) {
@@ -2610,7 +2498,7 @@ function renderConversationHistory(rows) {
         const other = currentProfile.role === "translator"
             ? `${call.callerName || "Customer 1"} ↔ ${call.receiverName || "Customer 2"}`
             : (currentUser.uid === call.callerId ? call.receiverName : call.callerName) || "FiniSpeak customer";
-        const date = call.startedAt?.toDate?.() || call.createdAt?.toDate?.();
+        const date = timestampDate(call.startedAt) || timestampDate(call.createdAt);
         const dateText = date ? date.toLocaleString() : "Previous call";
         button.innerHTML = `<strong>${escapeHtml(other)}</strong><span class="conversation-meta">${escapeHtml(dateText)} · View transcript</span>`;
         button.onclick = () => openHistoryTranscript(call);
@@ -2661,15 +2549,15 @@ async function submitInterpreterReview(event) {
 
 async function openHistoryTranscript(call) {
     $("historyTranscriptTitle").textContent = "Call transcript";
-    const date = call.startedAt?.toDate?.() || call.createdAt?.toDate?.();
+    const date = timestampDate(call.startedAt) || timestampDate(call.createdAt);
     $("historyTranscriptMeta").textContent = date ? date.toLocaleString() : "Previous conversation";
     const list = $("historyTranscriptList");
     list.innerHTML = '<p class="transcript-empty">Loading transcript…</p>';
     openModal("transcriptModal");
     try {
-        const snap = await getDocs(collection(db, "calls", call.id, "transcripts"));
-        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        rows.sort((a, b) => (a.createdAt?.toMillis?.() || a.clientCreatedAt || 0) - (b.createdAt?.toMillis?.() || b.clientCreatedAt || 0));
+        const payload = await apiFetch(`/api/calls/${encodeURIComponent(call.id)}/transcripts`);
+        const rows = payload.transcripts || [];
+        rows.sort((a, b) => (profileTimestampMillis(a.createdAt) || a.clientCreatedAt || 0) - (profileTimestampMillis(b.createdAt) || b.clientCreatedAt || 0));
         renderTranscriptInto(list, rows);
     } catch (error) {
         list.innerHTML = `<p class="status">Could not load transcript: ${escapeHtml(error.message)}</p>`;

@@ -103,6 +103,16 @@ class MySqlAccountRepositoryTests(unittest.TestCase):
 
 
 class MySqlAuthorizationTests(unittest.TestCase):
+    def test_duplicate_call_request_returns_existing_record(self):
+        caller = {"uid": "customer-1", "displayName": "Caller"}
+        key = "same-request"
+        call_id = "req_" + hashlib.sha256(f"customer-1:{key}".encode()).hexdigest()[:48]
+        existing = sql_call(call_id, status="ringing")
+        session = FakeSession({(SqlCall, call_id): existing})
+        result = MySqlCallRepository(session).create(caller, {"uid": "customer-2"}, idempotency_key=key)
+        self.assertEqual(result["id"], call_id)
+        self.assertEqual(session.commits, 0)
+
     def test_review_rejects_nonparticipant(self):
         session = FakeSession({(SqlCall, "call-1"): sql_call()})
         with self.assertRaisesRegex(PermissionError, "Only a customer"):

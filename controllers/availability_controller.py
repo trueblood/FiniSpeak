@@ -10,7 +10,7 @@ def update():
     identity, error = identity_or_response()
     if error:
         return error
-    if identity.get("role") not in {"translator", "admin"}:
+    if identity.get("role") != "admin" and not TranslatorModel.get(identity["uid"], public=False):
         return jsonify({"error": "An interpreter account is required."}), 403
     data = json_body()
     availability = {

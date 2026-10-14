@@ -46,6 +46,7 @@ def configure_optional_mysql(app):
         for name in MYSQL_ENVIRONMENT_VARIABLES
     }
     if not all(mysql_config.values()):
+        app.config["MYSQL_CONFIGURED"] = False
         return
 
     app.config["SQLALCHEMY_DATABASE_URI"] = URL.create(
@@ -58,6 +59,7 @@ def configure_optional_mysql(app):
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
+    app.config["MYSQL_CONFIGURED"] = True
 
 
 def create_app(repository_overrides=None):
@@ -71,8 +73,8 @@ def create_app(repository_overrides=None):
     # tests only. Existing models remain Firestore-backed.
     app.config["REPOSITORY_BACKENDS"] = repository_backends()
     app.config["FIRESTORE_MYSQL_SYNCHRONIZATION"] = synchronization_flags()
-    init_repositories(app, repository_overrides)
     configure_optional_mysql(app)
+    init_repositories(app, repository_overrides)
     sock = Sock(app)
     register_transcription_socket(sock)
     app.register_blueprint(api_bp, url_prefix="/api")

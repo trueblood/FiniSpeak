@@ -1,6 +1,8 @@
 import os
 
 from flask import current_app, jsonify
+from sqlalchemy import text
+from extensions import db
 from services.firebase_service import get_db
 
 
@@ -43,13 +45,33 @@ def readiness():
         "commercialApiPepper": len(os.getenv("FINISPEAK_API_KEY_PEPPER", "").strip()) >= 32,
         "firebaseConnection": False,
     }
+    backends = current_app.config.get("REPOSITORY_BACKENDS", {})
+    mysql_required = any(value in {"mysql", "shadow"} for value in backends.values())
+    checks["mysqlRequired"] = mysql_required
+    if mysql_required:
+        checks["mysqlConnection"] = False
+        try:
+            db.session.execute(text("SELECT 1"))
+            checks["mysqlConnection"] = True
+        except Exception:
+            db.session.rollback()
     try:
-        get_db().collection("users").limit(1).get()
+        firebase = get_db()
+        # Firebase is still initialized for Auth/Storage/WebRTC. In an all-
+        # MySQL deployment, readiness must not perform a durable Firestore read.
+        if any(value != "mysql" for value in backends.values()):
+            firebase.collection("users").limit(1).get()
         checks["firebaseConnection"] = True
     except Exception:
         checks["firebaseConnection"] = False
-    ready = all(checks.values())
-    return jsonify({"service": "FiniSpeak API", "status": "ready" if ready else "not_ready", "checks": checks}), 200 if ready else 503
+    readiness_values = [value for key, value in checks.items() if key != "mysqlRequired"]
+    ready = all(readiness_values)
+    monitor = current_app.extensions.get("finispeak.shadow_monitor")
+    payload = {"service": "FiniSpeak API", "status": "ready" if ready else "not_ready", "checks": checks,
+               "repositoryBackends": backends}
+    if monitor:
+        payload["shadowComparisons"] = monitor.status()
+    return jsonify(payload), 200 if ready else 503
 
 
 def firebase_config():

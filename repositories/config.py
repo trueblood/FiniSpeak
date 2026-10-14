@@ -5,6 +5,7 @@ Firestore so merely deploying Phase 0 cannot move application traffic.
 """
 
 import os
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -51,3 +52,35 @@ def repository_backends(environ=None):
         flag_name = f"FINISPEAK_REPOSITORY_{domain.upper()}"
         result[domain] = _backend(environ.get(flag_name, global_backend.value), flag_name).value
     return result
+
+
+def cutover_safety(environ=None, now=None):
+    """Validate explicit, short-lived operator authorization for MySQL traffic.
+
+    A successful reconciliation of a test database is deliberately insufficient.
+    Enabling MySQL-primary requires a production reconciliation timestamp and
+    digest, and the authorization expires so a stale deployment cannot be
+    restarted into MySQL-primary weeks later.
+    """
+    environ = os.environ if environ is None else environ
+    enabled = str(environ.get("FINISPEAK_MYSQL_PRIMARY_ENABLED", "false")).lower() == "true"
+    if not enabled:
+        raise RuntimeError("MySQL-primary requires FINISPEAK_MYSQL_PRIMARY_ENABLED=true.")
+    revision = str(environ.get("FINISPEAK_MYSQL_EXPECTED_REVISION", "")).strip()
+    if revision != "20261013_0002":
+        raise RuntimeError("MySQL-primary requires an explicit 20261013_0002 schema attestation.")
+    digest = str(environ.get("FINISPEAK_MYSQL_RECONCILIATION_DIGEST", "")).strip().lower()
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise RuntimeError("MySQL-primary requires a SHA-256 reconciliation digest.")
+    value = str(environ.get("FINISPEAK_MYSQL_RECONCILED_AT", "")).strip()
+    try:
+        reconciled_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if reconciled_at.tzinfo is None:
+            raise ValueError
+    except ValueError as exc:
+        raise RuntimeError("MySQL-primary requires a timezone-aware FINISPEAK_MYSQL_RECONCILED_AT.") from exc
+    age = (now or datetime.now(timezone.utc)) - reconciled_at.astimezone(timezone.utc)
+    max_age = int(environ.get("FINISPEAK_MYSQL_RECONCILIATION_MAX_AGE_SECONDS", "1800"))
+    if age.total_seconds() < 0 or age.total_seconds() > max_age:
+        raise RuntimeError("MySQL-primary reconciliation attestation is stale.")
+    return {"revision": revision, "reconciledAt": reconciled_at, "digest": digest}

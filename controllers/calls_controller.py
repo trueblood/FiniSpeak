@@ -1,4 +1,5 @@
-from flask import jsonify
+from datetime import datetime, timezone
+from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
@@ -6,6 +7,7 @@ from repositories.provider import repository_proxy
 AccountModel = repository_proxy("accounts")
 CallModel = repository_proxy("calls")
 TranslatorModel = repository_proxy("translators")
+TranscriptModel = repository_proxy("transcripts")
 
 
 def create():
@@ -33,6 +35,9 @@ def create():
             return jsonify({"error": "The selected interpreter is not verified or is unavailable."}), 400
 
     try:
+        idempotency_key = str(request.headers.get("Idempotency-Key", "")).strip() or None
+        if idempotency_key and len(idempotency_key) > 160:
+            return jsonify({"error": "Idempotency-Key is too long"}), 400
         call = CallModel.create(
             identity,
             receiver,
@@ -42,6 +47,7 @@ def create():
             specialty=data.get("specialty"),
             purpose=str(data.get("purpose") or "").strip(),
             scheduled_at=data.get("scheduledAt"),
+            idempotency_key=idempotency_key,
         )
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
@@ -113,3 +119,37 @@ def claim_translator(call_id):
         return jsonify({"error": str(exc)}), 409
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+def transcripts(call_id):
+    identity, error = identity_or_response()
+    if error:
+        return error
+    call = CallModel.get(call_id)
+    if not call or (identity.get("role") != "admin" and not CallModel.is_participant(call, identity["uid"])):
+        return jsonify({"error": "Call not found or access denied."}), 404
+    if request.method == "GET":
+        return jsonify({"transcripts": TranscriptModel.for_call(call_id)})
+    data = json_body()
+    transcript_id = str(data.pop("id", "") or request.headers.get("Idempotency-Key", "")).strip()
+    text = str(data.get("text") or "").strip()
+    if not transcript_id or len(transcript_id) > 160 or not text or len(text) > 20000:
+        return jsonify({"error": "A valid transcript id and text are required."}), 400
+    data.update({"speakerId": identity["uid"], "speakerRole": identity.get("role"), "speakerName": identity.get("displayName"), "text": text, "isFinal": bool(data.get("isFinal", True)), "createdAt": datetime.now(timezone.utc)})
+    transcript = TranscriptModel.add(call_id, transcript_id, data)
+    return jsonify({"transcript": transcript}), 201
+
+
+def pending_requests():
+    identity, error = identity_or_response()
+    if error:
+        return error
+    if identity.get("role") not in {"translator", "admin"}:
+        return jsonify({"error": "An interpreter account is required."}), 403
+    if identity.get("role") != "admin" and not TranslatorModel.get(identity["uid"]):
+        return jsonify({"error": "Only a verified interpreter can view requests."}), 403
+    calls = [call for call in CallModel.all()
+             if call.get("translationStatus") == "requested"
+             and call.get("status") not in {"ended", "declined", "cancelled"}
+             and call.get("translatorId") in {None, "", identity["uid"]}]
+    return jsonify({"calls": calls})
