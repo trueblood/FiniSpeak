@@ -58,6 +58,8 @@ jobs:
             --exclude='venv/' \
             --exclude='.env' \
             --exclude='.git/' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
             -e "ssh -i $HOME/.ssh/finispeak_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
             ./ "$DO_USER@$DO_HOST:/var/www/finispeak/"
 
