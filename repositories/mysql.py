@@ -10,7 +10,8 @@ import hmac
 import os
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -38,6 +39,21 @@ def _raw(row):
     return dict(row.raw_document or {})
 
 
+def _json_safe(value):
+    """Return a JSON-column-safe copy without changing typed SQL columns."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def _document(row, fields, identifier=None):
     data = _raw(row)
     for api_name, column_name in fields.items():
@@ -50,7 +66,7 @@ def _document(row, fields, identifier=None):
 
 def _touch(row, changes, fields):
     raw = _raw(row)
-    raw.update(changes)
+    raw.update(_json_safe(changes))
     row.raw_document = raw
     for api_name, value in changes.items():
         column_name = fields.get(api_name)
@@ -176,7 +192,7 @@ class MySqlAccountRepository:
         payload = {"uid": uid, "email": email, "displayName": str(data.get("displayName") or identity.get("displayName") or email).strip(),
                    "phone": phone, "phoneNormalized": normalize_phone(phone), "role": role, "status": "active", "createdAt": now, "updatedAt": now}
         try:
-            self.session.add(SqlUser(id=uid, email_normalized=email, raw_document=payload, migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in ACCOUNT_FIELDS.items()}))
+            self.session.add(SqlUser(id=uid, email_normalized=email, raw_document=_json_safe(payload), migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in ACCOUNT_FIELDS.items()}))
             _commit(self.session)
         except Exception:
             self.session.rollback(); raise
@@ -315,7 +331,7 @@ class MySqlTranslatorRepository:
                 _touch(private, {**dict(private_data), "updatedAt": now}, fields)
             else:
                 values = {**dict(private_data), "uid": translator_id, "updatedAt": now, "createdAt": now}
-                private = SqlInterpreterPrivate(id=translator_id, raw_document=values, migrated_at=now, mutation_version=1, **{column: values.get(api) for api, column in fields.items()})
+                private = SqlInterpreterPrivate(id=translator_id, raw_document=_json_safe(values), migrated_at=now, mutation_version=1, **{column: values.get(api) for api, column in fields.items()})
                 self.session.add(private)
             _commit(self.session)
         except Exception:
@@ -336,8 +352,14 @@ class MySqlTranslatorRepository:
             raise ValueError("Create the account before interpreter enrollment.")
         now = _now(); public = {"uid": uid, "displayName": identity.get("displayName") or identity.get("email"), "onboardingStatus": "draft", "verificationStatus": "unverified", "languages": [], "dialects": [], "specialties": [], "credentials": [], "credentialStatus": "unsubmitted", "yearsExperience": 0, "availability": {"days": [], "start": "", "end": "", "availableNow": False}, "rating": None, "ratingCount": 0, "createdAt": now, "updatedAt": now}
         private = {"uid": uid, "email": normalize_email(identity.get("email")), "phone": str(phone or ""), "credentialDocuments": [], "createdAt": now, "updatedAt": now}
-        self.session.add(SqlTranslator(id=uid, raw_document=public, migrated_at=now, mutation_version=1, **{column: public.get(api) for api, column in TRANSLATOR_FIELDS.items()}))
-        self.session.add(SqlInterpreterPrivate(id=uid, raw_document=private, migrated_at=now, mutation_version=1, uid=uid, email=private["email"], phone=private["phone"], credential_documents=[], created_at=now, updated_at=now))
+        translator = SqlTranslator(id=uid, raw_document=_json_safe(public), migrated_at=now, mutation_version=1, **{column: public.get(api) for api, column in TRANSLATOR_FIELDS.items()})
+        self.session.add(translator)
+        # These models intentionally do not expose an ORM relationship. Flush
+        # the FK parent first, but enqueue its outbox event before it leaves
+        # ``session.new`` so the event remains in the same transaction.
+        _enqueue_pending_mutations(self.session)
+        self.session.flush()
+        self.session.add(SqlInterpreterPrivate(id=uid, raw_document=_json_safe(private), migrated_at=now, mutation_version=1, uid=uid, email=private["email"], phone=private["phone"], credential_documents=[], created_at=now, updated_at=now))
         _touch(account, {"role": "translator_applicant", "updatedAt": now}, ACCOUNT_FIELDS)
         _commit(self.session)
         return {"id": uid, **public}
@@ -395,7 +417,7 @@ class MySqlCallRepository:
             "status": "ringing", "translationStatus": "requested" if translator or language else "not_requested", "language": language,
             "dialect": dialect, "specialty": specialty, "purpose": purpose, "scheduledAt": scheduled_at,
             "createdAt": now, "updatedAt": now, "startedAt": None, "endedAt": None}
-        row = SqlCall(id=call_id, raw_document=data, migrated_at=now, mutation_version=1, **{column: data.get(api) for api, column in CALL_FIELDS.items()})
+        row = SqlCall(id=call_id, raw_document=_json_safe(data), migrated_at=now, mutation_version=1, **{column: data.get(api) for api, column in CALL_FIELDS.items()})
         self.session.add(row)
         try:
             _commit(self.session)
@@ -470,7 +492,7 @@ class MySqlParticipantRepository:
         data = {"uid": uid, "role": role, "displayName": display_name, "joinedAt": now}
         if row: _touch(row, data, PARTICIPANT_FIELDS)
         else:
-            row = SqlParticipant(call_id=call_id, id=uid, raw_document=data, migrated_at=now, mutation_version=1,
+            row = SqlParticipant(call_id=call_id, id=uid, raw_document=_json_safe(data), migrated_at=now, mutation_version=1,
                                  uid=uid, role=role, display_name=display_name, joined_at=now); self.session.add(row)
         _commit(self.session); return {"id": uid, **data}
 
@@ -503,7 +525,7 @@ class MySqlSessionRepository:
             "purpose": purpose, "scheduledAt": scheduled_at, "createdAt": now,
             "updatedAt": now, "startedAt": None, "endedAt": None,
         }
-        row = SqlCall(id=call_id, raw_document=data, migrated_at=now, mutation_version=1,
+        row = SqlCall(id=call_id, raw_document=_json_safe(data), migrated_at=now, mutation_version=1,
                       **{column: data.get(api) for api, column in CALL_FIELDS.items()})
         self.session.add(row)
         _commit(self.session)
@@ -535,7 +557,7 @@ class MySqlTranscriptRepository:
     def add(self, call_id, transcript_id, data):
         now = _now(); values = dict(data); row = self.session.get(SqlTranscript, (call_id, transcript_id))
         if row: return _document(row, TRANSCRIPT_FIELDS)
-        row = SqlTranscript(call_id=call_id, id=transcript_id, raw_document=values, migrated_at=now, mutation_version=1,
+        row = SqlTranscript(call_id=call_id, id=transcript_id, raw_document=_json_safe(values), migrated_at=now, mutation_version=1,
             **{column: values.get(api) for api, column in TRANSCRIPT_FIELDS.items()}); self.session.add(row)
         try:
             _commit(self.session)
@@ -565,7 +587,7 @@ class MySqlReviewRepository:
         review_id = f"{call_id}-{author['uid']}"
         if self.session.get(SqlReview, (interpreter_id, review_id)): raise ValueError("A review has already been submitted for this session.")
         now = _now(); data = {"authorId": author["uid"], "authorName": author.get("displayName") or "FiniSpeak customer", "callId": call_id, "rating": rating, "text": text, "moderationStatus": "visible", "createdAt": now}
-        self.session.add(SqlReview(interpreter_id=interpreter_id, id=review_id, raw_document=data, migrated_at=now, mutation_version=1, **{column: data.get(api) for api, column in REVIEW_FIELDS.items()}))
+        self.session.add(SqlReview(interpreter_id=interpreter_id, id=review_id, raw_document=_json_safe(data), migrated_at=now, mutation_version=1, **{column: data.get(api) for api, column in REVIEW_FIELDS.items()}))
         try:
             self._recalculate(interpreter_id)
         except Exception:
@@ -610,7 +632,7 @@ class MySqlOrganizationRepository:
         status = str(data.get("status") or "active")
         if status not in self.allowed_statuses: raise ValueError("Invalid organization status.")
         now, record_id = _now(), _new_id(); payload = {"name": name, "contactEmail": email, "domain": str(data.get("domain") or "").strip().lower(), "status": status, "notes": str(data.get("notes") or "").strip()[:2000], "createdBy": actor_id, "createdAt": now, "updatedAt": now}
-        self.session.add(SqlOrganization(id=record_id, raw_document=payload, migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in ORGANIZATION_FIELDS.items()})); _commit(self.session)
+        self.session.add(SqlOrganization(id=record_id, raw_document=_json_safe(payload), migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in ORGANIZATION_FIELDS.items()})); _commit(self.session)
         return {"id": record_id, **payload}
     def update(self, organization_id, data):
         row = self.session.scalar(select(SqlOrganization).where(SqlOrganization.id == organization_id).with_for_update())
@@ -643,7 +665,7 @@ class MySqlApiAccessRepository:
         if not scopes or not set(scopes).issubset(self.allowed_scopes): raise ValueError("At least one valid API scope is required.")
         key_id, now = secrets.token_hex(10), _now(); token = f"fs_live_{key_id}_{secrets.token_urlsafe(32)}"
         payload = {"organizationId": organization_id, "name": name[:160], "tokenHash": self._digest(token), "prefix": f"fs_live_{key_id}", "scopes": scopes, "minuteLimit": min(max(int(data.get("minuteLimit") or 60), 1), 10000), "dailyQuota": min(max(int(data.get("dailyQuota") or 10000), 1), 10000000), "status": "active", "createdBy": actor_id, "createdAt": now, "updatedAt": now, "expiresAt": now + timedelta(days=max(1, min(int(data.get("expiresInDays") or 365), 730))), "lastUsedAt": None}
-        self.session.add(SqlApiKey(id=key_id, raw_document=payload, migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in API_KEY_FIELDS.items()})); _commit(self.session)
+        self.session.add(SqlApiKey(id=key_id, raw_document=_json_safe(payload), migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in API_KEY_FIELDS.items()})); _commit(self.session)
         return {"id": key_id, **self._public(payload), "token": token}
     def all(self):
         rows = [{"id": row.id, **self._public(_document(row, API_KEY_FIELDS))} for row in self.session.scalars(select(SqlApiKey).order_by(SqlApiKey.created_at.desc())).all()]
@@ -672,15 +694,24 @@ class MySqlApiAccessRepository:
                 self.session.rollback(); return {"allowed": False, "reason": "rate_limit" if kind == "minute" else "daily_quota", "minuteRemaining": 0 if kind == "minute" else max(0, specs[0][3] - int(rows[0].count if rows else 0)), "dailyRemaining": 0 if kind == "day" else max(0, specs[1][3])}
             if not row:
                 payload = {"keyId": api_key["id"], "organizationId": api_key.get("organizationId"), "kind": kind, "bucket": bucket, "count": 0, "updatedAt": now, "expiresAt": now + expiry}
-                row = SqlApiUsageCounter(id=row_id, key_id=api_key["id"], organization_id=api_key.get("organizationId"), kind=kind, bucket=bucket, count=0, updated_at=now, expires_at=now + expiry, raw_document=payload, migrated_at=now, mutation_version=1); self.session.add(row)
-            row.count += 1; rows.append(row)
+                row = SqlApiUsageCounter(id=row_id, key_id=api_key["id"], organization_id=api_key.get("organizationId"), kind=kind, bucket=bucket, count=0, updated_at=now, expires_at=now + expiry, raw_document=_json_safe(payload), migrated_at=now, mutation_version=1); self.session.add(row)
+            else:
+                row.mutation_version = int(row.mutation_version or 0) + 1
+            row.count += 1
+            row.updated_at = now
+            row.source_updated_at = now
+            row.last_mutation_id = uuid.uuid4().hex
+            raw = _raw(row)
+            raw.update(_json_safe({"count": row.count, "updatedAt": now}))
+            row.raw_document = raw
+            rows.append(row)
         key = self.session.get(SqlApiKey, api_key["id"])
         if key: _touch(key, {"lastUsedAt": now}, API_KEY_FIELDS)
         _commit(self.session)
         return {"allowed": True, "minuteRemaining": max(0, specs[0][3] - rows[0].count), "dailyRemaining": max(0, specs[1][3] - rows[1].count)}
     def record_usage(self, api_key, endpoint, method, status_code, duration_ms, request_id):
         now = _now(); payload = {"keyId": api_key["id"], "organizationId": api_key.get("organizationId"), "endpoint": endpoint, "method": method, "statusCode": int(status_code), "durationMs": int(duration_ms), "requestId": request_id, "createdAt": now}
-        self.session.add(SqlApiUsageEvent(id=_new_id(), key_id=api_key["id"], organization_id=api_key.get("organizationId"), endpoint=endpoint, method=method, status_code=int(status_code), duration_ms=int(duration_ms), request_id=request_id, created_at=now, raw_document=payload, migrated_at=now, mutation_version=1)); _commit(self.session)
+        self.session.add(SqlApiUsageEvent(id=_new_id(), key_id=api_key["id"], organization_id=api_key.get("organizationId"), endpoint=endpoint, method=method, status_code=int(status_code), duration_ms=int(duration_ms), request_id=request_id, created_at=now, raw_document=_json_safe(payload), migrated_at=now, mutation_version=1)); _commit(self.session)
     def usage_summary(self, limit=500):
         rows = self.session.scalars(select(SqlApiUsageEvent).order_by(SqlApiUsageEvent.created_at.desc()).limit(min(max(int(limit), 1), 5000))).all()
         events = [_document(row, {"keyId": "key_id", "organizationId": "organization_id", "endpoint": "endpoint", "method": "method", "statusCode": "status_code", "durationMs": "duration_ms", "requestId": "request_id", "createdAt": "created_at"}) for row in rows]
@@ -710,7 +741,7 @@ class MySqlTaxonomyRepository:
         payload = {"name": name, "active": True, **dict(extra or {})}
         columns = {"id": record_id, "name": name, "name_lower": name.casefold(), "active": True,
                    "seeded": bool(payload.get("seeded", False)), "created_by": payload.get("createdBy"),
-                   "created_at": now, "raw_document": payload, "migrated_at": now, "mutation_version": 1}
+                   "created_at": now, "raw_document": _json_safe(payload), "migrated_at": now, "mutation_version": 1}
         self.session.add(model(**columns))
         _commit(self.session)
         return {"id": record_id, **payload}
@@ -723,7 +754,7 @@ class MySqlLanguageMetricsRepository:
     def __init__(self, session): self.session = session
     def record(self, call_id, event_type, detected_language=None, confidence=None, confirmed_language=None, sample_count=None):
         now, record_id = _now(), _new_id(); data = {"callId": call_id, "eventType": event_type, "detectedLanguage": detected_language, "confidence": confidence, "confirmedLanguage": confirmed_language, "corrected": bool(confirmed_language and detected_language and confirmed_language != detected_language), "sampleCount": sample_count, "createdAt": now}
-        self.session.add(SqlLanguageDetectionMetric(id=record_id, raw_document=data, migrated_at=now, mutation_version=1, **{column: data.get(api) for api, column in METRIC_FIELDS.items()})); _commit(self.session)
+        self.session.add(SqlLanguageDetectionMetric(id=record_id, raw_document=_json_safe(data), migrated_at=now, mutation_version=1, **{column: data.get(api) for api, column in METRIC_FIELDS.items()})); _commit(self.session)
         return {"id": record_id, **data}
     def summary(self, limit=2000):
         rows = self.session.scalars(select(SqlLanguageDetectionMetric).order_by(SqlLanguageDetectionMetric.created_at.desc()).limit(min(max(int(limit), 1), 10000))).all()
