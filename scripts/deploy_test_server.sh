@@ -23,7 +23,8 @@ test -f "$ENV_FILE" || fail "production environment file is missing"
 test -f "$FINALIZE_HELPER" || fail "root-owned environment finalizer is missing"
 test "$(stat -c %U:%G "$FINALIZE_HELPER")" = root:root || fail "environment finalizer ownership is unsafe"
 test "$(stat -c %a "$FINALIZE_HELPER")" = 755 || fail "environment finalizer mode is unsafe"
-install -d -m 0700 "$CUTOVER_ROOT" /var/backups/finispeak
+install -d -o root -g "$SERVICE_USER" -m 0750 "$CUTOVER_ROOT"
+install -d -o root -g root -m 0700 /var/backups/finispeak
 
 set -a
 # shellcheck disable=SC1090
