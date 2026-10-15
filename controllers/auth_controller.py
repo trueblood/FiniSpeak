@@ -5,6 +5,7 @@ from controllers.controller_utils import identity_or_response, json_body
 from services.auth_service import (
     AuthenticationError, AuthorizationError, RateLimitError, authenticate_password, authenticate_request,
     consume_action_token, enforce_rate_limit, register_account, request_password_reset, revoke_current_session,
+    test_email_verification_bypass_enabled,
 )
 from services.email_service import send_account_link
 from repositories.provider import get_repository
@@ -24,6 +25,12 @@ def register():
             data.get("displayName"), data.get("phone"), data.get("role"))
         if data.get("role") == "translator":
             get_repository("translators").enroll(user, str(data.get("phone") or "").strip())
+        if test_email_verification_bypass_enabled():
+            consume_action_token(verification_token, "verify_email")
+            return jsonify({
+                "message": "Account created. You can sign in now.",
+                "user": user,
+            }), 201
         send_account_link(user["email"], "Verify your FiniSpeak email", "/verify-email", verification_token)
         payload = {"message": "Check your email to verify the account.", "user": user}
         if current_app.testing:

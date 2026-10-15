@@ -29,6 +29,7 @@ def update_environment(path, attestation_path, commit):
     updates = {
         "FINISPEAK_ENV": "production",
         "FINISPEAK_TEST_DEPLOYMENT": "true",
+        "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
         "FINISPEAK_COOKIE_SECURE": "true",
         "FINISPEAK_REPOSITORY_BACKEND": "mysql",
         "FINISPEAK_MYSQL_PRIMARY_ENABLED": "true",

@@ -28,6 +28,7 @@ from scripts.finalize_test_deployment import update_environment
 from scripts.reconcile_firestore_mysql import reconciliation_succeeded
 from scripts.validate_storage_migration_reports import validate as validate_storage_reports
 from scripts.verify_private_storage import verify as verify_private_storage
+from services.auth_service import AuthorizationError, set_test_account_password
 from services.synchronization_service import ReconciliationResult
 
 
@@ -83,6 +84,65 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertEqual(session.get_json()["user"]["uid"], user["uid"])
         self.assertEqual(self.client.post("/api/auth/logout", headers=headers).status_code, 200)
         self.assertEqual(self.client.get("/api/auth/session", headers=headers).status_code, 401)
+
+    def test_explicit_test_deployment_bypasses_registration_email_only(self):
+        environment = {
+            "FINISPEAK_TEST_DEPLOYMENT": "true",
+            "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
+        }
+        with patch.dict(os.environ, environment, clear=False), \
+                patch("controllers.auth_controller.send_account_link") as sender:
+            response = self.client.post("/api/auth/register", json={
+                "email": "bypass@example.test",
+                "password": "CorrectHorse123",
+                "displayName": "Bypass Test",
+            })
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["message"], "Account created. You can sign in now.")
+        self.assertNotIn("testToken", response.get_json())
+        sender.assert_not_called()
+        credential = db.session.get(SqlAuthCredential, response.get_json()["user"]["uid"])
+        self.assertIsNotNone(credential.email_verified_at)
+        self.login("bypass@example.test", "CorrectHorse123")
+
+    def test_email_bypass_fails_closed_without_test_deployment_flag(self):
+        environment = {
+            "FINISPEAK_TEST_DEPLOYMENT": "false",
+            "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
+        }
+        with patch.dict(os.environ, environment, clear=False), \
+                patch("controllers.auth_controller.send_account_link") as sender:
+            response = self.client.post("/api/auth/register", json={
+                "email": "closed@example.test",
+                "password": "CorrectHorse123",
+                "displayName": "Closed Test",
+            })
+        self.assertEqual(response.status_code, 201)
+        sender.assert_called_once()
+        credential = db.session.get(SqlAuthCredential, response.get_json()["user"]["uid"])
+        self.assertIsNone(credential.email_verified_at)
+
+    def test_operator_can_activate_existing_account_only_in_explicit_test_mode(self):
+        now = datetime.now(timezone.utc)
+        user = SqlUser(id="operator-activation", uid="operator-activation",
+            email="operator@example.test", email_normalized="operator@example.test",
+            display_name="Operator Test", role="customer", status="active", raw_document={},
+            migrated_at=now, mutation_version=1)
+        db.session.add(user); db.session.commit()
+        with patch.dict(os.environ, {
+            "FINISPEAK_TEST_DEPLOYMENT": "false",
+            "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
+        }, clear=False):
+            with self.assertRaises(AuthorizationError):
+                set_test_account_password(user.id, "MigratedPassword123")
+        with patch.dict(os.environ, {
+            "FINISPEAK_TEST_DEPLOYMENT": "true",
+            "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
+        }, clear=False):
+            set_test_account_password(user.id, "MigratedPassword123")
+        credential = db.session.get(SqlAuthCredential, user.id)
+        self.assertIsNotNone(credential.email_verified_at)
+        self.login(user.email, "MigratedPassword123")
 
     def test_verification_and_reset_tokens_are_single_use(self):
         user = self.register_and_verify()
@@ -185,6 +245,7 @@ class FirebaseReplacementTests(unittest.TestCase):
             "send_account_activation.py",
             "migrate_firestore_to_mysql.py",
             "reconcile_firestore_mysql.py",
+            "set_test_account_password.py",
         )
         with tempfile.TemporaryDirectory() as outside:
             for script in scripts:
@@ -321,6 +382,7 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertIn("MYSQL_PASSWORD=keep-this-secret", content)
         self.assertNotIn("FIREBASE_CREDENTIALS", content)
         self.assertIn("FINISPEAK_TEST_DEPLOYMENT=true", content)
+        self.assertIn("FINISPEAK_EMAIL_VERIFICATION_BYPASS=true", content)
         self.assertIn("FINISPEAK_REPOSITORY_BACKEND=mysql", content)
         self.assertEqual(len(result["attestationSha256"]), 64)
 

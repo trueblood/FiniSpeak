@@ -35,6 +35,14 @@ class RateLimitError(RuntimeError):
     pass
 
 
+def test_email_verification_bypass_enabled():
+    """Allow the explicit test deployment to operate without an SMTP provider."""
+    return (
+        os.getenv("FINISPEAK_TEST_DEPLOYMENT", "").strip().lower() == "true"
+        and os.getenv("FINISPEAK_EMAIL_VERIFICATION_BYPASS", "").strip().lower() == "true"
+    )
+
+
 def _now():
     return datetime.now(timezone.utc)
 
@@ -197,6 +205,19 @@ def issue_action_token(user_id, purpose):
 def request_password_reset(email):
     user = db.session.scalar(select(SqlUser).where(SqlUser.email_normalized == normalize_email(email)).limit(1))
     return (user, issue_action_token(user.id, "reset_password")) if user else (None, None)
+
+
+def set_test_account_password(user_id, password):
+    """Activate or reset one account from a trusted server-side operator session."""
+    if not test_email_verification_bypass_enabled():
+        raise AuthorizationError("The test-deployment email bypass is not enabled.")
+    if not _password_valid(password):
+        raise ValueError("Password must be 12–256 characters and contain letters and numbers.")
+    user = db.session.get(SqlUser, str(user_id or "").strip())
+    if not user:
+        raise AuthenticationError("The requested account does not exist.")
+    token = issue_action_token(user.id, "reset_password")
+    return consume_action_token(token, "reset_password", password)
 
 
 def consume_action_token(raw_token, purpose, password=None):

@@ -70,6 +70,21 @@ from the readiness decision; their individual checks remain visible as false.
 JWT, secure cookies, private storage, OpenAI, the API-key pepper, MySQL, schema
 revision, and all ten MySQL repository routes still fail closed.
 
+For this test milestone only, registration email verification may be bypassed
+when both `FINISPEAK_TEST_DEPLOYMENT=true` and
+`FINISPEAK_EMAIL_VERIFICATION_BYPASS=true` are present. New accounts are marked
+verified server-side and no verification token is returned to the browser.
+Normal deployments still require email verification. Password-reset tokens are
+never exposed by the public endpoint. An operator can activate or reset one
+existing test account from an interactive server session without placing the
+password in shell history:
+
+```bash
+cd /var/www/finispeak
+set -a; . /etc/finispeak/finispeak.env; set +a
+runuser -u finispeak -- ./venv/bin/python scripts/set_test_account_password.py --user-id DOCUMENT_ID
+```
+
 ## GitHub Actions test deployment
 
 The `Deploy FiniSpeak` workflow stages the exact commit under `/tmp`, runs the
