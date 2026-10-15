@@ -70,6 +70,19 @@ from the readiness decision; their individual checks remain visible as false.
 JWT, secure cookies, private storage, OpenAI, the API-key pepper, MySQL, schema
 revision, and all ten MySQL repository routes still fail closed.
 
+Browsers do not expose camera or microphone capture to a page opened directly
+over plain HTTP at the server IP. Until public HTTPS is configured, test calls
+through a loopback-only SSH tunnel instead. This does not open another public
+port or weaken application authentication:
+
+```bash
+ssh -i ~/.ssh/id_ed25519_finispeak -N \
+  -L 8080:127.0.0.1:8080 root@206.189.203.96
+```
+
+Keep that terminal open and use `http://localhost:8080` in the browser. Do not
+use the direct `http://206.189.203.96` address for microphone or camera tests.
+
 For this test milestone only, `FINISPEAK_TEST_DEPLOYMENT=true` disables email
 verification. New accounts are marked verified server-side, and an existing
 unverified account is marked verified after its password has been successfully

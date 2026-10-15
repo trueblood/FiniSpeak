@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from app import create_app
@@ -62,6 +63,17 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('id="receiverPhone" type="tel"', html)
         self.assertIn('id="incomingCallModal"', html)
         self.assertIn('id="acceptIncomingCall"', html)
+
+    def test_call_media_fails_safely_before_creating_a_call_on_http(self):
+        script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        create_call = script[script.index("async function createCall"):
+            script.index("async function joinCall")]
+        self.assertIn("MEDIA_CAPTURE_REQUIRES_SECURE_CONTEXT", script)
+        self.assertIn("open http://localhost:8080", script)
+        self.assertLess(
+            create_call.index("requireMediaCapture();"),
+            create_call.index('apiFetch("/api/calls/"'),
+        )
 
     def test_call_validation_stays_in_controller(self):
         self.assertEqual(self.client.post("/api/calls/", json={}).status_code, 400)

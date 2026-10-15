@@ -681,6 +681,15 @@ function setCallFormStatus(message = "", isError = false) {
     status.classList.toggle("error", Boolean(message) && isError);
 }
 
+function requireMediaCapture() {
+    if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === "function") return;
+    const error = new Error(
+        "Camera and microphone access is blocked on this HTTP address. For isolated testing, connect through the documented SSH tunnel and open http://localhost:8080. Public calls require HTTPS."
+    );
+    error.code = "MEDIA_CAPTURE_REQUIRES_SECURE_CONTEXT";
+    throw error;
+}
+
 async function fetchPublicProfiles() {
     const response = await fetch("/api/translators/");
     const payload = await response.json();
@@ -1783,6 +1792,8 @@ async function createCall(e) {
         mediaDevicesAvailable: Boolean(navigator.mediaDevices?.getUserMedia)
     });
     try {
+        stage = "media-security-preflight";
+        requireMediaCapture();
         const receiverEmail = $("receiverEmail").value.trim().toLowerCase();
         const receiverPhone = $("receiverPhone").value.trim();
         const phoneNormalized = receiverEmail ? "" : normalizePhoneNumber(receiverPhone);
@@ -1889,6 +1900,7 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
 
 async function startMedia() {
     if (localStream) return;
+    requireMediaCapture();
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     $("localVideo").srcObject = localStream;
 }
