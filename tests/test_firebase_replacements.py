@@ -88,7 +88,6 @@ class FirebaseReplacementTests(unittest.TestCase):
     def test_explicit_test_deployment_bypasses_registration_email_only(self):
         environment = {
             "FINISPEAK_TEST_DEPLOYMENT": "true",
-            "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
         }
         with patch.dict(os.environ, environment, clear=False), \
                 patch("controllers.auth_controller.send_account_link") as sender:
@@ -108,7 +107,6 @@ class FirebaseReplacementTests(unittest.TestCase):
     def test_email_bypass_fails_closed_without_test_deployment_flag(self):
         environment = {
             "FINISPEAK_TEST_DEPLOYMENT": "false",
-            "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
         }
         with patch.dict(os.environ, environment, clear=False), \
                 patch("controllers.auth_controller.send_account_link") as sender:
@@ -131,18 +129,30 @@ class FirebaseReplacementTests(unittest.TestCase):
         db.session.add(user); db.session.commit()
         with patch.dict(os.environ, {
             "FINISPEAK_TEST_DEPLOYMENT": "false",
-            "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
         }, clear=False):
             with self.assertRaises(AuthorizationError):
                 set_test_account_password(user.id, "MigratedPassword123")
         with patch.dict(os.environ, {
             "FINISPEAK_TEST_DEPLOYMENT": "true",
-            "FINISPEAK_EMAIL_VERIFICATION_BYPASS": "true",
         }, clear=False):
             set_test_account_password(user.id, "MigratedPassword123")
         credential = db.session.get(SqlAuthCredential, user.id)
         self.assertIsNotNone(credential.email_verified_at)
         self.login(user.email, "MigratedPassword123")
+
+    def test_existing_unverified_account_is_unlocked_by_valid_test_login(self):
+        with patch.dict(os.environ, {"FINISPEAK_TEST_DEPLOYMENT": "false"}, clear=False), \
+                patch("controllers.auth_controller.send_account_link"):
+            response = self.client.post("/api/auth/register", json={
+                "email": "existing@example.test",
+                "password": "CorrectHorse123",
+                "displayName": "Existing Test",
+            })
+        user_id = response.get_json()["user"]["uid"]
+        self.assertIsNone(db.session.get(SqlAuthCredential, user_id).email_verified_at)
+        with patch.dict(os.environ, {"FINISPEAK_TEST_DEPLOYMENT": "true"}, clear=False):
+            self.login("existing@example.test", "CorrectHorse123")
+        self.assertIsNotNone(db.session.get(SqlAuthCredential, user_id).email_verified_at)
 
     def test_verification_and_reset_tokens_are_single_use(self):
         user = self.register_and_verify()
@@ -382,7 +392,6 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertIn("MYSQL_PASSWORD=keep-this-secret", content)
         self.assertNotIn("FIREBASE_CREDENTIALS", content)
         self.assertIn("FINISPEAK_TEST_DEPLOYMENT=true", content)
-        self.assertIn("FINISPEAK_EMAIL_VERIFICATION_BYPASS=true", content)
         self.assertIn("FINISPEAK_REPOSITORY_BACKEND=mysql", content)
         self.assertEqual(len(result["attestationSha256"]), 64)
 

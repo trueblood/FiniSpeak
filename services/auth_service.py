@@ -36,11 +36,8 @@ class RateLimitError(RuntimeError):
 
 
 def test_email_verification_bypass_enabled():
-    """Allow the explicit test deployment to operate without an SMTP provider."""
-    return (
-        os.getenv("FINISPEAK_TEST_DEPLOYMENT", "").strip().lower() == "true"
-        and os.getenv("FINISPEAK_EMAIL_VERIFICATION_BYPASS", "").strip().lower() == "true"
-    )
+    """Disable email verification only for the explicit IP-based test deployment."""
+    return os.getenv("FINISPEAK_TEST_DEPLOYMENT", "").strip().lower() == "true"
 
 
 def _now():
@@ -170,8 +167,11 @@ def authenticate_password(email, password):
         raise AuthenticationError("Email or password is incorrect.")
     credential.failed_attempts, credential.locked_until, credential.updated_at = 0, None, now
     if not credential.email_verified_at:
-        db.session.commit()
-        raise AuthorizationError("Verify your email before signing in.")
+        if test_email_verification_bypass_enabled():
+            credential.email_verified_at = now
+        else:
+            db.session.commit()
+            raise AuthorizationError("Verify your email before signing in.")
     if PASSWORD_HASHER.check_needs_rehash(credential.password_hash):
         credential.password_hash = PASSWORD_HASHER.hash(password)
     user = db.session.get(SqlUser, credential.user_id)

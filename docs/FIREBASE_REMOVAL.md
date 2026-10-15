@@ -70,14 +70,13 @@ from the readiness decision; their individual checks remain visible as false.
 JWT, secure cookies, private storage, OpenAI, the API-key pepper, MySQL, schema
 revision, and all ten MySQL repository routes still fail closed.
 
-For this test milestone only, registration email verification may be bypassed
-when both `FINISPEAK_TEST_DEPLOYMENT=true` and
-`FINISPEAK_EMAIL_VERIFICATION_BYPASS=true` are present. New accounts are marked
-verified server-side and no verification token is returned to the browser.
-Normal deployments still require email verification. Password-reset tokens are
-never exposed by the public endpoint. An operator can activate or reset one
-existing test account from an interactive server session without placing the
-password in shell history:
+For this test milestone only, `FINISPEAK_TEST_DEPLOYMENT=true` disables email
+verification. New accounts are marked verified server-side, and an existing
+unverified account is marked verified after its password has been successfully
+checked. No verification or password-reset token is returned to the browser.
+Normal deployments still require email verification. An operator can activate
+or reset one existing test account from an interactive server session without
+placing the password in shell history:
 
 ```bash
 cd /var/www/finispeak
