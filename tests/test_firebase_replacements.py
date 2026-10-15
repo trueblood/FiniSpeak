@@ -184,6 +184,7 @@ class FirebaseReplacementTests(unittest.TestCase):
             "migrate_firebase_storage.py",
             "send_account_activation.py",
             "migrate_firestore_to_mysql.py",
+            "reconcile_firestore_mysql.py",
         )
         with tempfile.TemporaryDirectory() as outside:
             for script in scripts:
