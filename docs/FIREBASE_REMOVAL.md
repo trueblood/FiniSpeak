@@ -79,6 +79,17 @@ real MySQL 8 integration suite with `MYSQL_DATABASE` forcibly set to
 application database and schema revisions `20261013_0002` or
 `20261014_0003`.
 
+The workflow's only privileged entry point is the operator-installed,
+root-owned `/usr/local/sbin/finispeak-deploy-test-server` helper. Its sudo rule
+accepts exactly one 40-character lowercase commit SHA; it does not grant a
+general shell. Install reviewed copies of `scripts/deploy_test_server.sh` and
+`scripts/finalize_test_deployment.py` as root-owned mode-0755 files under
+`/usr/local/sbin` and `/usr/local/libexec/finispeak` respectively, validate the
+sudoers fragment with `visudo -cf`, and re-review/reinstall those fixed helpers
+whenever their repository sources change. Repository Python and Alembic code
+run as the unprivileged `finispeak` service account; the fixed helper retains
+only backup, ownership, environment-file, and service-control privileges.
+
 On the first successful run it performs this ordered transaction boundary:
 
 1. Create a mode-0600, single-transaction MySQL dump and SHA-256 sidecar under

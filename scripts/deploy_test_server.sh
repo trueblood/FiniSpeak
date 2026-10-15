@@ -6,6 +6,7 @@ APP_ROOT=/var/www/finispeak
 ENV_FILE=/etc/finispeak/finispeak.env
 MIGRATION_CREDENTIAL=/etc/finispeak/firebase-service-account.json
 MIGRATION_VENV=/opt/finispeak-migration-venv
+FINALIZE_HELPER=/usr/local/libexec/finispeak/finalize_test_deployment.py
 CUTOVER_ROOT=/var/lib/finispeak/cutover
 STORAGE_MARKER="$CUTOVER_ROOT/firebase-storage-0003.complete"
 DEPLOYMENT_MARKER="$CUTOVER_ROOT/firebase-free-deployment-0003.complete"
@@ -13,9 +14,15 @@ SERVICE_USER=finispeak
 COMMIT_SHA="${1:-}"
 
 fail() { echo "DEPLOYMENT FAILED: $1" >&2; exit 1; }
+run_service() { runuser -u "$SERVICE_USER" -- "$@"; }
 test "$(id -u)" = 0 || fail "run as root"
+test "$(stat -c %U:%G "$0")" = root:root || fail "deployment helper ownership is unsafe"
+test "$(stat -c %a "$0")" = 755 || fail "deployment helper mode is unsafe"
 [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "a full commit SHA is required"
 test -f "$ENV_FILE" || fail "production environment file is missing"
+test -f "$FINALIZE_HELPER" || fail "root-owned environment finalizer is missing"
+test "$(stat -c %U:%G "$FINALIZE_HELPER")" = root:root || fail "environment finalizer ownership is unsafe"
+test "$(stat -c %a "$FINALIZE_HELPER")" = 755 || fail "environment finalizer mode is unsafe"
 install -d -m 0700 "$CUTOVER_ROOT" /var/backups/finispeak
 
 set -a
@@ -29,6 +36,8 @@ for key in MYSQL_HOST MYSQL_PORT MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD \
   test -n "${!key:-}" || fail "required setting is missing: $key"
 done
 test "$MYSQL_DATABASE" = finispeak || fail "refusing non-finispeak deployment database"
+test "$FINISPEAK_STORAGE_ROOT" = /var/lib/finispeak/private-files \
+  || fail "refusing unexpected private-storage root"
 test "${FINISPEAK_REPOSITORY_BACKEND:-mysql}" = mysql || fail "repository backend is not MySQL"
 test "${FINISPEAK_MYSQL_PRIMARY_ENABLED:-}" = true || fail "MySQL primary is not enabled"
 test "${FINISPEAK_COOKIE_SECURE:-}" = true || fail "secure cookies must remain enabled"
@@ -39,7 +48,7 @@ cd "$APP_ROOT"
 # Alembic imports the application factory; migration mode deliberately avoids
 # the production freshness gate while retaining the exact MySQL target.
 export FINISPEAK_ENV=migration
-current_revision="$(./venv/bin/alembic current 2>/dev/null | awk 'NF {print $1}' | tail -1)"
+current_revision="$(run_service ./venv/bin/alembic current 2>/dev/null | awk 'NF {print $1}' | tail -1)"
 case "$current_revision" in
   20261013_0002)
     backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -53,7 +62,7 @@ case "$current_revision" in
     sha256sum "$backup_file" > "${backup_file}.sha256"
     chmod 0600 "$backup_file" "${backup_file}.sha256"
     echo "MYSQL BACKUP VERIFIED file=$(basename "$backup_file")"
-    ./venv/bin/alembic upgrade 20261014_0003
+    run_service ./venv/bin/alembic upgrade 20261014_0003
     ;;
   20261014_0003) ;;
   *) fail "unexpected MySQL revision: ${current_revision:-none}" ;;
@@ -66,18 +75,19 @@ if test "$current_revision" = 20261014_0003 && ! test -f "$DEPLOYMENT_MARKER"; t
   sha256sum --check --status "${previous_backup}.sha256" || fail "pre-migration backup checksum failed"
 fi
 
-test "$(./venv/bin/alembic current 2>/dev/null | awk 'NF {print $1}' | tail -1)" = 20261014_0003 \
+test "$(run_service ./venv/bin/alembic current 2>/dev/null | awk 'NF {print $1}' | tail -1)" = 20261014_0003 \
   || fail "MySQL did not reach revision 0003"
 
 activation_report="$CUTOVER_ROOT/account-activation-readiness-${COMMIT_SHA}.json"
-./venv/bin/python scripts/check_account_activation_readiness.py > "$activation_report"
+run_service ./venv/bin/python scripts/check_account_activation_readiness.py > "$activation_report"
 chmod 0600 "$activation_report"
 
-./venv/bin/python -m pip uninstall -y firebase-admin >/dev/null 2>&1 || true
 if ! test -x "$MIGRATION_VENV/bin/python"; then
-  python3 -m venv "$MIGRATION_VENV"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$MIGRATION_VENV"
+  run_service python3 -m venv "$MIGRATION_VENV"
 fi
-"$MIGRATION_VENV/bin/python" -m pip install --disable-pip-version-check \
+chown -R "$SERVICE_USER:$SERVICE_USER" "$MIGRATION_VENV"
+run_service "$MIGRATION_VENV/bin/python" -m pip install --disable-pip-version-check \
   -r "$APP_ROOT/requirements-migration.txt"
 
 run_storage_migration() {
@@ -91,6 +101,7 @@ run_storage_migration() {
     GOOGLE_APPLICATION_CREDENTIALS="$MIGRATION_CREDENTIAL" \
     "$MIGRATION_VENV/bin/python" "$APP_ROOT/scripts/migrate_firebase_storage.py" \
     --json-report "$@" > "$report"
+  chown "$SERVICE_USER:$SERVICE_USER" "$report"
   chmod 0600 "$report"
 }
 
@@ -103,7 +114,7 @@ if ! test -f "$STORAGE_MARKER"; then
   run_storage_migration "$dry_report"
   run_storage_migration "$apply_report" --apply
   run_storage_migration "$replay_report" --apply
-  ./venv/bin/python scripts/validate_storage_migration_reports.py \
+  run_service ./venv/bin/python scripts/validate_storage_migration_reports.py \
     "$dry_report" "$apply_report" "$replay_report" > "$storage_summary"
   chmod 0600 "$storage_summary"
   cp "$storage_summary" "$STORAGE_MARKER"
@@ -113,7 +124,8 @@ fi
 chown -R "$SERVICE_USER:$SERVICE_USER" "$FINISPEAK_STORAGE_ROOT"
 find "$FINISPEAK_STORAGE_ROOT" -type d -exec chmod 0750 {} +
 find "$FINISPEAK_STORAGE_ROOT" -type f -exec chmod 0640 {} +
-FINISPEAK_STORAGE_OWNER="$SERVICE_USER" ./venv/bin/python scripts/verify_private_storage.py \
+run_service env FINISPEAK_STORAGE_OWNER="$SERVICE_USER" \
+  ./venv/bin/python scripts/verify_private_storage.py \
   > "$CUTOVER_ROOT/storage-integrity-${COMMIT_SHA}.json"
 chmod 0600 "$CUTOVER_ROOT/storage-integrity-${COMMIT_SHA}.json"
 
@@ -124,7 +136,7 @@ reconciliation="$CUTOVER_ROOT/reconciliation-${COMMIT_SHA}.log"
 GOOGLE_APPLICATION_CREDENTIALS="$MIGRATION_CREDENTIAL" \
 FIREBASE_CREDENTIALS="$MIGRATION_CREDENTIAL" \
 FINISPEAK_ENV=migration \
-  "$MIGRATION_VENV/bin/python" scripts/reconcile_firestore_mysql.py \
+  run_service "$MIGRATION_VENV/bin/python" scripts/reconcile_firestore_mysql.py \
   --allow-target-additions > "$reconciliation" 2>&1
 chmod 0600 "$reconciliation"
 echo "RECONCILIATION VERIFIED sha256=$(sha256sum "$reconciliation" | awk '{print $1}')"
@@ -146,7 +158,7 @@ cp --preserve=mode,ownership,timestamps "$ENV_FILE" \
   "$CUTOVER_ROOT/finispeak.env.pre-${COMMIT_SHA}"
 chmod 0600 "$CUTOVER_ROOT/finispeak.env.pre-${COMMIT_SHA}"
 
-./venv/bin/python scripts/finalize_test_deployment.py \
+python3 "$FINALIZE_HELPER" \
   --environment-file "$ENV_FILE" --attestation-file "$attestation" --commit "$COMMIT_SHA" \
   > "$CUTOVER_ROOT/environment-update-${COMMIT_SHA}.json"
 chmod 0600 "$CUTOVER_ROOT/environment-update-${COMMIT_SHA}.json"
@@ -156,9 +168,9 @@ set -a
 . "$ENV_FILE"
 set +a
 export FINISPEAK_ENV=production
-./venv/bin/python scripts/production_readiness_check.py --production
-./venv/bin/python -c 'from repositories.config import cutover_safety; cutover_safety()'
-./venv/bin/alembic current 2>/dev/null | grep -q 20261014_0003
+run_service ./venv/bin/python scripts/production_readiness_check.py --production
+run_service ./venv/bin/python -c 'from repositories.config import cutover_safety; cutover_safety()'
+run_service ./venv/bin/alembic current 2>/dev/null | grep -q 20261014_0003
 
 systemctl restart finispeak.service
 systemctl is-active --quiet finispeak.service
@@ -171,9 +183,11 @@ test "$main_pid" -gt 1 || fail "service has no main process"
 if tr '\0' '\n' < "/proc/$main_pid/environ" | grep -Eq '^(FIREBASE_CREDENTIALS|GOOGLE_APPLICATION_CREDENTIALS)='; then
   fail "Firebase credentials leaked into the runtime process"
 fi
-FINISPEAK_TEST_DEPLOYMENT=true ./venv/bin/python scripts/verify_deployed_test_server.py \
+run_service env FINISPEAK_TEST_DEPLOYMENT=true \
+  ./venv/bin/python scripts/verify_deployed_test_server.py \
   --base-url http://127.0.0.1:8080
-FINISPEAK_STORAGE_OWNER="$SERVICE_USER" ./venv/bin/python scripts/verify_private_storage.py \
+run_service env FINISPEAK_STORAGE_OWNER="$SERVICE_USER" \
+  ./venv/bin/python scripts/verify_private_storage.py \
   > "$CUTOVER_ROOT/storage-integrity-post-smoke-${COMMIT_SHA}.json"
 chmod 0600 "$CUTOVER_ROOT/storage-integrity-post-smoke-${COMMIT_SHA}.json"
 
