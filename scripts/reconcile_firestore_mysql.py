@@ -68,7 +68,6 @@ def reconciliation_succeeded(report, allow_target_additions=False):
 
 
 def main(argv=None):
-    from services.firebase_service import get_db as get_firestore_db
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--allow-target-additions",
@@ -77,6 +76,8 @@ def main(argv=None):
               "for missing or content-mismatched imported records."),
     )
     args = parser.parse_args(argv)
+    from services.firebase_service import get_db as get_firestore_db
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     app = create_app()
     if "sqlalchemy" not in app.extensions:
