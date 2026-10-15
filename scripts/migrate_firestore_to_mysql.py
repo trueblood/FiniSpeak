@@ -531,7 +531,6 @@ class FirestoreMysqlMigrator:
 
 
 def main():
-    from services.firebase_service import get_db as get_firestore_db
     parser = argparse.ArgumentParser(description="Validate or copy Firestore documents to the prepared MySQL schema.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="Write idempotent upserts to MySQL. Firestore remains read-only.")
@@ -540,6 +539,9 @@ def main():
     parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO")
     args = parser.parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level), format="%(levelname)s %(message)s")
+    # Keep migration-only Firebase dependencies lazy so ``--help`` and the
+    # normal runtime/test environment do not require firebase-admin.
+    from services.firebase_service import get_db as get_firestore_db
 
     app = create_app()
     if "SQLALCHEMY_DATABASE_URI" not in app.config:
