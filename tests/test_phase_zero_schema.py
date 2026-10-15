@@ -71,19 +71,15 @@ class PhaseZeroSchemaTests(unittest.TestCase):
 
 
 class RepositoryFeatureFlagTests(unittest.TestCase):
-    def test_all_repository_domains_default_to_firestore(self):
-        self.assertEqual(repository_backends({}), {domain: "firestore" for domain in REPOSITORY_DOMAINS})
+    def test_all_repository_domains_default_to_mysql(self):
+        self.assertEqual(repository_backends({}), {domain: "mysql" for domain in REPOSITORY_DOMAINS})
         with patch.dict("os.environ", {}, clear=True):
             app = create_app()
-        self.assertEqual(app.config["REPOSITORY_BACKENDS"], {domain: "firestore" for domain in REPOSITORY_DOMAINS})
+        self.assertEqual(app.config["REPOSITORY_BACKENDS"], {domain: "mysql" for domain in REPOSITORY_DOMAINS})
 
-    def test_domain_flag_overrides_global_flag_without_switching_others(self):
-        values = repository_backends({
-            "FINISPEAK_REPOSITORY_BACKEND": "shadow",
-            "FINISPEAK_REPOSITORY_CALLS": "mysql",
-        })
-        self.assertEqual(values["calls"], "mysql")
-        self.assertEqual(values["accounts"], "shadow")
+    def test_legacy_repository_flag_fails_closed(self):
+        with self.assertRaisesRegex(RuntimeError, "must be one of: mysql"):
+            repository_backends({"FINISPEAK_REPOSITORY_BACKEND": "shadow"})
 
     def test_invalid_repository_flag_fails_closed(self):
         with self.assertRaises(RuntimeError):

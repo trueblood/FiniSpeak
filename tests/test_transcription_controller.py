@@ -28,7 +28,7 @@ class TranscriptionControllerTests(unittest.TestCase):
             "languageConfidence": 1.0,
         }
         socket = FakeSocket([
-            json.dumps({"type": "start", "token": "token", "callId": "call", "sampleRate": 16000}),
+            json.dumps({"type": "start", "callId": "call", "sampleRate": 16000}),
             json.dumps({"type": "language", "language": "es"}),
             b"\x00" * 3200,
             json.dumps({"type": "stop"}),
@@ -36,7 +36,7 @@ class TranscriptionControllerTests(unittest.TestCase):
 
         handle_socket(socket)
 
-        verify_participant.assert_called_once_with("token", "call")
+        verify_participant.assert_called_once_with(None, "call")
         transcribe_pcm.assert_called_once_with(b"\x00" * 3200, 16000, "es", 1.0)
         self.assertEqual(socket.sent[-1]["language"], "es")
         self.assertEqual(socket.sent[-1]["languageConfidence"], 1.0)

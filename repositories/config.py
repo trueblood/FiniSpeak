@@ -1,7 +1,8 @@
-"""Fail-closed repository feature flags.
+"""Fail-closed MySQL repository configuration.
 
-Domain-specific flags override the global flag. The default is always
-Firestore so merely deploying Phase 0 cannot move application traffic.
+Firebase is no longer a supported application runtime backend.  The old
+Firestore adapters remain available only to explicitly invoked migration
+utilities in ``requirements-migration.txt``.
 """
 
 import os
@@ -10,8 +11,6 @@ from enum import Enum
 
 
 class RepositoryBackend(str, Enum):
-    FIRESTORE = "firestore"
-    SHADOW = "shadow"
     MYSQL = "mysql"
 
 
@@ -30,7 +29,7 @@ REPOSITORY_DOMAINS = (
 
 
 def _backend(value, flag_name):
-    normalized = str(value or RepositoryBackend.FIRESTORE.value).strip().lower()
+    normalized = str(value or RepositoryBackend.MYSQL.value).strip().lower()
     try:
         return RepositoryBackend(normalized)
     except ValueError as exc:
@@ -41,8 +40,8 @@ def _backend(value, flag_name):
 def repository_backends(environ=None):
     """Return the configured backend for every repository domain.
 
-    This function only reads configuration; it does not initialize either
-    Firestore or MySQL and cannot switch the existing model implementations.
+    This function only reads configuration. Any legacy Firestore or shadow
+    value fails closed instead of silently reactivating Firebase.
     """
     environ = os.environ if environ is None else environ
     global_name = "FINISPEAK_REPOSITORY_BACKEND"
@@ -67,8 +66,8 @@ def cutover_safety(environ=None, now=None):
     if not enabled:
         raise RuntimeError("MySQL-primary requires FINISPEAK_MYSQL_PRIMARY_ENABLED=true.")
     revision = str(environ.get("FINISPEAK_MYSQL_EXPECTED_REVISION", "")).strip()
-    if revision != "20261013_0002":
-        raise RuntimeError("MySQL-primary requires an explicit 20261013_0002 schema attestation.")
+    if revision != "20261014_0003":
+        raise RuntimeError("MySQL-primary requires an explicit 20261014_0003 schema attestation.")
     digest = str(environ.get("FINISPEAK_MYSQL_RECONCILIATION_DIGEST", "")).strip().lower()
     if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
         raise RuntimeError("MySQL-primary requires a SHA-256 reconciliation digest.")

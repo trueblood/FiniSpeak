@@ -1,9 +1,4 @@
-"""MySQL repository implementations for the Phase 1 cutover seam.
-
-These classes are not selected by controllers yet.  They accept an explicit
-SQLAlchemy Session, which keeps initialization and transaction ownership
-testable and prevents importing this module from opening a database connection.
-"""
+"""MySQL repository implementations used by every durable application domain."""
 
 import hashlib
 import hmac
@@ -15,16 +10,22 @@ from decimal import Decimal
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
-from models.account import normalize_phone
-from models.call import CallModel
 from models.sql_models import (
     SqlApiKey, SqlApiUsageCounter, SqlApiUsageEvent, SqlCall,
     SqlInterpreterPrivate, SqlLanguageDetectionMetric, SqlOrganization,
     SqlParticipant, SqlReferenceDialect, SqlReferenceLanguage,
     SqlReferenceSpecialty, SqlReview, SqlTranscript, SqlTranslator, SqlTransactionalOutbox, SqlUser,
 )
-from repositories.normalization import normalize_email
+from repositories.normalization import normalize_email, normalize_phone
 from services.geo_service import haversine_miles, validate_coordinates
+
+
+CALL_TERMINAL_STATES = {"ended", "declined", "cancelled"}
+CALL_STATE_TRANSITIONS = {
+    "ringing": {"connected", "declined", "cancelled", "ended"},
+    "connected": {"active", "ended", "cancelled"},
+    "active": {"ended"},
+}
 
 
 def _now():
@@ -441,11 +442,11 @@ class MySqlCallRepository:
     def transition(self, call_id, next_state):
         row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
         if not row: return None
-        if next_state not in CallModel.state_transitions.get(row.status, set()):
+        if next_state not in CALL_STATE_TRANSITIONS.get(row.status, set()):
             self.session.rollback(); raise ValueError(f"A call cannot move from {row.status or 'unknown'} to {next_state}.")
         now, changes = _now(), {"status": next_state, "updatedAt": _now()}
         if next_state in {"connected", "active"} and not row.started_at: changes["startedAt"] = now
-        if next_state in CallModel.terminal_states: changes["endedAt"] = now
+        if next_state in CALL_TERMINAL_STATES: changes["endedAt"] = now
         _touch(row, changes, CALL_FIELDS); _commit(self.session)
         return _document(row, CALL_FIELDS)
 

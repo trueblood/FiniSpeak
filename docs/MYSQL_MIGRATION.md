@@ -1,4 +1,8 @@
-# Firestore to MySQL migration preparation
+# Firestore to MySQL migration preparation (historical)
+
+> The application cutover is complete. Use `docs/FIREBASE_REMOVAL.md` for the
+> current first-party authentication, private storage, signaling, and deployment
+> procedure. The material below documents earlier migration phases only.
 
 This phase creates a parallel MySQL 8 copy only. Firebase Authentication and every application read/write path remain unchanged. The importer never writes to or deletes from Firestore, and no migration runs during application startup or deployment.
 
@@ -138,3 +142,6 @@ An apply run stops before writing when preflight finds invalid records or missin
 This phase has no application cutover, so application rollback is simply to stop migration work; FiniSpeak continues using Firebase Auth and Firestore. Do not delete or disable Firebase.
 
 If the MySQL copy must be discarded, restore the pre-migration MySQL backup or—only with explicit approval and after confirming no MySQL application writes exist—run `alembic downgrade base`. Downgrade drops the prepared MySQL tables and is destructive to the copy, but it never changes Firestore. Preserve importer logs containing counts only and record the failed revision before retrying.
+
+The Firebase replacement preparation is revision `20261014_0003`; see
+`docs/FIREBASE_REMOVAL.md` before applying it. It is never run automatically.

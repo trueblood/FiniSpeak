@@ -2,6 +2,7 @@ from flask import jsonify
 
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
+from services.file_storage_service import validate_profile_file_references
 
 TranslatorModel = repository_proxy("translators")
 
@@ -45,6 +46,7 @@ def save_current():
     if not str(public.get("displayName") or "").strip():
         return jsonify({"error": "displayName is required"}), 400
     try:
+        validate_profile_file_references(identity["uid"], public, private)
         saved = TranslatorModel.save_profile(identity["uid"], public, private)
         return jsonify(saved)
     except ValueError as exc:

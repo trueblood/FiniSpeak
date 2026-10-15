@@ -96,15 +96,16 @@
             <div class="section-heading"><span class="eyebrow">FiniSpeak account</span><h2 id="authTitle">Sign in</h2></div>
             <form id="authForm">
                 <label id="nameField" class="hidden">Name<input id="displayName" autocomplete="name"></label>
-                <label>Email<input id="email" type="email" autocomplete="email" required></label>
                 <label id="phoneField" class="hidden">Phone number<input id="signupPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="For example, +1 317 555 0123" aria-describedby="signupPhoneHelp"><small id="signupPhoneHelp">Used only so other registered FiniSpeak users can call you inside the app.</small></label>
-                <label>Password<input id="password" type="password" minlength="6" required></label>
+                <label id="emailField">Email<input id="email" type="email" autocomplete="email" required></label>
+                <label>Password<input id="password" type="password" minlength="12" required></label>
                 <label id="roleField" class="hidden">Account type
                     <select id="role"><option value="customer">Customer</option><option value="translator">Translator</option></select>
                 </label>
                 <button id="authSubmit" type="submit">Sign in</button>
             </form>
             <button id="authToggle" class="text-button" type="button">Need an account? Create one</button>
+            <button id="forgotPassword" class="text-button" type="button">Forgot password?</button>
             <p id="authStatus" class="status"></p>
         </div>
     </section>
@@ -393,7 +394,7 @@
                 <div><select id="confirmedLanguage"><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="ar">Arabic</option><option value="zh">Mandarin Chinese</option><option value="vi">Vietnamese</option><option value="so">Somali</option><option value="pt">Portuguese</option><option value="hi">Hindi</option></select><button id="confirmDetectedLanguage" type="button">Confirm language</button></div>
             </div>
             <div id="transcriptList" class="transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live call transcript"><p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p></div>
-            <p class="transcript-note">Only finalized text is saved to Firestore. Raw microphone audio is not stored by FiniSpeak.</p>
+            <p class="transcript-note">Only finalized text is saved to FiniSpeak. Raw microphone audio is not stored.</p>
         </section>
     </section>
 </main>

@@ -14,13 +14,17 @@ class CutoverConfigurationTests(unittest.TestCase):
     def valid_environment(self):
         return {
             "FINISPEAK_MYSQL_PRIMARY_ENABLED": "true",
-            "FINISPEAK_MYSQL_EXPECTED_REVISION": "20261013_0002",
+            "FINISPEAK_MYSQL_EXPECTED_REVISION": "20261014_0003",
             "FINISPEAK_MYSQL_RECONCILIATION_DIGEST": "a" * 64,
             "FINISPEAK_MYSQL_RECONCILED_AT": "2026-10-13T20:00:00Z",
         }
 
-    def test_all_domains_default_to_firestore(self):
-        self.assertTrue(all(value == "firestore" for value in repository_backends({}).values()))
+    def test_all_domains_default_to_mysql(self):
+        self.assertTrue(all(value == "mysql" for value in repository_backends({}).values()))
+
+    def test_firestore_configuration_fails_closed(self):
+        with self.assertRaisesRegex(RuntimeError, "must be one of: mysql"):
+            repository_backends({"FINISPEAK_REPOSITORY_BACKEND": "firestore"})
 
     def test_mysql_primary_requires_explicit_enablement(self):
         environment = self.valid_environment()
@@ -34,7 +38,7 @@ class CutoverConfigurationTests(unittest.TestCase):
 
     def test_mysql_primary_accepts_fresh_digest_and_revision(self):
         result = cutover_safety(self.valid_environment(), datetime(2026, 10, 13, 20, 1, tzinfo=timezone.utc))
-        self.assertEqual(result["revision"], "20261013_0002")
+        self.assertEqual(result["revision"], "20261014_0003")
         self.assertEqual(result["digest"], "a" * 64)
 
 
@@ -69,14 +73,14 @@ class ShadowComparisonTests(unittest.TestCase):
 
 
 class BrowserStorageBoundaryTests(unittest.TestCase):
-    def test_direct_firestore_operations_are_limited_to_webrtc_signaling(self):
+    def test_browser_has_no_firebase_runtime_and_uses_first_party_signaling(self):
         source = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
         forbidden = ("emailDirectory", 'collection(db, "users")', 'collection(db, "translators")',
                      'collection(db, "interpreterPrivate")', 'collection(db, "calls", callId, "transcripts")')
         for fragment in forbidden:
             self.assertNotIn(fragment, source)
-        self.assertIn('doc(db, "calls", callId, "connections", pairId)', source)
-        self.assertIn("myCandidates", source)
+        self.assertNotIn("firebase", source.lower())
+        self.assertIn('/ws/signaling', source)
 
 
 class CutoverAuthorizationTests(unittest.TestCase):

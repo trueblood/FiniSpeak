@@ -7,7 +7,6 @@ from app import create_app
 from extensions import db as sql_db
 from scripts.migrate_firestore_to_mysql import COLLECTIONS
 from scripts.sync_firestore_to_mysql import snapshots
-from services.firebase_service import get_db as get_firestore_db
 from services.synchronization_service import (
     reconcile_documents, safe_identifier_fingerprint, validate_firestore_project,
 )
@@ -53,16 +52,32 @@ def reconcile_all(firestore, session):
     return report
 
 
+def reconciliation_succeeded(report, allow_target_additions=False):
+    for result in report.values():
+        if result.missing_target or result.content_mismatches:
+            return False
+        if result.extra_target and not allow_target_additions:
+            return False
+    return True
+
+
 def main(argv=None):
+    from services.firebase_service import get_db as get_firestore_db
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.parse_args(argv)
+    parser.add_argument(
+        "--allow-target-additions",
+        action="store_true",
+        help=("Permit MySQL-only records created after cutover while still failing "
+              "for missing or content-mismatched imported records."),
+    )
+    args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     app = create_app()
     if "sqlalchemy" not in app.extensions:
         raise RuntimeError("Complete MYSQL_* configuration is required.")
     with app.app_context():
         report = reconcile_all(get_firestore_db(), sql_db.session)
-    return 1 if any(not result.matches for result in report.values()) else 0
+    return 0 if reconciliation_succeeded(report, args.allow_target_additions) else 1
 
 
 if __name__ == "__main__":

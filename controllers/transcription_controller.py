@@ -1,6 +1,5 @@
 import json
 import os
-import urllib.error
 
 from services.participant_verification_service import verify_participant
 from services.transcription_service import transcribe_pcm
@@ -19,17 +18,16 @@ def handle_socket(ws):
             ws.send(json.dumps({"type": "error", "message": "Expected transcription start message."}))
             return
 
-        token = start.get("token", "")
         call_id = start.get("callId", "")
         sample_rate = int(start.get("sampleRate") or 48000)
         confirmed_language = (start.get("language") or "").strip() or None
         tracker = LanguageEvidenceTracker()
         if confirmed_language:
             tracker.confirm(confirmed_language)
-        if not token or not call_id:
+        if not call_id:
             raise RuntimeError("Missing transcription authentication or call ID.")
 
-        verify_participant(token, call_id)
+        verify_participant(None, call_id)
 
         chunk_seconds = float(os.getenv("TRANSCRIPTION_CHUNK_SECONDS", "5.0"))
         target_bytes = max(3200, int(sample_rate * chunk_seconds) * 2)
@@ -80,14 +78,6 @@ def handle_socket(ws):
                 evidence = tracker.add(result.get("language"), result.get("languageConfidence"), len(result["text"]))
                 record_language_event(call_id, "sample", evidence.get("primaryLanguage"), evidence.get("primaryConfidence"), confirmed_language, evidence.get("sampleCount"))
                 ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence"), "languageEvidence": evidence}))
-    except urllib.error.HTTPError as exc:
-        try:
-            detail = exc.read().decode("utf-8")
-            parsed = json.loads(detail)
-            message = parsed.get("error", {}).get("message") or f"Firebase verification failed ({exc.code})."
-        except Exception:
-            message = f"Firebase verification failed ({exc.code})."
-        _send_error(ws, message)
     except Exception as exc:
         print(f"[FiniSpeak transcription] {type(exc).__name__}: {exc}", flush=True)
         _send_error(ws, str(exc))

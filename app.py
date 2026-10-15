@@ -1,13 +1,14 @@
 import os
 import uuid
 import time
+import secrets
 
-from flask import Flask, g, request
+from flask import Flask, g, jsonify, request
 from flask_sock import Sock
 from dotenv import load_dotenv
 from sqlalchemy.engine import URL
 
-from extensions import db
+from extensions import db, jwt
 from repositories.config import repository_backends
 from repositories.provider import init_repositories, repository_proxy
 from services.synchronization_config import synchronization_flags
@@ -27,6 +28,9 @@ from routes.transcription import register_transcription_socket
 from routes.taxonomy import taxonomy_bp
 from routes.web import web_bp
 from routes.commercial_api import commercial_api_bp
+from routes.auth import auth_bp
+from routes.files import files_bp
+from routes.signaling import register_signaling_socket
 ApiKeyModel = repository_proxy("api_access")
 
 load_dotenv()
@@ -47,6 +51,14 @@ def configure_optional_mysql(app):
     }
     if not all(mysql_config.values()):
         app.config["MYSQL_CONFIGURED"] = False
+        if os.getenv("FINISPEAK_ENV", "development").lower() == "production":
+            raise RuntimeError("All MYSQL_* settings are required in production.")
+        app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
+            "FINISPEAK_DEVELOPMENT_DATABASE_URL", "sqlite:///:memory:"
+        )
+        app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+        db.init_app(app)
+        app.config["DATABASE_CONFIGURED"] = True
         return
 
     app.config["SQLALCHEMY_DATABASE_URI"] = URL.create(
@@ -60,6 +72,7 @@ def configure_optional_mysql(app):
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
     app.config["MYSQL_CONFIGURED"] = True
+    app.config["DATABASE_CONFIGURED"] = True
 
 
 def create_app(repository_overrides=None):
@@ -69,14 +82,33 @@ def create_app(repository_overrides=None):
         static_folder="views/static",
         static_url_path="/static",
     )
-    # Phase 0 exposes the future repository selections for diagnostics and
-    # tests only. Existing models remain Firestore-backed.
+    # Repository routing is explicit and fails closed for unsafe combinations.
     app.config["REPOSITORY_BACKENDS"] = repository_backends()
     app.config["FIRESTORE_MYSQL_SYNCHRONIZATION"] = synchronization_flags()
+    production = os.getenv("FINISPEAK_ENV", "development").lower() == "production"
+    jwt_secret = os.getenv("FINISPEAK_JWT_SECRET", "").strip()
+    if len(jwt_secret) < 32:
+        if production:
+            raise RuntimeError("FINISPEAK_JWT_SECRET must contain at least 32 characters in production.")
+        jwt_secret = secrets.token_urlsafe(48)
+    cookie_secure = os.getenv("FINISPEAK_COOKIE_SECURE", "false").lower() == "true"
+    if production and not cookie_secure:
+        raise RuntimeError("FINISPEAK_COOKIE_SECURE=true is required in production.")
+    app.config.update(
+        JWT_SECRET_KEY=jwt_secret,
+        JWT_TOKEN_LOCATION=["headers", "cookies"],
+        JWT_COOKIE_SECURE=cookie_secure,
+        JWT_COOKIE_SAMESITE="Lax",
+        JWT_COOKIE_CSRF_PROTECT=True,
+        JWT_ACCESS_COOKIE_PATH="/",
+        MAX_CONTENT_LENGTH=int(os.getenv("FINISPEAK_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))) + 65536,
+    )
+    jwt.init_app(app)
     configure_optional_mysql(app)
     init_repositories(app, repository_overrides)
     sock = Sock(app)
     register_transcription_socket(sock)
+    register_signaling_socket(sock)
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(users_bp, url_prefix="/api/users")
     app.register_blueprint(translators_bp, url_prefix="/api/translators")
@@ -90,7 +122,13 @@ def create_app(repository_overrides=None):
     app.register_blueprint(routing_bp, url_prefix="/api/routing")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(commercial_api_bp, url_prefix="/api/v1")
+    app.register_blueprint(auth_bp, url_prefix="/api/auth")
+    app.register_blueprint(files_bp, url_prefix="/api/files")
     app.register_blueprint(web_bp)
+
+    @app.errorhandler(413)
+    def upload_too_large(_error):
+        return jsonify({"error": "The upload exceeds the configured size limit."}), 413
 
     @app.before_request
     def start_request_timer():
@@ -102,7 +140,7 @@ def create_app(repository_overrides=None):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(self)")
-        response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self' https://www.gstatic.com https://unpkg.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.tile.openstreetmap.org wss:; img-src 'self' data: blob: https:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://unpkg.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+        response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self' https://unpkg.com; connect-src 'self' https://*.tile.openstreetmap.org wss:; img-src 'self' data: blob: https:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://unpkg.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
         if request.is_secure:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         response.headers.setdefault("X-Request-ID", str(uuid.uuid4()))

@@ -14,7 +14,6 @@ from app import create_app
 from extensions import db as sql_db
 from models.sql_models import SqlSyncCheckpoint
 from scripts.migrate_firestore_to_mysql import COLLECTIONS
-from services.firebase_service import get_db as get_firestore_db
 from services.synchronization_service import (
     DeletionConfirmation, MirrorEvent, SqlAlchemySyncStore,
     SynchronizationEngine, snapshot_event, synchronization_flags,
@@ -135,6 +134,7 @@ def run_sync(firestore, session, apply=False, apply_deletions=False, retries=3, 
 
 
 def main(argv=None):
+    from services.firebase_service import get_db as get_firestore_db
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Apply upserts to MySQL; otherwise only scan and report.")
     parser.add_argument("--apply-deletions", action="store_true", help="Apply twice-confirmed deletions; requires --apply and deletion flag.")

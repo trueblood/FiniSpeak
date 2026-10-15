@@ -37,7 +37,7 @@ class ApiCharacterizationTests(unittest.TestCase):
                 response = getattr(self.client, method)(path, json=body)
                 self.assertEqual(response.status_code, 401)
                 self.assertEqual(set(response.get_json()), {"error"})
-                self.assertIn("Firebase bearer token", response.get_json()["error"])
+                self.assertIn("FiniSpeak session", response.get_json()["error"])
 
     @patch("controllers.controller_utils.authenticate_request")
     def test_admin_route_keeps_non_admin_authorization_contract(self, authenticate):

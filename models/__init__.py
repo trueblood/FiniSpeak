@@ -1,1 +1,1 @@
-"""Firestore-backed domain models for the FiniSpeak MVC application."""
+"""Database models; legacy Firestore modules are migration-only."""

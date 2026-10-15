@@ -5,7 +5,6 @@ from flask import current_app, has_app_context
 import os
 
 from repositories.config import REPOSITORY_DOMAINS, cutover_safety
-from repositories.firestore import firestore_repositories
 from repositories.mysql import mysql_repositories
 from repositories.shadow import ShadowMonitor, ShadowRepository
 
@@ -15,38 +14,28 @@ EXTENSION_KEY = "finispeak.repositories"
 
 def init_repositories(app, overrides=None):
     configured = app.config.get("REPOSITORY_BACKENDS", {})
-    selected = {domain: configured.get(domain, "firestore") for domain in REPOSITORY_DOMAINS}
-    needs_mysql = any(value in {"mysql", "shadow"} for value in selected.values())
+    selected = {domain: configured.get(domain, "mysql") for domain in REPOSITORY_DOMAINS}
+    unsupported = sorted(domain for domain, backend in selected.items() if backend != "mysql")
+    if unsupported:
+        raise RuntimeError(
+            "Firebase and shadow repositories are disabled; MySQL is required for: "
+            + ", ".join(unsupported)
+        )
     if str(os.environ.get("FINISPEAK_SHADOW_WRITES_ENABLED", "false")).lower() == "true":
         raise RuntimeError("Shadow writes are intentionally unsupported; use comparison-only shadow mode.")
-    if needs_mysql and not app.config.get("MYSQL_CONFIGURED"):
-        raise RuntimeError("MySQL or shadow repositories require all MYSQL_* settings.")
-    if any(value == "shadow" for value in selected.values()):
-        if str(os.environ.get("FINISPEAK_SHADOW_COMPARISON_ENABLED", "false")).lower() != "true":
-            raise RuntimeError("Shadow mode requires FINISPEAK_SHADOW_COMPARISON_ENABLED=true.")
-    if any(value == "mysql" for value in selected.values()):
+    if not app.config.get("DATABASE_CONFIGURED"):
+        raise RuntimeError("MySQL repositories require a configured database.")
+    if str(os.environ.get("FINISPEAK_ENV", "development")).lower() == "production":
         app.config["MYSQL_CUTOVER_ATTESTATION"] = cutover_safety()
-        _validate_dependencies(selected)
+    _validate_dependencies(selected)
 
-    firestore = firestore_repositories()
-    mysql = mysql_repositories() if needs_mysql else {}
+    mysql = mysql_repositories()
     monitor = ShadowMonitor()
     container = {}
     for domain, backend in selected.items():
-        if backend == "firestore":
-            container[domain] = firestore[domain]
-        elif backend == "mysql":
-            container[domain] = mysql[domain]
-        else:
-            container[domain] = ShadowRepository(domain, firestore[domain], mysql[domain], monitor, app.logger)
+        container[domain] = mysql[domain]
     # Sessions share the calls/participants storage boundary.
-    session_backend = selected["calls"]
-    if session_backend == "firestore":
-        container["sessions"] = firestore["sessions"]
-    elif session_backend == "mysql":
-        container["sessions"] = mysql["sessions"]
-    else:
-        container["sessions"] = ShadowRepository("sessions", firestore["sessions"], mysql["sessions"], monitor, app.logger)
+    container["sessions"] = mysql["sessions"]
     container.update(overrides or {})
     app.extensions[EXTENSION_KEY] = container
     app.extensions["finispeak.shadow_monitor"] = monitor
@@ -83,12 +72,17 @@ class RepositoryProxy:
 
     def __init__(self, domain):
         self.domain = domain
-        # This fallback is connection-free and exists only so introspection and
-        # unittest.mock can resolve attributes outside a Flask app context.
-        self.fallback = firestore_repositories()[domain]
+        self.fallback = None
 
     def __getattr__(self, name):
-        repository = get_repository(self.domain) if has_app_context() else self.fallback
+        if has_app_context():
+            repository = get_repository(self.domain)
+        else:
+            # Keep unit-test patching possible without importing retired
+            # Firebase adapters. Calling this placeholder is always an error.
+            def unavailable(*_args, **_kwargs):
+                raise RuntimeError("Repository access requires an active Flask application context.")
+            return unavailable
         return getattr(repository, name)
 
 

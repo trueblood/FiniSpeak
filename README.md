@@ -1,5 +1,13 @@
 # FiniSpeak Web MVP
 
+> **Current architecture:** MySQL 8 is the only application data backend.
+> FiniSpeak now uses first-party Argon2id/JWT authentication, private
+> DigitalOcean file storage, and authenticated MySQL-backed WebRTC signaling.
+> The Firebase-era setup notes below are retained only as historical migration
+> context and must not be used for a new deployment. Follow
+> [`docs/FIREBASE_REMOVAL.md`](docs/FIREBASE_REMOVAL.md) and `.env.example` for
+> current setup, verification, rollback, and retirement steps.
+
 FiniSpeak is being built web-first with a shared Firebase/WebRTC architecture that can later be reused by native iOS (SwiftUI) and Android (Kotlin/Compose) clients.
 
 ## MVC architecture

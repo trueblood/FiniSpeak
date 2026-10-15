@@ -20,7 +20,7 @@ class OptionalMysqlStartupTests(unittest.TestCase):
         return values
 
     @patch("app.db.init_app")
-    def test_mysql_is_not_initialized_when_configuration_is_incomplete(self, init_app):
+    def test_development_uses_sqlite_when_mysql_configuration_is_incomplete(self, init_app):
         environment = os.environ.copy()
         for name in MYSQL_ENVIRONMENT_VARIABLES:
             environment.pop(name, None)
@@ -29,8 +29,9 @@ class OptionalMysqlStartupTests(unittest.TestCase):
         with patch.dict(os.environ, environment, clear=True):
             flask_app = create_app()
 
-        init_app.assert_not_called()
-        self.assertNotIn("SQLALCHEMY_DATABASE_URI", flask_app.config)
+        init_app.assert_called_once_with(flask_app)
+        self.assertFalse(flask_app.config["MYSQL_CONFIGURED"])
+        self.assertEqual(flask_app.config["SQLALCHEMY_DATABASE_URI"], "sqlite:///:memory:")
 
     @patch("sqlalchemy.engine.Engine.connect")
     def test_mysql_is_initialized_with_a_safely_constructed_url(self, connect):
@@ -55,6 +56,16 @@ class OptionalMysqlStartupTests(unittest.TestCase):
             database_url.render_as_string(hide_password=False),
         )
         self.assertFalse(flask_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"])
+
+    def test_production_requires_secure_session_cookies(self):
+        environment = self.mysql_environment(
+            FINISPEAK_ENV="production",
+            FINISPEAK_JWT_SECRET="x" * 48,
+            FINISPEAK_COOKIE_SECURE="false",
+        )
+        with patch.dict(os.environ, environment, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "COOKIE_SECURE"):
+                create_app()
 
 
 if __name__ == "__main__":

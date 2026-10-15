@@ -2,8 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app import create_app
-from models.account import normalize_phone
-from models.translator import TranslatorModel
+from repositories.normalization import normalize_phone
 
 
 class MilestoneOneApiTests(unittest.TestCase):
@@ -29,10 +28,10 @@ class MilestoneOneApiTests(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(routes))
 
-    def test_account_api_requires_firebase_bearer_token(self):
+    def test_account_api_requires_finispeak_session(self):
         response = self.client.get("/api/accounts/me")
         self.assertEqual(response.status_code, 401)
-        self.assertIn("bearer token", response.get_json()["error"].lower())
+        self.assertIn("finispeak session", response.get_json()["error"].lower())
 
     @patch("controllers.accounts_controller.AccountModel.find_by_phone")
     @patch("controllers.accounts_controller.identity_or_response")
@@ -114,18 +113,6 @@ class MilestoneOneApiTests(unittest.TestCase):
             recommended_ids=["interpreter-1"],
         )
 
-    @patch("models.translator.get_db")
-    def test_translator_search_requires_all_selected_languages(self, get_db):
-        spanish_arabic = MagicMock()
-        spanish_arabic.to_dict.return_value = {"verificationStatus": "verified", "languages": ["Spanish", "Arabic"], "availability": {"availableNow": True}}
-        spanish_only = MagicMock()
-        spanish_only.to_dict.return_value = {"verificationStatus": "verified", "languages": ["Spanish"], "availability": {"availableNow": True}}
-        query = get_db.return_value.collection.return_value.where.return_value.limit.return_value
-        query.stream.return_value = [spanish_arabic, spanish_only]
-        with patch.object(TranslatorModel, "to_public", side_effect=lambda doc: {"id": "match" if doc is spanish_arabic else "single", "availability": {"availableNow": True}}):
-            results = TranslatorModel.search(languages=["Spanish", "Arabic"], available_now=True)
-        self.assertEqual([item["id"] for item in results], ["match"])
-
     @patch("controllers.admin_controller.TranslatorModel.set_verification")
     @patch("controllers.admin_controller.identity_or_response")
     def test_admin_can_approve_an_interpreter(self, identity, set_verification):
@@ -137,21 +124,6 @@ class MilestoneOneApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         set_verification.assert_called_once_with("interpreter-1", "verified", "admin-1", "Documents confirmed")
-
-    @patch("models.translator.TranslatorModel.get")
-    @patch("models.translator.get_db")
-    def test_verification_updates_the_full_onboarding_lifecycle(self, get_db, get_profile):
-        reference = MagicMock()
-        reference.get.return_value.exists = True
-        get_db.return_value.collection.return_value.document.return_value = reference
-        get_profile.return_value = {"id": "interpreter-1", "verificationStatus": "verified"}
-
-        TranslatorModel.set_verification("interpreter-1", "verified", "admin-1", "Checked")
-
-        payload = reference.set.call_args_list[0].args[0]
-        self.assertEqual(payload["verificationStatus"], "verified")
-        self.assertEqual(payload["credentialStatus"], "approved")
-        self.assertEqual(payload["onboardingStatus"], "verified")
 
 
 if __name__ == "__main__":

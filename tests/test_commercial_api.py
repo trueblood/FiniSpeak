@@ -1,30 +1,5 @@
-import os
 import unittest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
-
-from models.api_key import ApiKeyModel
-
-
-class ApiKeyModelTests(unittest.TestCase):
-    def test_api_key_hash_is_verified_and_plaintext_is_not_stored(self):
-        document = MagicMock()
-        database = MagicMock()
-        database.collection.return_value.document.return_value = document
-        with patch("models.api_key.get_db", return_value=database), patch.dict(os.environ, {"FINISPEAK_API_KEY_PEPPER": "test-pepper-with-enough-entropy"}):
-            created = ApiKeyModel.create({"organizationId": "org-1", "name": "Production", "scopes": ["interpreters:read"]}, "admin-1")
-        stored = document.set.call_args.args[0]
-        self.assertTrue(created["token"].startswith("fs_live_"))
-        self.assertNotIn("token", stored)
-        self.assertNotEqual(stored["tokenHash"], created["token"])
-
-    def test_authentication_rejects_revoked_key(self):
-        snapshot = MagicMock(exists=True)
-        snapshot.to_dict.return_value = {"status": "revoked", "tokenHash": "unused", "expiresAt": datetime.now(timezone.utc) + timedelta(days=1)}
-        database = MagicMock()
-        database.collection.return_value.document.return_value.get.return_value = snapshot
-        with patch("models.api_key.get_db", return_value=database), patch.dict(os.environ, {"FINISPEAK_API_KEY_PEPPER": "test-pepper"}):
-            self.assertIsNone(ApiKeyModel.authenticate("fs_live_abc_secret"))
+from unittest.mock import patch
 
 
 class CommercialApiControllerTests(unittest.TestCase):

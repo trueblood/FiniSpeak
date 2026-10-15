@@ -1,16 +1,15 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot, serverTimestamp, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-storage.js";
-
 const $ = (id) => document.getElementById(id);
 const views = ["heroView", "authView", "dashboardView", "profileView", "callView"];
 const show = (id) => {
     views.forEach(v => $(v).classList.toggle("hidden", v !== id));
     document.body.classList.toggle("dashboard-mode", id === "dashboardView");
 };
-let auth, db, storage, currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
+let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
+let authActionToken = null;
 let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map();
+let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
+let pendingSignals = new Map(), signalingCursor = 0;
+let rtcConfiguration = { iceServers: [] };
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, currentCallRole = null;
 let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
 let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterProfile = null;
@@ -77,17 +76,26 @@ function callErrorDetails(error, stage) {
 async function boot() {
     bindUI();
     loadFeaturedProfiles();
+    const actionPath = location.pathname === "/verify-email" || location.pathname === "/reset-password";
+    authActionToken = new URLSearchParams(location.search).get("token");
+    if (location.pathname === "/verify-email" && authActionToken) {
+        show("authView");
+        const response = await fetch("/api/auth/verify-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: authActionToken }) });
+        const payload = await response.json().catch(() => ({}));
+        $("authStatus").textContent = payload.message || payload.error || "Email verification failed.";
+        history.replaceState({}, "", "/"); authActionToken = null;
+    } else if (location.pathname === "/reset-password" && authActionToken) {
+        show("authView"); $("authTitle").textContent = "Set a new password"; $("authSubmit").textContent = "Update password";
+        $("emailField").classList.add("hidden"); $("email").required = false; $("authToggle").classList.add("hidden");
+    }
     try {
-        const response = await fetch("/api/firebase-config");
-        const config = await response.json();
-        if (!response.ok) throw new Error(config.error || "Firebase configuration missing");
-        const firebaseApp = initializeApp(config);
-        auth = getAuth(firebaseApp);
-        db = getFirestore(firebaseApp);
-        storage = config.storageBucket ? getStorage(firebaseApp) : null;
-        onAuthStateChanged(auth, handleAuthState);
+        const response = await fetch("/api/auth/session", { credentials: "same-origin" });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok) await handleAuthState(payload.user);
+        else if (!actionPath) await handleAuthState(null);
     } catch (error) {
-        $("status").textContent = `${error.message}. Add the Firebase web values to .env.`;
+        $("status").textContent = `Account service unavailable: ${error.message}`;
+        await handleAuthState(null);
     }
 }
 
@@ -114,8 +122,9 @@ function bindUI() {
     $("homeNav").onclick = () => show("heroView");
     $("browseNav").onclick = openInterpreterDirectory;
     $("browseHero").onclick = openInterpreterDirectory;
-    $("authNav").onclick = async () => currentUser ? signOut(auth) : openAuth(false, "customer");
+    $("authNav").onclick = async () => currentUser ? localSignOut() : openAuth(false, "customer");
     $("authToggle").onclick = () => setAuthMode(!signupMode);
+    $("forgotPassword").onclick = requestPasswordReset;
     $("authForm").onsubmit = submitAuth;
     $("callForm").onsubmit = createCall;
     $("copyCallId").onclick = () => navigator.clipboard.writeText(activeCallId || "");
@@ -174,7 +183,7 @@ function bindUI() {
     });
     document.querySelectorAll("[data-add-tag]").forEach(button => button.addEventListener("click", () => addTagFromInput(button.dataset.addTag)));
     $("dashboardAvailableNow").onchange = updateDashboardAvailability;
-    $("settingsSignOut").onclick = async () => signOut(auth);
+    $("settingsSignOut").onclick = async () => localSignOut();
     $("refreshAdmin").onclick = loadAdminDashboard;
     $("organizationForm").onsubmit = createOrganization;
     $("directorySearch").addEventListener("input", filterInterpreterDirectory);
@@ -297,23 +306,47 @@ function setAuthMode(signup) {
 async function submitAuth(e) {
     e.preventDefault(); $("authStatus").textContent = "Working…";
     try {
+        if (authActionToken && location.pathname === "/reset-password") {
+            const response = await fetch("/api/auth/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: authActionToken, password: $("password").value }) });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || "Password reset failed.");
+            history.replaceState({}, "", "/"); authActionToken = null; $("emailField").classList.remove("hidden"); $("email").required = true; $("authToggle").classList.remove("hidden");
+            setAuthMode(false); $("authStatus").textContent = payload.message; return;
+        }
         const email = $("email").value.trim(), password = $("password").value;
         if (signupMode) {
             const phone = $("signupPhone").value.trim();
             normalizePhoneNumber(phone);
-            const result = await createUserWithEmailAndPassword(auth, email, password);
             const name = $("displayName").value.trim() || email.split("@")[0];
             const role = $("role").value;
-            await updateProfile(result.user, { displayName: name });
-            currentUser = result.user;
-            await apiFetch("/api/accounts/bootstrap", { method: "POST", body: JSON.stringify({ displayName: name, phone }) });
-            if (role === "translator") {
-                await apiFetch("/api/translators/enroll", { method: "POST", body: JSON.stringify({ phone }) });
-                await handleAuthState(result.user);
-            }
-        } else await signInWithEmailAndPassword(auth, email, password);
+            const response = await fetch("/api/auth/register", { method: "POST", credentials: "same-origin",
+                headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, displayName: name, phone, role }) });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || "Account creation failed.");
+            $("authStatus").textContent = payload.message;
+            setAuthMode(false);
+            return;
+        }
+        const response = await fetch("/api/auth/login", { method: "POST", credentials: "same-origin",
+            headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Sign in failed.");
+        await handleAuthState({ ...payload.user, accessToken: payload.accessToken });
         $("authStatus").textContent = "";
     } catch (error) { $("authStatus").textContent = error.message; }
+}
+
+async function requestPasswordReset() {
+    const email = $("email").value.trim();
+    if (!email) { $("authStatus").textContent = "Enter your email address first."; return; }
+    const response = await fetch("/api/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+    const payload = await response.json().catch(() => ({}));
+    $("authStatus").textContent = payload.message || "If the account exists, a recovery link will be sent.";
+}
+
+async function localSignOut() {
+    try { await apiFetch("/api/auth/logout", { method: "POST", body: "{}" }); } catch (_) { /* clear local state anyway */ }
+    await handleAuthState(null);
 }
 
 async function handleAuthState(user) {
@@ -329,9 +362,8 @@ async function handleAuthState(user) {
         return;
     }
 
-    // Authentication and dashboard loading are intentionally separated. A
-    // missing/older profile document must never leave an authenticated user
-    // stuck on the login screen.
+    // Authentication and dashboard loading are intentionally separated so a
+    // missing profile cannot leave an authenticated user stuck on login.
     try {
         const fallbackProfile = {
             uid: user.uid,
@@ -358,8 +390,16 @@ async function handleAuthState(user) {
         $("openStartCall").classList.toggle("hidden", isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
+        try {
+            const configuration = await apiFetch("/api/webrtc-config");
+            rtcConfiguration = { iceServers: configuration.iceServers || [] };
+        } catch (error) {
+            rtcConfiguration = { iceServers: [] };
+            console.error("WebRTC relay configuration failed:", error);
+        }
+
         // Show the dashboard before loading optional translator/profile data so
-        // a Firestore/profile problem cannot block navigation after login.
+        // a profile problem cannot block navigation after login.
         openDashboardPanel(isAdmin ? "admin" : "home");
         show("dashboardView");
         $("authStatus").textContent = "";
@@ -436,10 +476,13 @@ function openDashboardPanel(panel) {
 
 async function apiFetch(path, options = {}) {
     if (!currentUser) throw new Error("Sign in to continue.");
-    const token = await currentUser.getIdToken();
+    const isForm = options.body instanceof FormData;
+    const csrf = document.cookie.split("; ").find(row => row.startsWith("csrf_access_token="))?.split("=")[1];
+    const headers = { ...(isForm ? {} : { "Content-Type": "application/json" }), ...(options.headers || {}) };
+    if (currentUser.accessToken) headers.Authorization = `Bearer ${currentUser.accessToken}`;
+    if (csrf) headers["X-CSRF-TOKEN"] = decodeURIComponent(csrf);
     const response = await fetch(path, {
-        ...options,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(options.headers || {}) }
+        ...options, credentials: "same-origin", headers
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
@@ -589,8 +632,7 @@ function renderAdminVerificationQueue(profiles) {
 async function openCredentialDocument(button) {
     button.disabled = true;
     try {
-        const url = await getDownloadURL(storageRef(storage, button.dataset.credentialPath));
-        window.open(url, "_blank", "noopener");
+        window.open(button.dataset.credentialPath, "_blank", "noopener");
     } catch (error) {
         $("adminStatus").textContent = `Could not open credential document: ${error.message}`;
     } finally { button.disabled = false; }
@@ -1139,7 +1181,6 @@ async function saveProfile(e) {
     if (!displayName) { status.textContent = "Enter a display name."; return; }
     status.textContent = "Saving…";
     try {
-        await updateProfile(currentUser, { displayName });
         const phoneNormalized = normalizePhoneNumber(phone);
         const result = await apiFetch("/api/accounts/me", { method: "PATCH", body: JSON.stringify({ displayName, phone }) });
         currentProfile = { ...currentProfile, ...(result.account || {}), displayName, phone, phoneNormalized };
@@ -1362,11 +1403,10 @@ function renderCredentialDocuments(documents = []) {
 }
 
 async function openInterpreterCredentialDocument(document, button) {
-    if (!document.path || !storage) return;
+    if (!document.path) return;
     button.disabled = true;
     try {
-        const url = await getDownloadURL(storageRef(storage, document.path));
-        window.open(url, "_blank", "noopener");
+        window.open(document.path, "_blank", "noopener");
     } catch (error) {
         $("interpreterProfileStatus").textContent = `Could not open credential document: ${error.message}`;
     } finally { button.disabled = false; }
@@ -1420,17 +1460,14 @@ function renderInterpreterLifecycle(profile = {}) {
 async function uploadCredentialDocuments(existing = []) {
     const files = [...($("interpreterCredentialFiles").files || [])];
     if (!files.length) return existing;
-    if (!storage) throw new Error("Firebase Storage is not configured for credential uploads.");
     const allowed = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
     const documents = [...existing];
     for (const file of files) {
         if (!allowed.has(file.type)) throw new Error(`${file.name} must be a PDF, JPG, PNG, or WebP file.`);
         if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} must be under 10 MB.`);
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-100);
-        const path = `interpreter-credentials/${currentUser.uid}/${Date.now()}-${safeName}`;
-        const reference = storageRef(storage, path);
-        await uploadBytes(reference, file, { contentType: file.type, cacheControl: "private,max-age=0" });
-        documents.push({ name: file.name, path, contentType: file.type, size: file.size, uploadedAt: Date.now() });
+        const body = new FormData(); body.append("purpose", "credential"); body.append("file", file);
+        const uploaded = await apiFetch("/api/files", { method: "POST", body });
+        documents.push(uploaded.file);
     }
     return documents;
 }
@@ -1648,16 +1685,10 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
         let photoUploadError = null;
         const file = $("interpreterPhoto").files?.[0];
         if (file) {
-            if (!storage) {
-                photoUploadError = new Error("Firebase Storage is not configured");
-            } else try {
-                const extension = profilePhotoTypes[file.type];
-                const photoRef = storageRef(storage, `interpreter-profiles/${currentUser.uid}/profile.${extension}`);
-                await uploadBytes(photoRef, file, {
-                    contentType: file.type,
-                    cacheControl: "public,max-age=3600"
-                });
-                photoUrl = await getDownloadURL(photoRef);
+            try {
+                const body = new FormData(); body.append("purpose", "profile_photo"); body.append("file", file);
+                const uploaded = await apiFetch("/api/files", { method: "POST", body });
+                photoUrl = uploaded.file.path;
             } catch (error) {
                 photoUploadError = error;
                 console.error("Interpreter photo upload failed:", error);
@@ -1700,10 +1731,13 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
         await apiFetch("/api/translators/me/profile", { method: "PUT", body: JSON.stringify({ profile: payload, private: privatePayload }) });
         const removalPaths = [...pendingCredentialRemovalPaths];
         pendingCredentialRemovalPaths = new Set();
-        if (storage) await Promise.allSettled(removalPaths.map(path => deleteObject(storageRef(storage, path))));
+        await Promise.allSettled(removalPaths.map(path => {
+            const match = String(path).match(/\/api\/files\/([^/]+)\/content/);
+            return match ? apiFetch(`/api/files/${encodeURIComponent(match[1])}`, { method: "DELETE" }) : Promise.resolve();
+        }));
         if (data.displayName && data.displayName !== currentProfile.displayName) {
-            await updateProfile(currentUser, { displayName: data.displayName });
             await apiFetch("/api/accounts/me", { method: "PATCH", body: JSON.stringify({ displayName: data.displayName, phone }) });
+            currentUser.displayName = data.displayName;
             currentProfile = { ...currentProfile, displayName: data.displayName };
             hydrateDashboardProfile();
         }
@@ -1743,7 +1777,7 @@ async function createCall(e) {
     callLog(attemptId, stage, {
         authenticated: Boolean(currentUser),
         profileRole: currentProfile?.role || null,
-        firestoreReady: Boolean(db),
+        signalingReady: Boolean(signalingSocket),
         online: navigator.onLine,
         secureContext: window.isSecureContext,
         mediaDevicesAvailable: Boolean(navigator.mediaDevices?.getUserMedia)
@@ -1861,6 +1895,7 @@ async function startMedia() {
 
 function watchCall(callId) {
     cleanupListeners();
+    connectSignaling(callId);
     const refresh = async () => {
       try {
         const [callPayload, participantPayload, transcriptPayload] = await Promise.all([
@@ -1904,31 +1939,73 @@ function watchCall(callId) {
 async function ensurePeer(callId, remoteUid, profile) {
     if (peerConnections.has(remoteUid)) return;
     const politeOfferer = currentUser.uid.localeCompare(remoteUid) < 0;
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    if (!rtcConfiguration.iceServers.length) throw new Error("WebRTC relay configuration is unavailable.");
+    const pc = new RTCPeerConnection(rtcConfiguration);
     peerConnections.set(remoteUid, pc);
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
     pc.ontrack = e => attachRemoteVideo(remoteUid, profile, e.streams[0]);
-    const pairId = [currentUser.uid, remoteUid].sort().join("__");
-    const pairRef = doc(db, "calls", callId, "connections", pairId);
-    const myCandidates = collection(pairRef, `${currentUser.uid}_candidates`);
-    const theirCandidates = collection(pairRef, `${remoteUid}_candidates`);
-    pc.onicecandidate = e => { if (e.candidate) addDoc(myCandidates, e.candidate.toJSON()); };
-    callUnsubs.push(onSnapshot(theirCandidates, snap => snap.docChanges().forEach(c => { if (c.type === "added") pc.addIceCandidate(new RTCIceCandidate(c.doc.data())).catch(console.error); })));
-
+    pc.onicecandidate = event => {
+        if (event.candidate) signalingReady?.then(() => sendSignal("ice", remoteUid, event.candidate.toJSON())).catch(console.error);
+    };
+    for (const message of pendingSignals.get(remoteUid) || []) await applySignal(message);
+    pendingSignals.delete(remoteUid);
     if (politeOfferer) {
+        await signalingReady;
         const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
-        await setDoc(pairRef, { offer: { type: offer.type, sdp: offer.sdp }, offerer: currentUser.uid }, { merge: true });
-        callUnsubs.push(onSnapshot(pairRef, async s => { const data = s.data(); if (data?.answer && !pc.currentRemoteDescription) await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); }));
-    } else {
-        callUnsubs.push(onSnapshot(pairRef, async s => {
-            const data = s.data();
-            if (data?.offer && !pc.currentRemoteDescription) {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await pc.createAnswer(); await pc.setLocalDescription(answer);
-                await setDoc(pairRef, { answer: { type: answer.type, sdp: answer.sdp }, answerer: currentUser.uid }, { merge: true });
-            }
-        }));
+        sendSignal("offer", remoteUid, { type: offer.type, sdp: offer.sdp });
     }
+}
+
+function connectSignaling(callId) {
+    if (signalingSocket) signalingSocket.close();
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    signalingReady = new Promise((resolve, reject) => {
+        signalingSocket = new WebSocket(`${scheme}://${location.host}/ws/signaling`);
+        signalingSocket.onopen = () => signalingSocket.send(JSON.stringify({ type: "join", callId, after: signalingCursor }));
+        signalingSocket.onmessage = async event => {
+            const message = JSON.parse(event.data);
+            if (message.type === "ready") { resolve(); return; }
+            if (message.type === "error") { reject(new Error(message.message)); return; }
+            if (message.eventId) signalingCursor = Math.max(signalingCursor, Number(message.eventId));
+            if (["offer", "answer", "ice", "hangup", "reconnect"].includes(message.type)) {
+                if (peerConnections.has(message.from)) await applySignal(message);
+                else pendingSignals.set(message.from, [...(pendingSignals.get(message.from) || []), message]);
+            }
+        };
+        signalingSocket.onerror = () => reject(new Error("Signaling connection failed."));
+        signalingSocket.onclose = () => {
+            if (activeCallId === callId) window.setTimeout(() => connectSignaling(callId), 1000);
+        };
+    });
+}
+
+function sendSignal(type, to, payload = {}) {
+    if (!signalingSocket || signalingSocket.readyState !== WebSocket.OPEN) throw new Error("Signaling is not connected.");
+    signalingSocket.send(JSON.stringify({ type, to, payload, clientEventId: crypto.randomUUID() }));
+}
+
+async function applySignal(message) {
+    const pc = peerConnections.get(message.from);
+    if (!pc) return;
+    if (message.type === "offer") {
+        if (!pc.currentRemoteDescription) await pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+        const answer = await pc.createAnswer(); await pc.setLocalDescription(answer);
+        sendSignal("answer", message.from, { type: answer.type, sdp: answer.sdp });
+        await flushPendingIce(message.from, pc);
+    } else if (message.type === "answer") {
+        if (!pc.currentRemoteDescription) await pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+        await flushPendingIce(message.from, pc);
+    } else if (message.type === "ice") {
+        if (pc.remoteDescription) await pc.addIceCandidate(new RTCIceCandidate(message.payload));
+        else pendingIceCandidates.set(message.from, [...(pendingIceCandidates.get(message.from) || []), message.payload]);
+    } else if (message.type === "hangup") {
+        pc.close(); peerConnections.delete(message.from); removeRemoteVideo(message.from);
+    }
+}
+
+async function flushPendingIce(uid, pc) {
+    for (const candidate of pendingIceCandidates.get(uid) || []) await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    pendingIceCandidates.delete(uid);
 }
 
 function participantRoleLabel(role) {
@@ -1961,7 +2038,6 @@ async function startTranscription(callId) {
     status.textContent = "Connecting…";
 
     try {
-        const token = await currentUser.getIdToken();
         transcriptionAudioContext = new (window.AudioContext || window.webkitAudioContext)();
         const sampleRate = transcriptionAudioContext.sampleRate;
         await transcriptionAudioContext.audioWorklet.addModule("/static/js/pcm-worklet.js");
@@ -1978,7 +2054,7 @@ async function startTranscription(callId) {
         transcriptionSocket = new WebSocket(`${scheme}://${location.host}/ws/transcription`);
         transcriptionSocket.binaryType = "arraybuffer";
         transcriptionSocket.onopen = () => {
-            transcriptionSocket.send(JSON.stringify({ type: "start", token, callId, sampleRate }));
+            transcriptionSocket.send(JSON.stringify({ type: "start", callId, sampleRate }));
         };
         transcriptionSocket.onmessage = async (event) => {
             const message = JSON.parse(event.data);
@@ -2006,7 +2082,7 @@ async function startTranscription(callId) {
                     languageConfirmationRequired: evidence?.requiresConfirmation === true,
                     text: message.text.trim(),
                     isFinal: true,
-                    createdAt: serverTimestamp(),
+                    createdAt: new Date().toISOString(),
                     clientCreatedAt: Date.now()
                 }) });
                 const routeKey = languageRouteKey(callId, stableLanguage);
@@ -2346,6 +2422,11 @@ function cleanupListeners() { callUnsubs.forEach(u => u()); callUnsubs = []; }
 function cleanupCall(stopMedia = true) {
     const endingCallId = activeCallId;
     stopTranscription();
+    if (signalingSocket?.readyState === WebSocket.OPEN) {
+        for (const uid of peerConnections.keys()) try { sendSignal("hangup", uid, {}); } catch (_) { /* best effort */ }
+    }
+    if (signalingSocket) { signalingSocket.onclose = null; signalingSocket.close(); signalingSocket = null; }
+    signalingReady = null; signalingCursor = 0; pendingSignals.clear(); pendingIceCandidates.clear();
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
     document.querySelectorAll("[data-peer]").forEach(e => e.remove());
     if (stopMedia && localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; $("localVideo").srcObject = null; }

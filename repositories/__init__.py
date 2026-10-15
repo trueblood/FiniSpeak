@@ -1,8 +1,4 @@
-"""Storage-provider configuration for the gradual repository cutover.
-
-Phase 0 intentionally does not connect these flags to the live domain models.
-Every domain remains Firestore-backed until a later, separately reviewed phase.
-"""
+"""Repository interfaces and the MySQL-only application provider."""
 
 from repositories.config import RepositoryBackend, repository_backends
 from repositories.interfaces import (
@@ -21,5 +17,3 @@ __all__ = [
     "repository_backends",
     "get_repository", "init_repositories", "repository_proxy",
 ]
-
-__all__ = ["RepositoryBackend", "repository_backends"]

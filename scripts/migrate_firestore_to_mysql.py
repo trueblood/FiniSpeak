@@ -8,9 +8,15 @@ Run Alembic separately before using ``--apply``.
 import argparse
 import base64
 import logging
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from app import create_app
 from extensions import db as sql_db
@@ -20,7 +26,6 @@ from models.sql_models import (
     SqlParticipant, SqlReferenceDialect, SqlReferenceLanguage,
     SqlReferenceSpecialty, SqlReview, SqlTranscript, SqlTranslator, SqlUser,
 )
-from services.firebase_service import get_db as get_firestore_db
 from repositories.normalization import normalize_email
 
 
@@ -526,6 +531,7 @@ class FirestoreMysqlMigrator:
 
 
 def main():
+    from services.firebase_service import get_db as get_firestore_db
     parser = argparse.ArgumentParser(description="Validate or copy Firestore documents to the prepared MySQL schema.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="Write idempotent upserts to MySQL. Firestore remains read-only.")

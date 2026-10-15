@@ -22,12 +22,14 @@ class MvcRouteTests(unittest.TestCase):
             "/api",
             "/api/routes",
             "/api/health",
-            "/api/firebase-config",
+            "/api/auth/login",
+            "/api/files",
             "/api/users/",
             "/api/translators/",
             "/api/calls/",
             "/api/taxonomy",
             "/ws/transcription",
+            "/ws/signaling",
         }.issubset(paths))
 
     def test_interpreter_onboarding_exposes_explicit_review_workflow(self):

@@ -55,8 +55,8 @@ def sql_call(call_id="call-1", **values):
 
 
 class PhaseOneContractTests(unittest.TestCase):
-    def test_all_domains_still_default_to_firestore(self):
-        self.assertEqual(repository_backends({}), {domain: "firestore" for domain in REPOSITORY_DOMAINS})
+    def test_all_domains_default_to_mysql(self):
+        self.assertEqual(repository_backends({}), {domain: "mysql" for domain in REPOSITORY_DOMAINS})
 
     def test_mysql_implementations_cover_every_repository_domain(self):
         implementations = {

@@ -1,8 +1,8 @@
 """Storage-independent contracts for FiniSpeak application data.
 
-The protocols deliberately use the existing Firestore-shaped dictionaries so
-controllers can migrate one domain at a time without changing API payloads.
-Firebase Authentication and realtime signaling are outside these contracts.
+The protocols preserve the established API-shaped dictionaries while MySQL is
+the sole application backend. Authentication and realtime signaling use their
+own first-party services outside these repository contracts.
 """
 
 from typing import Any, Mapping, Protocol, Sequence

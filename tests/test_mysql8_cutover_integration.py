@@ -7,7 +7,11 @@ record has a per-run prefix and is removed in reverse dependency order.
 
 import os
 import secrets
+import tempfile
 import unittest
+from io import BytesIO
+from pathlib import Path
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -15,6 +19,10 @@ from sqlalchemy import text
 from app import create_app
 from extensions import db
 from repositories.mysql import mysql_repositories
+from services.auth_service import authenticate_password, consume_action_token, register_account
+from services.file_storage_service import save_upload
+from services.signaling_service import _store_event
+from werkzeug.datastructures import FileStorage
 
 
 EXPECTED_DATABASE = "finispeak_migration_test"
@@ -41,7 +49,7 @@ class MySql8CutoverIntegrationTests(unittest.TestCase):
         if selected != EXPECTED_DATABASE or not str(version).startswith("8.0."):
             raise RuntimeError(f"Unsafe or unsupported MySQL target: {selected!r} {version!r}")
         revision = db.session.execute(text("SELECT version_num FROM alembic_version"), {}).scalar_one()
-        if revision != "20261013_0002":
+        if revision != "20261014_0003":
             raise RuntimeError(f"Unexpected Alembic revision: {revision!r}")
 
     @classmethod
@@ -71,6 +79,11 @@ class MySql8CutoverIntegrationTests(unittest.TestCase):
         for aggregate_key in filter(None, owned_outbox_keys):
             db.session.execute(text("DELETE FROM transactional_outbox WHERE aggregate_key=:key"), {"key": aggregate_key})
         statements = (
+            ("DELETE FROM signaling_events WHERE call_id = :call", {"call": call_id}),
+            ("DELETE FROM stored_files WHERE owner_id IN (:caller, :receiver, :interpreter, :admin)", dict(zip(("caller", "receiver", "interpreter", "admin"), user_ids))),
+            ("DELETE FROM auth_tokens WHERE user_id IN (:caller, :receiver, :interpreter, :admin)", dict(zip(("caller", "receiver", "interpreter", "admin"), user_ids))),
+            ("DELETE FROM auth_sessions WHERE user_id IN (:caller, :receiver, :interpreter, :admin)", dict(zip(("caller", "receiver", "interpreter", "admin"), user_ids))),
+            ("DELETE FROM auth_credentials WHERE user_id IN (:caller, :receiver, :interpreter, :admin)", dict(zip(("caller", "receiver", "interpreter", "admin"), user_ids))),
             ("DELETE FROM api_usage_events WHERE organization_id = :organization OR key_id = :api_key", {"organization": organization_id, "api_key": api_key_id}),
             ("DELETE FROM api_usage_counters WHERE organization_id = :organization OR key_id = :api_key", {"organization": organization_id, "api_key": api_key_id}),
             ("DELETE FROM reviews WHERE interpreter_id = :interpreter OR call_id = :call", {"interpreter": self.ids.get("interpreter", ""), "call": call_id}),
@@ -205,6 +218,36 @@ class MySql8CutoverIntegrationTests(unittest.TestCase):
             self.assertNotIn("@example.invalid", serialized)
             self.assertEqual(event["event_type"], "mysql.upserted")
             self.assertGreaterEqual(event["aggregate_version"], 1)
+
+    def test_first_party_auth_private_storage_and_signaling(self):
+        caller, caller_verification = register_account(
+            f"caller-{self.prefix}@example.invalid", "IntegrationPassword123", "Caller"
+        )
+        receiver, receiver_verification = register_account(
+            f"receiver-{self.prefix}@example.invalid", "IntegrationPassword123", "Receiver"
+        )
+        self.ids["caller"], self.ids["receiver"] = caller["uid"], receiver["uid"]
+        consume_action_token(caller_verification, "verify_email")
+        consume_action_token(receiver_verification, "verify_email")
+        authenticated, session = authenticate_password(caller["email"], "IntegrationPassword123")
+        self.assertEqual(authenticated["uid"], caller["uid"])
+        self.assertTrue(session["accessToken"])
+
+        call = self.repositories["calls"].create(caller, receiver, idempotency_key=f"{self.prefix}-auth-call")
+        self.ids["call"] = call["id"]
+        with tempfile.TemporaryDirectory(prefix="finispeak_migration_test_") as storage_root:
+            with patch.dict(os.environ, {"FINISPEAK_STORAGE_ROOT": storage_root}):
+                stored = save_upload(FileStorage(stream=BytesIO(b"%PDF-1.4 integration private file"),
+                    filename="credential.pdf", content_type="application/pdf"), caller["uid"], "credential")
+                self.assertTrue((Path(storage_root) / f"{stored['id']}.pdf").is_file())
+
+        message = {"type": "offer", "to": receiver["uid"], "clientEventId": f"{self.prefix}-signal",
+                   "payload": {"type": "offer", "sdp": "integration-only"}}
+        event_id, duplicate = _store_event(call["id"], caller["uid"], {caller["uid"], receiver["uid"]}, message)
+        self.assertFalse(duplicate)
+        replay_id, duplicate = _store_event(call["id"], caller["uid"], {caller["uid"], receiver["uid"]}, message)
+        self.assertTrue(duplicate)
+        self.assertEqual(replay_id, event_id)
 
 
 if __name__ == "__main__":
