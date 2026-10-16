@@ -406,7 +406,8 @@ class MySqlCallRepository:
         return [_document(row, CALL_FIELDS)
                 for row in self.session.scalars(select(SqlCall)).all()]
 
-    def create(self, caller, receiver, translator=None, language=None, dialect=None, specialty=None, purpose="", scheduled_at=None, idempotency_key=None):
+    def create(self, caller, receiver, translator=None, language=None, dialect=None, specialty=None,
+               purpose="", scheduled_at=None, idempotency_key=None, processing_mode="baseline"):
         now = _now()
         call_id = "req_" + hashlib.sha256(f"{caller['uid']}:{idempotency_key}".encode()).hexdigest()[:48] if idempotency_key else _new_id()
         existing = self.session.get(SqlCall, call_id)
@@ -417,7 +418,8 @@ class MySqlCallRepository:
             "translatorId": translator.get("id") if translator else None, "translatorName": translator.get("displayName") if translator else None,
             "status": "ringing", "translationStatus": "requested" if translator or language else "not_requested", "language": language,
             "dialect": dialect, "specialty": specialty, "purpose": purpose, "scheduledAt": scheduled_at,
-            "createdAt": now, "updatedAt": now, "startedAt": None, "endedAt": None}
+            "createdAt": now, "updatedAt": now, "startedAt": None, "endedAt": None,
+            "processingModes": {caller["uid"]: processing_mode}}
         row = SqlCall(id=call_id, raw_document=_json_safe(data), migrated_at=now, mutation_version=1, **{column: data.get(api) for api, column in CALL_FIELDS.items()})
         self.session.add(row)
         try:
@@ -475,6 +477,20 @@ class MySqlCallRepository:
         if row.translator_id and row.translator_id != translator["uid"]:
             self.session.rollback(); raise PermissionError("Another interpreter has already accepted this call.")
         _touch(row, {"translatorId": translator["uid"], "translatorName": translator.get("displayName") or translator.get("email") or "FiniSpeak interpreter", "translationStatus": "connected", "updatedAt": _now()}, CALL_FIELDS)
+        _commit(self.session)
+        return _document(row, CALL_FIELDS)
+
+    def set_processing_mode(self, call_id, uid, mode):
+        row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
+        if not row:
+            return None
+        call = _document(row, CALL_FIELDS)
+        if not self.is_participant(call, uid):
+            self.session.rollback()
+            raise PermissionError("You are not a participant in this call.")
+        modes = dict(call.get("processingModes") or {})
+        modes[uid] = mode
+        _touch(row, {"processingModes": modes, "updatedAt": _now()}, CALL_FIELDS)
         _commit(self.session)
         return _document(row, CALL_FIELDS)
 

@@ -134,6 +134,23 @@ class MySqlAuthorizationTests(unittest.TestCase):
         repository = MySqlCallRepository(FakeSession())
         self.assertIsNone(repository.transition("missing", "ended"))
         self.assertIsNone(repository.request_translator("missing"))
+        self.assertIsNone(repository.set_processing_mode("missing", "customer-1", "streaming"))
+
+    def test_processing_mode_is_scoped_without_changing_another_participant(self):
+        row = sql_call(raw_document={"processingModes": {"customer-2": "concurrent"}})
+        session = FakeSession(scalar=row)
+        result = MySqlCallRepository(session).set_processing_mode("call-1", "customer-1", "streaming")
+        self.assertEqual(result["processingModes"], {
+            "customer-1": "streaming",
+            "customer-2": "concurrent",
+        })
+        self.assertEqual(session.commits, 1)
+
+    def test_processing_mode_rejects_nonparticipant(self):
+        session = FakeSession(scalar=sql_call())
+        with self.assertRaisesRegex(PermissionError, "not a participant"):
+            MySqlCallRepository(session).set_processing_mode("call-1", "intruder", "streaming")
+        self.assertEqual(session.rollbacks, 1)
 
     def test_missing_records_are_consistent_across_domains(self):
         session = FakeSession()

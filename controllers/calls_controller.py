@@ -3,6 +3,7 @@ from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
+from services.processing_mode_service import allowed_processing_modes, authorize_processing_mode
 
 AccountModel = repository_proxy("accounts")
 CallModel = repository_proxy("calls")
@@ -35,6 +36,7 @@ def create():
             return jsonify({"error": "The selected interpreter is not verified or is unavailable."}), 400
 
     try:
+        processing_mode = authorize_processing_mode(identity, data.get("processingMode"))
         idempotency_key = str(request.headers.get("Idempotency-Key", "")).strip() or None
         if idempotency_key and len(idempotency_key) > 160:
             return jsonify({"error": "Idempotency-Key is too long"}), 400
@@ -48,11 +50,38 @@ def create():
             purpose=str(data.get("purpose") or "").strip(),
             scheduled_at=data.get("scheduledAt"),
             idempotency_key=idempotency_key,
+            processing_mode=processing_mode,
         )
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 
     return jsonify({"callId": call["id"], "call": call}), 201
+
+
+def processing_capabilities():
+    identity, error = identity_or_response()
+    if error:
+        return error
+    modes = allowed_processing_modes(identity)
+    return jsonify({"experimental": len(modes) > 1, "modes": modes, "default": "baseline"})
+
+
+def update_processing_mode(call_id):
+    identity, error = identity_or_response()
+    if error:
+        return error
+    try:
+        mode = authorize_processing_mode(identity, json_body().get("processingMode"))
+        call = CallModel.set_processing_mode(call_id, identity["uid"], mode)
+        if not call:
+            return jsonify({"error": "Call not found."}), 404
+        return jsonify({"processingMode": mode, "call": call}), 200
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 def detail(call_id):

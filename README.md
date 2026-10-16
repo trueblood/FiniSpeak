@@ -8,18 +8,18 @@
 > [`docs/FIREBASE_REMOVAL.md`](docs/FIREBASE_REMOVAL.md) and `.env.example` for
 > current setup, verification, rollback, and retirement steps.
 
-FiniSpeak is being built web-first with a shared Firebase/WebRTC architecture that can later be reused by native iOS (SwiftUI) and Android (Kotlin/Compose) clients.
+FiniSpeak is being built web-first with a MySQL/WebRTC architecture that can later be reused by native iOS (SwiftUI) and Android (Kotlin/Compose) clients.
 
 ## MVC architecture
 
 The Flask backend follows an MVC structure while keeping routing and external services explicit:
 
-- `models/` owns Firestore data access and public document serialization.
+- `models/` defines the SQL data model.
 - `controllers/` validates requests, coordinates models/services, and builds responses.
 - `views/templates/` contains server-rendered HTML views.
 - `views/static/` contains the view layer's CSS and browser JavaScript.
 - `routes/` maps URLs to controllers and contains no business or database logic.
-- `services/` integrates Firebase authentication, transcription, and other external systems.
+- `services/` integrates first-party authentication, transcription, and other external systems.
 - `app.py` is the application factory and dependency-wiring entry point.
 
 Open `/api` or `/api/routes` while the app is running to see the current route catalog. Run the MVC regression tests with:
@@ -30,16 +30,16 @@ python -m unittest discover -s tests
 
 ## Current MVP
 
-- Firebase Email/Password Authentication
+- First-party Email/Password Authentication
 - Customer and Translator account roles
-- Firestore user profiles
+- MySQL user profiles and call records
 - Customer 1 creates a call to Customer 2 by FiniSpeak email
 - Translator can join the existing call as participant #3
 - Browser camera/microphone access
-- Three-person WebRTC mesh signaling through Firestore
+- Three-person WebRTC mesh signaling through the authenticated Flask signaling service
 - Mute, camera, request translator, copy Call ID, and end-call controls
 - STUN configured for development; TURN is intentionally deferred
-- Firebase Storage for interpreter profile photos; FCM is intentionally deferred
+- Private DigitalOcean-hosted storage for interpreter profile photos
 - Interpreter onboarding with draft, profile-complete, submitted, changes-requested, rejected, and verified states
 - Private credential evidence uploads with interpreter view/remove controls and administrator review
 - Location-aware interpreter discovery with Leaflet, marker clustering, approximate public service areas, map/list/split views, radius filtering, and remote-video fallback
@@ -145,17 +145,18 @@ python scripts/migrate_interpreter_privacy.py --apply
 
 ## Customer lookup
 
-For the MVP, FiniSpeak uses email/password authentication and customer-to-customer calling by FiniSpeak email address. Each new account creates a small `emailDirectory` entry so another signed-in customer can find the intended receiver without exposing the full private user profile. Phone-number calling can be added later for the native iOS and Android apps.
+For the MVP, FiniSpeak uses first-party email/password authentication and customer-to-customer calling by a saved FiniSpeak email address or phone number. Lookup goes through authenticated server routes backed by MySQL without exposing the full private user profile.
 
 
-## Legacy email lookup compatibility
-Customer lookup first checks `emailDirectory`. If the receiver account was created before that collection was introduced, the web client falls back to an exact email query against `users`. The included development Firestore rules allow authenticated reads of basic user profiles for this MVP fallback. Tighten/profile-split these rules before production if additional private fields are added to `users`.
+## Legacy migration material
 
-## Live transcription (self-hosted)
+Older Firebase-era files and notes remain in the repository only for migration verification and rollback history. The running application fails closed if a Firebase repository backend is selected; new application work must use the first-party APIs and MySQL repositories.
 
-FiniSpeak now transcribes each participant independently: Customer 1, Customer 2, and the Translator. Each browser sends a copy of only its own microphone as PCM16 to `/ws/transcription`. The WebRTC call remains independent, so a transcription failure does not interrupt the call.
+## Live transcription logging
 
-The Flask server uses `faster-whisper`. Raw microphone chunks are held only in memory long enough to transcribe and are not saved. Final text segments are written by the authenticated browser to `calls/{callId}/transcripts/{segmentId}` and all three participants subscribe to that collection for the live transcript panel.
+FiniSpeak transcribes each participant independently for logging: Customer 1, Customer 2, and the Translator. Each browser sends a copy of only its own microphone as PCM16 to `/ws/transcription`. The WebRTC call remains independent, so a transcription failure does not interrupt the call. This pipeline does not machine-translate speech.
+
+Raw microphone chunks are held only in memory long enough to transcribe and are not saved. Final text segments are written through the authenticated transcript API into MySQL and all participants see them in the live transcript panel.
 
 Install the new dependencies with:
 
@@ -163,19 +164,21 @@ Install the new dependencies with:
 pip install -r requirements.txt
 ```
 
-The WebSocket verifies Firebase ID tokens and call membership. For local development it can use the existing Firebase web API key plus the signed-in user token, so a service-account file is not required just to test transcription. If `FIREBASE_CREDENTIALS` is configured, Firebase Admin is used instead. Optional transcription settings:
+The WebSocket verifies the first-party session and call membership. Baseline is the production default. Authorized testers listed in `FINISPEAK_PROCESSING_TESTER_UIDS` can compare Concurrent and Streaming from the call screen; the selection is stored per participant, not globally. Optional transcription settings:
 
 ```env
-WHISPER_MODEL=small
-WHISPER_DEVICE=cpu
-WHISPER_COMPUTE_TYPE=int8
+OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe
 TRANSCRIPTION_CHUNK_SECONDS=5.0
+FINISPEAK_PROCESSING_TESTER_UIDS=user-id-1,user-id-2
+CONCURRENT_TRANSCRIPTION_WORKERS=2
+STREAMING_TRANSCRIPTION_CHUNK_SECONDS=1.5
+TRANSCRIPTION_ESTIMATED_USD_PER_MINUTE=0
 ```
 
-For a GPU deployment, use a supported CUDA environment and set `WHISPER_DEVICE=cuda` with an appropriate compute type. The first transcription can take longer because the Whisper model may need to be downloaded and loaded.
+Concurrent keeps microphone capture running while background workers process complete chunks. Streaming uses shorter server chunks and shows browser speech-recognition partials where supported, while only finalized server results are saved. During a mode change, the prior pipeline drains, new microphone frames are buffered, and the next pipeline receives that buffer without replacing the WebRTC connection.
+
+For local testing, start the app with a local MySQL database (or the development SQLite fallback), sign in with a user ID included in `FINISPEAK_PROCESSING_TESTER_UIDS`, and start a call from `http://localhost:8080`. Select either experimental mode before the call, or switch while connected. Development diagnostics are shown only on localhost.
 
 ## Dashboard, incoming calls, and transcript history
 
-Authenticated users are now routed to their dashboard. Customers receive a live Firestore-backed incoming-call popup with Accept/Decline instead of manually entering a Call ID. Translators receive interpretation-request popups and can join the existing three-person call. The dashboard also loads previous calls for the signed-in participant and opens saved `calls/{callId}/transcripts` in a transcript viewer.
-
-The existing development Firestore rules permit these call queries. Before production, tighten call reads/updates and translator request visibility/state transitions.
+Authenticated users are routed to their dashboard. Customers receive a MySQL-backed incoming-call popup with Accept/Decline instead of manually entering a Call ID. Translators receive interpretation-request popups and can join the existing three-person call. The dashboard also loads previous calls for the signed-in participant and opens saved transcript records in a transcript viewer.

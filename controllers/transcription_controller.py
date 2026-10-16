@@ -1,13 +1,13 @@
 import json
-import os
-
 from services.participant_verification_service import verify_participant
-from services.transcription_service import transcribe_pcm
+from services.audio_processing_service import AudioProcessingPipeline
 from services.language_reliability_service import LanguageEvidenceTracker
 from services.language_monitoring_service import record_language_event
+from services.processing_mode_service import authorize_processing_mode
 
 
 def handle_socket(ws):
+    pipeline = None
     try:
         first = ws.receive()
         if not isinstance(first, str):
@@ -20,6 +20,7 @@ def handle_socket(ws):
 
         call_id = start.get("callId", "")
         sample_rate = int(start.get("sampleRate") or 48000)
+        generation = int(start.get("generation") or 0)
         confirmed_language = (start.get("language") or "").strip() or None
         tracker = LanguageEvidenceTracker()
         if confirmed_language:
@@ -27,17 +28,16 @@ def handle_socket(ws):
         if not call_id:
             raise RuntimeError("Missing transcription authentication or call ID.")
 
-        verify_participant(None, call_id)
-
-        chunk_seconds = float(os.getenv("TRANSCRIPTION_CHUNK_SECONDS", "5.0"))
-        target_bytes = max(3200, int(sample_rate * chunk_seconds) * 2)
-        buffer = bytearray()
+        identity = verify_participant(None, call_id)
+        mode = authorize_processing_mode(identity, start.get("processingMode"))
+        pipeline = AudioProcessingPipeline(mode, sample_rate, confirmed_language, generation)
         received_audio = False
-        ws.send(json.dumps({"type": "ready", "chunkSeconds": chunk_seconds}))
+        ws.send(json.dumps({"type":"ready", "processingMode":mode, "generation":generation, "chunkSeconds":pipeline.chunk_seconds}))
 
         while True:
             message = ws.receive()
             if message is None:
+                for event in pipeline.finish(): _send_pipeline_event(ws, event, tracker, call_id, confirmed_language)
                 break
             if isinstance(message, str):
                 try:
@@ -45,42 +45,35 @@ def handle_socket(ws):
                 except json.JSONDecodeError:
                     continue
                 if control.get("type") == "stop":
+                    for event in pipeline.finish(): _send_pipeline_event(ws, event, tracker, call_id, confirmed_language)
+                    ws.send(json.dumps({"type":"stopped", "processingMode":mode, "generation":generation}))
                     break
                 if control.get("type") == "language":
                     confirmed_language = str(control.get("language") or "").strip().casefold()
                     if confirmed_language:
                         previous = tracker.snapshot().get("primaryLanguage")
                         tracker.confirm(confirmed_language)
+                        pipeline.set_language(confirmed_language)
                         record_language_event(call_id, "confirmation", previous, tracker.snapshot().get("primaryConfidence"), confirmed_language, tracker.snapshot().get("sampleCount"))
                 continue
 
-            buffer.extend(message)
             if not received_audio:
                 received_audio = True
                 ws.send(json.dumps({"type": "listening"}))
 
-            if len(buffer) >= target_bytes:
-                raw = bytes(buffer)
-                buffer.clear()
-                ws.send(json.dumps({"type": "processing"}))
-                result = transcribe_pcm(raw, sample_rate, confirmed_language, 1.0 if confirmed_language else None)
-                if result["text"]:
-                    evidence = tracker.add(result.get("language"), result.get("languageConfidence"), len(result["text"]))
-                    record_language_event(call_id, "sample", evidence.get("primaryLanguage"), evidence.get("primaryConfidence"), confirmed_language, evidence.get("sampleCount"))
-                    ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence"), "languageEvidence": evidence}))
-                else:
-                    ws.send(json.dumps({"type": "listening"}))
-
-        if buffer:
-            ws.send(json.dumps({"type": "processing"}))
-            result = transcribe_pcm(bytes(buffer), sample_rate, confirmed_language, 1.0 if confirmed_language else None)
-            if result["text"]:
-                evidence = tracker.add(result.get("language"), result.get("languageConfidence"), len(result["text"]))
-                record_language_event(call_id, "sample", evidence.get("primaryLanguage"), evidence.get("primaryConfidence"), confirmed_language, evidence.get("sampleCount"))
-                ws.send(json.dumps({"type": "final", "text": result["text"], "language": result.get("language"), "languageConfidence": result.get("languageConfidence"), "languageEvidence": evidence}))
+            for event in pipeline.feed(message): _send_pipeline_event(ws, event, tracker, call_id, confirmed_language)
     except Exception as exc:
         print(f"[FiniSpeak transcription] {type(exc).__name__}: {exc}", flush=True)
         _send_error(ws, str(exc))
+    finally:
+        if pipeline: pipeline.close()
+
+def _send_pipeline_event(ws, event, tracker, call_id, confirmed_language):
+    if event.get("type") != "final": ws.send(json.dumps(event)); return
+    if not event.get("text"): ws.send(json.dumps({"type":"listening", "processingMode":event.get("processingMode")})); return
+    evidence = tracker.add(event.get("language"), event.get("languageConfidence"), len(event["text"]))
+    record_language_event(call_id, "sample", evidence.get("primaryLanguage"), evidence.get("primaryConfidence"), confirmed_language, evidence.get("sampleCount"))
+    ws.send(json.dumps({**event, "languageEvidence": evidence}))
 
 
 def _send_error(ws, message):

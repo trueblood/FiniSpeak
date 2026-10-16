@@ -11,4 +11,4 @@ def verify_participant(_token, call_id):
         raise RuntimeError("Call not found.")
     if identity["uid"] not in [call.get("callerId"), call.get("receiverId"), call.get("translatorId")]:
         raise RuntimeError("You are not a participant in this call.")
-    return identity["uid"]
+    return identity

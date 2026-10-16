@@ -58,6 +58,12 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
         self.assertIn('id="historyTranscriptList" class="transcript-list history-transcript-list" role="log"', self.html)
 
+    def test_experimental_processing_controls_are_hidden_and_stateful(self):
+        self.assertIn('id="preCallProcessingModes" class="processing-mode-panel hidden"', self.html)
+        self.assertIn('id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden"', self.html)
+        self.assertEqual(self.html.count('data-processing-mode="concurrent" aria-pressed="false"'), 2)
+        self.assertEqual(self.html.count('data-processing-mode="streaming" aria-pressed="false"'), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
