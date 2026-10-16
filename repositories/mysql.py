@@ -36,6 +36,26 @@ def _new_id():
     return uuid.uuid4().hex
 
 
+def _as_datetime(value):
+    """Coerce browser epoch milliseconds or ISO text into a SQL datetime."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    try:
+        numeric = float(value)
+        if numeric > 100_000_000_000:
+            numeric /= 1000
+        return datetime.fromtimestamp(numeric, timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
+        pass
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
 def _raw(row):
     return dict(row.raw_document or {})
 
@@ -595,6 +615,7 @@ class MySqlTranscriptRepository:
     def add(self, call_id, transcript_id, data):
         now = _now(); values = dict(data); row = self.session.get(SqlTranscript, (call_id, transcript_id))
         if row: return _document(row, TRANSCRIPT_FIELDS)
+        values["clientCreatedAt"] = _as_datetime(values.get("clientCreatedAt"))
         row = SqlTranscript(call_id=call_id, id=transcript_id, raw_document=_json_safe(values), migrated_at=now, mutation_version=1,
             **{column: values.get(api) for api, column in TRANSCRIPT_FIELDS.items()}); self.session.add(row)
         try:

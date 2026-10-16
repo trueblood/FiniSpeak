@@ -124,6 +124,18 @@ class MySqlAuthorizationTests(unittest.TestCase):
             MySqlReviewRepository(session).create("translator-1", {"uid": "intruder"}, "call-1", 5, "text")
         self.assertEqual(session.added, [])
 
+    def test_transcript_converts_browser_epoch_milliseconds_to_datetime(self):
+        session = FakeSession()
+        result = MySqlTranscriptRepository(session).add("call-1", "line-1", {
+            "text": "Recognized speech",
+            "clientCreatedAt": 1_792_189_158_329,
+        })
+        row = session.added[0]
+        self.assertIsInstance(row.client_created_at, datetime)
+        self.assertEqual(row.client_created_at.tzinfo, timezone.utc)
+        self.assertEqual(result["text"], "Recognized speech")
+        self.assertEqual(session.commits, 1)
+
     def test_review_rejects_missing_call(self):
         with self.assertRaisesRegex(ValueError, "completed session"):
             MySqlReviewRepository(FakeSession()).create("translator-1", {"uid": "customer-1"}, "missing", 5, "text")
