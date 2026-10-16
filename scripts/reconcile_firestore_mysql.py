@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 from app import create_app
 from extensions import db as sql_db
+from repositories.normalization import canonicalize_phone, normalize_phone
 from scripts.migrate_firestore_to_mysql import COLLECTIONS
 from scripts.sync_firestore_to_mysql import snapshots
 from services.synchronization_service import (
@@ -21,11 +22,26 @@ from services.synchronization_service import (
 LOGGER = logging.getLogger("finispeak.firestore_mysql_reconciliation")
 
 
+def canonical_reconciliation_document(collection, data):
+    """Ignore storage-format-only phone differences after E.164 cutover."""
+    result = dict(data or {})
+    if collection == "users" and (result.get("phone") or result.get("phoneNormalized")):
+        phone = canonicalize_phone(result.get("phone") or result.get("phoneNormalized"))
+        if phone:
+            result["phone"] = phone
+            result["phoneNormalized"] = normalize_phone(phone)
+    elif collection == "interpreterPrivate" and result.get("phone"):
+        phone = canonicalize_phone(result["phone"])
+        if phone:
+            result["phone"] = phone
+    return result
+
+
 def source_documents(firestore, spec):
     result = {}
     for snapshot, parent_id in snapshots(firestore, spec):
         key = f"{parent_id}/{snapshot.id}" if parent_id else snapshot.id
-        result[key] = snapshot.to_dict()
+        result[key] = canonical_reconciliation_document(spec.name, snapshot.to_dict())
     return result
 
 
@@ -38,7 +54,7 @@ def target_documents(session, spec):
         # raw_document is the canonical Firestore payload. Mutation versions,
         # migration timestamps, generated columns, and outbox state are
         # deliberately excluded from content comparison.
-        result[key] = dict(row.raw_document or {})
+        result[key] = canonical_reconciliation_document(spec.name, row.raw_document)
     return result
 
 

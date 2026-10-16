@@ -25,7 +25,9 @@ from services.signaling_service import _store_event, _validate_join
 from scripts.migrate_firebase_storage import migrate
 from scripts.check_account_activation_readiness import readiness_report
 from scripts.finalize_test_deployment import update_environment
-from scripts.reconcile_firestore_mysql import reconciliation_succeeded
+from scripts.reconcile_firestore_mysql import (
+    canonical_reconciliation_document, reconciliation_succeeded,
+)
 from scripts.validate_storage_migration_reports import validate as validate_storage_reports
 from scripts.verify_private_storage import verify as verify_private_storage
 from services.auth_service import AuthorizationError, set_test_account_password
@@ -392,6 +394,23 @@ class FirebaseReplacementTests(unittest.TestCase):
         mismatch = ReconciliationResult(1, 1, (), (), ("changed",))
         self.assertFalse(reconciliation_succeeded({"users": missing}, True))
         self.assertFalse(reconciliation_succeeded({"users": mismatch}, True))
+
+    def test_reconciliation_ignores_only_canonical_phone_format_changes(self):
+        legacy_user = canonical_reconciliation_document("users", {
+            "displayName": "Test User", "phone": "(484) 459-5017",
+            "phoneNormalized": "4844595017",
+        })
+        mysql_user = canonical_reconciliation_document("users", {
+            "displayName": "Test User", "phone": "+14844595017",
+            "phoneNormalized": "14844595017",
+        })
+        self.assertEqual(legacy_user, mysql_user)
+        self.assertEqual(
+            canonical_reconciliation_document("interpreterPrivate", {"phone": "2159867600"}),
+            {"phone": "+12159867600"},
+        )
+        changed_name = dict(mysql_user, displayName="Different User")
+        self.assertNotEqual(legacy_user, changed_name)
 
     def test_environment_finalization_preserves_secrets_and_removes_runtime_firebase_credential(self):
         with tempfile.TemporaryDirectory() as directory:
