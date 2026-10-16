@@ -17,18 +17,18 @@ TRANSCRIPTION_RESULT = {
 
 
 class ProcessingModeAuthorizationTests(unittest.TestCase):
-    def test_ordinary_users_only_receive_baseline(self):
-        with patch.dict("os.environ", {"FINISPEAK_PROCESSING_TESTER_UIDS": "tester-1"}, clear=False):
-            self.assertEqual(allowed_processing_modes({"uid": "ordinary-user"}), ["baseline"])
-            with self.assertRaises(PermissionError):
-                authorize_processing_mode({"uid": "ordinary-user"}, "concurrent")
+    def test_all_signed_in_users_receive_trial_modes(self):
+        identity = {"uid": "ordinary-user"}
+        self.assertEqual(
+            allowed_processing_modes(identity),
+            ["baseline", "concurrent", "streaming"],
+        )
+        self.assertEqual(authorize_processing_mode(identity, "concurrent"), "concurrent")
 
-    def test_authorized_testers_receive_all_modes(self):
-        with patch.dict("os.environ", {"FINISPEAK_PROCESSING_TESTER_UIDS": "tester-1"}, clear=False):
-            self.assertEqual(
-                allowed_processing_modes({"uid": "tester-1"}),
-                ["baseline", "concurrent", "streaming"],
-            )
+    def test_missing_identity_cannot_enable_experimental_modes(self):
+        self.assertEqual(allowed_processing_modes({}), ["baseline"])
+        with self.assertRaises(PermissionError):
+            authorize_processing_mode({}, "streaming")
 
 
 class AudioProcessingPipelineTests(unittest.TestCase):
@@ -81,24 +81,22 @@ class ProcessingModeControllerTests(unittest.TestCase):
         self.client = self.app.test_client()
 
     @patch("controllers.calls_controller.identity_or_response")
-    def test_capabilities_hide_experiments_from_ordinary_users(self, identity):
+    def test_capabilities_show_trial_modes_to_signed_in_users(self, identity):
         identity.return_value = ({"uid": "ordinary-user", "role": "customer"}, None)
-        with patch.dict("os.environ", {"FINISPEAK_PROCESSING_TESTER_UIDS": "tester-1"}, clear=False):
-            response = self.client.get("/api/calls/processing-capabilities")
+        response = self.client.get("/api/calls/processing-capabilities")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["modes"], ["baseline"])
-        self.assertFalse(response.get_json()["experimental"])
+        self.assertEqual(response.get_json()["modes"], ["baseline", "concurrent", "streaming"])
+        self.assertTrue(response.get_json()["experimental"])
 
     @patch("controllers.calls_controller.CallModel.set_processing_mode")
     @patch("controllers.calls_controller.identity_or_response")
     def test_mode_change_is_scoped_to_requesting_participant(self, identity, set_mode):
         identity.return_value = ({"uid": "tester-1", "role": "customer"}, None)
         set_mode.return_value = {"id": "call-1", "processingModes": {"tester-1": "streaming"}}
-        with patch.dict("os.environ", {"FINISPEAK_PROCESSING_TESTER_UIDS": "tester-1"}, clear=False):
-            response = self.client.patch(
-                "/api/calls/call-1/processing-mode",
-                json={"processingMode": "streaming"},
-            )
+        response = self.client.patch(
+            "/api/calls/call-1/processing-mode",
+            json={"processingMode": "streaming"},
+        )
         self.assertEqual(response.status_code, 200)
         set_mode.assert_called_once_with("call-1", "tester-1", "streaming")
 

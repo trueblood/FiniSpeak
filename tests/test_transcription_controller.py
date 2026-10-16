@@ -56,21 +56,20 @@ class TranscriptionControllerTests(unittest.TestCase):
 
         verify_participant.return_value = {"uid": "tester-1", "role": "customer"}
         transcribe_pcm.return_value = {"text": "", "language": None, "languageConfidence": None}
-        with patch.dict("os.environ", {"FINISPEAK_PROCESSING_TESTER_UIDS": "tester-1"}, clear=False):
-            for mode in ("concurrent", "streaming"):
-                with self.subTest(mode=mode):
-                    socket = FakeSocket([
-                        json.dumps({
-                            "type": "start",
-                            "callId": "call",
-                            "sampleRate": 16000,
-                            "processingMode": mode,
-                        }),
-                        json.dumps({"type": "stop"}),
-                    ])
-                    handle_socket(socket)
-                    self.assertEqual(socket.sent[0]["type"], "ready")
-                    self.assertEqual(socket.sent[0]["processingMode"], mode)
+        for mode in ("concurrent", "streaming"):
+            with self.subTest(mode=mode):
+                socket = FakeSocket([
+                    json.dumps({
+                        "type": "start",
+                        "callId": "call",
+                        "sampleRate": 16000,
+                        "processingMode": mode,
+                    }),
+                    json.dumps({"type": "stop"}),
+                ])
+                handle_socket(socket)
+                self.assertEqual(socket.sent[0]["type"], "ready")
+                self.assertEqual(socket.sent[0]["processingMode"], mode)
 
     @patch("controllers.transcription_controller.record_language_event")
     @patch("services.audio_processing_service.transcribe_pcm")
@@ -103,8 +102,7 @@ class TranscriptionControllerTests(unittest.TestCase):
         timer = threading.Timer(0.05, release_worker.set)
         timer.start()
         try:
-            with patch.dict("os.environ", {"FINISPEAK_PROCESSING_TESTER_UIDS": "tester-1"}, clear=False):
-                handle_socket(socket)
+            handle_socket(socket)
         finally:
             timer.cancel()
         message_types = [message["type"] for message in socket.sent]

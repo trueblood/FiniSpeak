@@ -164,12 +164,11 @@ Install the new dependencies with:
 pip install -r requirements.txt
 ```
 
-The WebSocket verifies the first-party session and call membership. Baseline is the production default. Authorized testers listed in `FINISPEAK_PROCESSING_TESTER_UIDS` can compare Concurrent and Streaming from the call screen; the selection is stored per participant, not globally. Optional transcription settings:
+The WebSocket verifies the first-party session and call membership. Baseline is the production default. During the current production trial, every signed-in user can compare Concurrent and Streaming from the call screen; the selection is stored per participant, not globally. Optional transcription settings:
 
 ```env
 OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe
 TRANSCRIPTION_CHUNK_SECONDS=5.0
-FINISPEAK_PROCESSING_TESTER_UIDS=user-id-1,user-id-2
 CONCURRENT_TRANSCRIPTION_WORKERS=2
 STREAMING_TRANSCRIPTION_CHUNK_SECONDS=1.5
 TRANSCRIPTION_ESTIMATED_USD_PER_MINUTE=0
@@ -177,7 +176,7 @@ TRANSCRIPTION_ESTIMATED_USD_PER_MINUTE=0
 
 Concurrent keeps microphone capture running while background workers process complete chunks. Streaming uses shorter server chunks and shows browser speech-recognition partials where supported, while only finalized server results are saved. During a mode change, the prior pipeline drains, new microphone frames are buffered, and the next pipeline receives that buffer without replacing the WebRTC connection.
 
-For local testing, start the app with a local MySQL database (or the development SQLite fallback), sign in with a user ID included in `FINISPEAK_PROCESSING_TESTER_UIDS`, and start a call from `http://localhost:8080`. Select either experimental mode before the call, or switch while connected. Development diagnostics are shown only on localhost.
+For local testing, start the app with a local MySQL database (or the development SQLite fallback), sign in, and start a call from `http://localhost:8080`. Select either experimental mode before the call, or switch while connected. Development diagnostics are shown only on localhost.
 
 ## Dashboard, incoming calls, and transcript history
 

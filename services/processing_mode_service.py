@@ -1,6 +1,3 @@
-import os
-
-
 PROCESSING_MODES = {"baseline", "concurrent", "streaming"}
 
 
@@ -12,8 +9,8 @@ def normalize_processing_mode(value):
 
 
 def is_processing_tester(identity):
-    allowed = {uid.strip() for uid in os.getenv("FINISPEAK_PROCESSING_TESTER_UIDS", "").split(",") if uid.strip()}
-    return bool(identity and identity.get("uid") in allowed)
+    # All signed-in users are participating in the current production trial.
+    return bool(identity and identity.get("uid"))
 
 
 def allowed_processing_modes(identity):
@@ -23,5 +20,5 @@ def allowed_processing_modes(identity):
 def authorize_processing_mode(identity, value):
     mode = normalize_processing_mode(value)
     if mode != "baseline" and not is_processing_tester(identity):
-        raise PermissionError("Experimental audio processing is limited to authorized testers.")
+        raise PermissionError("Experimental audio processing requires a signed-in user.")
     return mode
