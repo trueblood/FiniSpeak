@@ -267,6 +267,17 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertNotIn("firebase", browser)
         self.assertNotIn("google-github-actions", workflow)
 
+    def test_completed_cutover_deployments_skip_legacy_firebase_checks(self):
+        root = Path(__file__).parents[1]
+        deployment = (root / "scripts/deploy_test_server.sh").read_text()
+        marker_branch = deployment.index('if test -f "$DEPLOYMENT_MARKER"; then')
+        migration_install = deployment.index('requirements-migration.txt')
+        initial_cutover_else = deployment.index("else", marker_branch)
+        self.assertLess(marker_branch, initial_cutover_else)
+        self.assertLess(initial_cutover_else, migration_install)
+        self.assertIn("POST-CUTOVER MYSQL DEPLOYMENT legacy Firebase checks skipped", deployment)
+        self.assertIn('if test "$initial_cutover" = true; then', deployment)
+
     def test_operator_scripts_run_from_outside_repository(self):
         root = Path(__file__).parents[1]
         scripts = (

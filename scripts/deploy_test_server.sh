@@ -33,7 +33,7 @@ set +a
 
 for key in MYSQL_HOST MYSQL_PORT MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD \
   OPENAI_API_KEY FINISPEAK_API_KEY_PEPPER FINISPEAK_JWT_SECRET \
-  FINISPEAK_STORAGE_ROOT FIREBASE_STORAGE_BUCKET; do
+  FINISPEAK_STORAGE_ROOT; do
   test -n "${!key:-}" || fail "required setting is missing: $key"
 done
 test "$MYSQL_DATABASE" = finispeak || fail "refusing non-finispeak deployment database"
@@ -83,13 +83,22 @@ activation_report="$CUTOVER_ROOT/account-activation-readiness-${COMMIT_SHA}.json
 run_service ./venv/bin/python scripts/check_account_activation_readiness.py > "$activation_report"
 chmod 0600 "$activation_report"
 
-if ! test -x "$MIGRATION_VENV/bin/python"; then
-  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$MIGRATION_VENV"
-  run_service python3 -m venv "$MIGRATION_VENV"
+initial_cutover=false
+if test -f "$DEPLOYMENT_MARKER"; then
+  test -f "$STORAGE_MARKER" || fail "completed cutover has no storage marker"
+  echo "POST-CUTOVER MYSQL DEPLOYMENT legacy Firebase checks skipped"
+else
+  initial_cutover=true
+  test -n "${FIREBASE_STORAGE_BUCKET:-}" || fail "initial cutover requires FIREBASE_STORAGE_BUCKET"
+  test -f "$MIGRATION_CREDENTIAL" || fail "initial cutover requires the migration-only Firebase credential"
+  if ! test -x "$MIGRATION_VENV/bin/python"; then
+    install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$MIGRATION_VENV"
+    run_service python3 -m venv "$MIGRATION_VENV"
+  fi
+  chown -R "$SERVICE_USER:$SERVICE_USER" "$MIGRATION_VENV"
+  run_service "$MIGRATION_VENV/bin/python" -m pip install --disable-pip-version-check \
+    -r "$APP_ROOT/requirements-migration.txt"
 fi
-chown -R "$SERVICE_USER:$SERVICE_USER" "$MIGRATION_VENV"
-run_service "$MIGRATION_VENV/bin/python" -m pip install --disable-pip-version-check \
-  -r "$APP_ROOT/requirements-migration.txt"
 
 run_storage_migration() {
   local report="$1"; shift
@@ -108,7 +117,6 @@ run_storage_migration() {
 
 storage_summary="$CUTOVER_ROOT/storage-summary-${COMMIT_SHA}.json"
 if ! test -f "$STORAGE_MARKER"; then
-  test -f "$MIGRATION_CREDENTIAL" || fail "migration-only Firebase credential is missing"
   dry_report="$CUTOVER_ROOT/storage-dry-${COMMIT_SHA}.json"
   apply_report="$CUTOVER_ROOT/storage-apply-${COMMIT_SHA}.json"
   replay_report="$CUTOVER_ROOT/storage-replay-${COMMIT_SHA}.json"
@@ -130,17 +138,18 @@ run_service env FINISPEAK_STORAGE_OWNER="$SERVICE_USER" \
   > "$CUTOVER_ROOT/storage-integrity-${COMMIT_SHA}.json"
 chmod 0600 "$CUTOVER_ROOT/storage-integrity-${COMMIT_SHA}.json"
 
-# This is read-only. MySQL-only additions are expected after the earlier
-# cutover; missing or changed imported records still fail reconciliation.
-test -f "$MIGRATION_CREDENTIAL" || fail "migration-only Firebase credential is missing"
-reconciliation="$CUTOVER_ROOT/reconciliation-${COMMIT_SHA}.log"
-GOOGLE_APPLICATION_CREDENTIALS="$MIGRATION_CREDENTIAL" \
-FIREBASE_CREDENTIALS="$MIGRATION_CREDENTIAL" \
-FINISPEAK_ENV=migration \
-  run_service "$MIGRATION_VENV/bin/python" scripts/reconcile_firestore_mysql.py \
-  --allow-target-additions > "$reconciliation" 2>&1
-chmod 0600 "$reconciliation"
-echo "RECONCILIATION VERIFIED sha256=$(sha256sum "$reconciliation" | awk '{print $1}')"
+if test "$initial_cutover" = true; then
+  # The legacy source is consulted once to prove the cutover. After the marker
+  # is written, MySQL is authoritative and ordinary deployments stay Firebase-free.
+  reconciliation="$CUTOVER_ROOT/reconciliation-${COMMIT_SHA}.log"
+  GOOGLE_APPLICATION_CREDENTIALS="$MIGRATION_CREDENTIAL" \
+  FIREBASE_CREDENTIALS="$MIGRATION_CREDENTIAL" \
+  FINISPEAK_ENV=migration \
+    run_service "$MIGRATION_VENV/bin/python" scripts/reconcile_firestore_mysql.py \
+    --allow-target-additions > "$reconciliation" 2>&1
+  chmod 0600 "$reconciliation"
+  echo "INITIAL RECONCILIATION VERIFIED sha256=$(sha256sum "$reconciliation" | awk '{print $1}')"
+fi
 
 attestation="$CUTOVER_ROOT/deployment-attestation-${COMMIT_SHA}.txt"
 {
@@ -148,7 +157,11 @@ attestation="$CUTOVER_ROOT/deployment-attestation-${COMMIT_SHA}.txt"
   echo "schema=20261014_0003"
   echo "database=finispeak"
   echo "storage_marker=$(test -f "$STORAGE_MARKER" && echo present)"
-  sha256sum "$reconciliation"
+  if test "$initial_cutover" = true; then
+    sha256sum "$reconciliation"
+  else
+    sha256sum "$DEPLOYMENT_MARKER"
+  fi
   sha256sum "$CUTOVER_ROOT/storage-integrity-${COMMIT_SHA}.json"
   sha256sum "$activation_report"
   if test -f "$storage_summary"; then sha256sum "$storage_summary"; fi

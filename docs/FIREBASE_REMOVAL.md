@@ -137,12 +137,13 @@ On the first successful run it performs this ordered transaction boundary:
    deletion, session revocation, signaling, readiness, and routing checks.
 
 Completion markers and aggregate evidence are mode 0600 under
-`/var/lib/finispeak/cutover`. Later deployments skip the completed schema and
-Storage imports, re-verify files, and create a fresh read-only reconciliation
-attestation. Firebase source objects are never modified or deleted. Migration
-credentials remain outside the release and are passed only to the two
-migration/reconciliation processes; they are not present in the service
-process environment.
+`/var/lib/finispeak/cutover`. After the completed deployment marker exists,
+MySQL is authoritative: later deployments do not install Firebase migration
+dependencies, require Firebase credentials, access Firestore, or repeat the
+legacy reconciliation. They continue to verify the schema, private files,
+application readiness, authentication, and service health. Firebase source
+objects are never modified or deleted, and the original cutover evidence is
+retained for audit and recovery.
 
 If the workflow fails before restart, the old process remains running and the
 additive `0003` schema is safe for it. If it fails after restart, inspect the
