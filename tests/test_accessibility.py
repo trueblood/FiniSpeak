@@ -64,6 +64,13 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertEqual(self.html.count('data-processing-mode="concurrent" aria-pressed="false"'), 2)
         self.assertEqual(self.html.count('data-processing-mode="streaming" aria-pressed="false"'), 2)
 
+    def test_every_phone_input_has_a_country_code_selector(self):
+        self.assertEqual(self.html.count('type="tel"'), 4)
+        self.assertEqual(self.html.count('data-phone-country'), 4)
+        for prefix in ("signupPhone", "receiverPhone", "profilePhone", "interpreterPhone"):
+            self.assertIn(f'id="{prefix}Country"', self.html)
+            self.assertIn(f'id="{prefix}" type="tel" autocomplete="tel-national"', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()

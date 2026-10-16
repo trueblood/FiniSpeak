@@ -61,8 +61,17 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('id="signupPhone" type="tel"', html)
         self.assertIn('id="profilePhone" type="tel"', html)
         self.assertIn('id="receiverPhone" type="tel"', html)
+        self.assertIn('id="interpreterPhone" type="tel"', html)
+        self.assertEqual(html.count('data-phone-country'), 4)
         self.assertIn('id="incomingCallModal"', html)
         self.assertIn('id="acceptIncomingCall"', html)
+
+    def test_phone_forms_submit_country_code_with_national_number(self):
+        script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        for phone_id in ("signupPhone", "profilePhone", "interpreterPhone", "receiverPhone"):
+            self.assertIn(f'completePhoneNumber("{phone_id}")', script)
+        self.assertIn('countryCode !== "+39"', script)
+        self.assertIn('return `${countryCode}${nationalDigits}`', script)
 
     def test_call_media_fails_safely_before_creating_a_call_on_http(self):
         script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()

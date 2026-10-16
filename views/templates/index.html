@@ -96,7 +96,7 @@
             <div class="section-heading"><span class="eyebrow">FiniSpeak account</span><h2 id="authTitle">Sign in</h2></div>
             <form id="authForm">
                 <label id="nameField" class="hidden">Name<input id="displayName" autocomplete="name"></label>
-                <label id="phoneField" class="hidden">Phone number<input id="signupPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="For example, +1 317 555 0123" aria-describedby="signupPhoneHelp"><small id="signupPhoneHelp">Used only so other registered FiniSpeak users can call you inside the app.</small></label>
+                <label id="phoneField" class="hidden">Phone number<span class="phone-input-group"><select id="signupPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="signupPhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="317 555 0123" aria-describedby="signupPhoneHelp"></span><small id="signupPhoneHelp">Used only so other registered FiniSpeak users can call you inside the app.</small></label>
                 <label id="emailField">Email<input id="email" type="email" autocomplete="email" required></label>
                 <label>Password<input id="password" type="password" minlength="12" required></label>
                 <label id="roleField" class="hidden">Account type
@@ -159,7 +159,7 @@
                                 <form id="callForm">
                                     <label for="receiverEmail">FiniSpeak email</label><input id="receiverEmail" type="email" autocomplete="email" placeholder="Enter their FiniSpeak email">
                                     <div class="call-method-separator" aria-hidden="true"><span>or</span></div>
-                                    <label for="receiverPhone">Phone number</label><input id="receiverPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="Enter their saved phone number" aria-describedby="receiverPhoneHelp">
+                                    <label for="receiverPhone">Phone number</label><div class="phone-input-group"><select id="receiverPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="receiverPhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="Enter their saved phone number" aria-describedby="receiverPhoneHelp"></div>
                                     <p id="receiverPhoneHelp" class="field-help call-phone-help">This starts a secure in-app call. It does not dial a cellular or landline number.</p>
                                     <fieldset id="preCallProcessingModes" class="processing-mode-panel hidden"><legend>Experimental transcription logging</legend><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Streaming</button></div><small>Active method: <strong data-active-processing-label>Baseline</strong>. Select again to return to baseline.</small></fieldset>
                                     <button type="submit">Start in-app call</button>
@@ -200,7 +200,7 @@
                         <form id="profileForm">
                             <div class="profile-field"><label for="profileDisplayName">Display name</label><input id="profileDisplayName" autocomplete="name" required></div>
                             <div class="profile-field"><label for="profileEmail">Email</label><input id="profileEmail" type="email" disabled aria-describedby="emailHelp"><p id="emailHelp" class="field-help">Your sign-in email cannot be changed here yet.</p></div>
-                            <div class="profile-field"><label for="profilePhone">Phone number for in-app calls</label><input id="profilePhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="For example, +1 317 555 0123" aria-describedby="profilePhoneHelp"><p id="profilePhoneHelp" class="field-help">Other FiniSpeak users can enter this number to reach you inside the app. FiniSpeak does not place telephone-network calls.</p></div>
+                            <div class="profile-field"><label for="profilePhone">Phone number for in-app calls</label><div class="phone-input-group"><select id="profilePhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="profilePhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="317 555 0123" aria-describedby="profilePhoneHelp"></div><p id="profilePhoneHelp" class="field-help">Other FiniSpeak users can enter this number to reach you inside the app. FiniSpeak does not place telephone-network calls.</p></div>
                             <div class="profile-field"><label for="profileRole">Account type</label><input id="profileRole" disabled></div>
                             <button type="submit">Save profile</button>
                         </form>
@@ -245,7 +245,7 @@
                     <form id="interpreterProfileForm" class="interpreter-form">
                         <div class="card form-section" data-wizard-panel="0"><span class="eyebrow">Step 1 of 5</span><h3 tabindex="-1">Personal information</h3>
                             <div class="profile-photo-row"><div id="interpreterPhotoPreview" class="interpreter-photo-placeholder" aria-hidden="true">Photo</div><div><label for="interpreterPhoto">Profile photo</label><input id="interpreterPhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="field-help">JPG, PNG, or WebP. Your current photo stays in place unless you choose a new one.</p></div></div>
-                            <div class="form-grid"><label for="interpreterFullName">Full name<input id="interpreterFullName" autocomplete="name" required></label><label for="interpreterPhone">Phone number<input id="interpreterPhone" type="tel" autocomplete="tel" placeholder="(555) 555-5555"></label></div>
+                            <div class="form-grid"><label for="interpreterFullName">Full name<input id="interpreterFullName" autocomplete="name" required></label><label for="interpreterPhone">Phone number<span class="phone-input-group"><select id="interpreterPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="interpreterPhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="555 555 5555"></span></label></div>
                             <label for="interpreterBio">Professional bio<textarea id="interpreterBio" rows="4" maxlength="800" placeholder="Tell customers about your interpretation background and approach." required></textarea></label>
                         </div>
                         <div class="card form-section hidden" data-wizard-panel="1"><span class="eyebrow">Step 2 of 5</span><h3 tabindex="-1">Languages and specialties</h3>

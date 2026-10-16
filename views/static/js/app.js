@@ -54,6 +54,25 @@ const detectedLanguageNames = {
     hi: "Hindi", it: "Italian", ja: "Japanese", ko: "Korean", pt: "Portuguese", ru: "Russian",
     so: "Somali", tl: "Tagalog", uk: "Ukrainian", ur: "Urdu", vi: "Vietnamese", zh: "Mandarin Chinese"
 };
+const phoneCountries = [
+    ["US", "United States", "+1"], ["CA", "Canada", "+1"], ["DO", "Dominican Republic", "+1"], ["JM", "Jamaica", "+1"],
+    ["MX", "Mexico", "+52"], ["BR", "Brazil", "+55"], ["AR", "Argentina", "+54"], ["CO", "Colombia", "+57"], ["HT", "Haiti", "+509"],
+    ["GB", "United Kingdom", "+44"], ["IE", "Ireland", "+353"], ["FR", "France", "+33"], ["ES", "Spain", "+34"],
+    ["PT", "Portugal", "+351"], ["DE", "Germany", "+49"], ["IT", "Italy", "+39"], ["NL", "Netherlands", "+31"],
+    ["BE", "Belgium", "+32"], ["CH", "Switzerland", "+41"], ["AT", "Austria", "+43"], ["SE", "Sweden", "+46"],
+    ["NO", "Norway", "+47"], ["DK", "Denmark", "+45"], ["PL", "Poland", "+48"], ["UA", "Ukraine", "+380"],
+    ["RU", "Russia", "+7"], ["TR", "Türkiye", "+90"], ["RO", "Romania", "+40"], ["GR", "Greece", "+30"],
+    ["MA", "Morocco", "+212"], ["DZ", "Algeria", "+213"], ["EG", "Egypt", "+20"], ["NG", "Nigeria", "+234"],
+    ["GH", "Ghana", "+233"], ["KE", "Kenya", "+254"], ["ET", "Ethiopia", "+251"], ["SO", "Somalia", "+252"],
+    ["ZA", "South Africa", "+27"], ["SA", "Saudi Arabia", "+966"], ["AE", "United Arab Emirates", "+971"],
+    ["QA", "Qatar", "+974"], ["KW", "Kuwait", "+965"], ["OM", "Oman", "+968"], ["IL", "Israel", "+972"],
+    ["JO", "Jordan", "+962"], ["LB", "Lebanon", "+961"], ["IQ", "Iraq", "+964"], ["IR", "Iran", "+98"],
+    ["IN", "India", "+91"], ["PK", "Pakistan", "+92"], ["BD", "Bangladesh", "+880"], ["NP", "Nepal", "+977"],
+    ["LK", "Sri Lanka", "+94"], ["CN", "China", "+86"], ["HK", "Hong Kong", "+852"], ["TW", "Taiwan", "+886"],
+    ["JP", "Japan", "+81"], ["KR", "South Korea", "+82"], ["VN", "Vietnam", "+84"], ["PH", "Philippines", "+63"],
+    ["TH", "Thailand", "+66"], ["MY", "Malaysia", "+60"], ["SG", "Singapore", "+65"], ["ID", "Indonesia", "+62"],
+    ["AU", "Australia", "+61"], ["NZ", "New Zealand", "+64"]
+];
 const profilePhotoTypes = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -76,6 +95,7 @@ function callErrorDetails(error, stage) {
 }
 
 async function boot() {
+    initializePhoneFields();
     bindUI();
     loadFeaturedProfiles();
     const actionPath = location.pathname === "/verify-email" || location.pathname === "/reset-password";
@@ -318,7 +338,7 @@ async function submitAuth(e) {
         }
         const email = $("email").value.trim(), password = $("password").value;
         if (signupMode) {
-            const phone = $("signupPhone").value.trim();
+            const phone = completePhoneNumber("signupPhone");
             normalizePhoneNumber(phone);
             const name = $("displayName").value.trim() || email.split("@")[0];
             const role = $("role").value;
@@ -460,7 +480,7 @@ function hydrateDashboardProfile() {
     $("profileInitials").textContent = name.split(/\s+/).filter(Boolean).slice(0,2).map(part => part[0]).join("").toUpperCase() || "FS";
     $("profileDisplayName").value = currentProfile.displayName || "";
     $("profileEmail").value = currentProfile.email || currentUser?.email || "";
-    $("profilePhone").value = currentProfile.phone || "";
+    setPhoneFieldValue("profilePhone", currentProfile.phone || "");
     $("profileRole").value = roleLabel;
     $("settingsEmail").textContent = currentProfile.email || currentUser?.email || "";
 }
@@ -1181,6 +1201,38 @@ function normalizePhoneNumber(value = "") {
     return digits;
 }
 
+function initializePhoneFields() {
+    const options = phoneCountries.map(([iso, name, code]) =>
+        `<option value="${code}" data-country="${iso}">${iso} ${code} — ${name}</option>`
+    ).join("");
+    document.querySelectorAll("[data-phone-country]").forEach(select => {
+        select.innerHTML = options;
+        select.value = "+1";
+    });
+}
+
+function completePhoneNumber(inputId) {
+    const input = $(inputId);
+    const raw = input.value.trim();
+    if (!raw) return "";
+    if (raw.startsWith("+")) return `+${normalizePhoneNumber(raw)}`;
+    const countryCode = $(`${inputId}Country`).value;
+    let nationalDigits = normalizePhoneNumber(raw);
+    if (countryCode !== "+39") nationalDigits = nationalDigits.replace(/^0/, "");
+    return `${countryCode}${nationalDigits}`;
+}
+
+function setPhoneFieldValue(inputId, value = "") {
+    const input = $(inputId), select = $(`${inputId}Country`), raw = String(value || "").trim();
+    if (!raw) { input.value = ""; return; }
+    const digits = raw.replace(/\D/g, "");
+    if (!raw.startsWith("+")) { input.value = raw; return; }
+    const codes = [...new Set(phoneCountries.map(([, , code]) => code))].sort((a, b) => b.length - a.length);
+    const matchedCode = codes.find(code => digits.startsWith(code.slice(1))) || "+1";
+    select.value = matchedCode;
+    input.value = digits.slice(matchedCode.length - 1);
+}
+
 function profileTimestampMillis(value) {
     if (!value) return 0;
     if (typeof value.toMillis === "function") return value.toMillis();
@@ -1205,7 +1257,7 @@ async function saveProfile(e) {
     e.preventDefault();
     const status = $("profileStatus");
     const displayName = $("profileDisplayName").value.trim();
-    const phone = $("profilePhone").value.trim();
+    const phone = completePhoneNumber("profilePhone");
     if (!displayName) { status.textContent = "Enter a display name."; return; }
     status.textContent = "Saving…";
     try {
@@ -1370,7 +1422,7 @@ async function addTagFromInput(kind) {
 function hydrateInterpreterProfile(profile = {}) {
     const p = profile;
     $("interpreterFullName").value = p.displayName || currentProfile.displayName || "";
-    $("interpreterPhone").value = p.phone || "";
+    setPhoneFieldValue("interpreterPhone", p.phone || "");
     $("interpreterBio").value = p.bio || "";
     setSelectedTags("languages", p.languages || []);
     setSelectedTags("dialects", p.dialects || []);
@@ -1571,7 +1623,7 @@ function interpreterFormData() {
     const experienceValue = $("interpreterYears").value.trim();
     return {
         displayName: $("interpreterFullName").value.trim(),
-        phone: $("interpreterPhone").value.trim(),
+        phone: completePhoneNumber("interpreterPhone"),
         bio: $("interpreterBio").value.trim(),
         languages: [...selectedTags.languages],
         dialects: [...selectedTags.dialects],
@@ -1814,7 +1866,7 @@ async function createCall(e) {
         stage = "media-security-preflight";
         requireMediaCapture();
         const receiverEmail = $("receiverEmail").value.trim().toLowerCase();
-        const receiverPhone = $("receiverPhone").value.trim();
+        const receiverPhone = completePhoneNumber("receiverPhone");
         const phoneNormalized = receiverEmail ? "" : normalizePhoneNumber(receiverPhone);
         if (!receiverEmail && !phoneNormalized) throw new Error("Enter a FiniSpeak email or saved phone number.");
         stage = "customer-directory-lookup";
