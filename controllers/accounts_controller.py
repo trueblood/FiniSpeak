@@ -39,7 +39,10 @@ def update_current():
     phone = str(data.get("phone") or "").strip()
     if not display_name or len(display_name) > 160 or len(phone) > 64:
         return jsonify({"error": "A valid displayName and phone are required"}), 400
-    account = AccountModel.update_profile(identity["uid"], {"displayName": display_name, "phone": phone})
+    try:
+        account = AccountModel.update_profile(identity["uid"], {"displayName": display_name, "phone": phone})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return (jsonify({"account": account}), 200) if account else (jsonify({"error": "Account not found"}), 404)
 
 

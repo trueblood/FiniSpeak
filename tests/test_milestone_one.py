@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app import create_app
-from repositories.normalization import normalize_phone
+from repositories.normalization import canonicalize_phone, normalize_phone
 
 
 class MilestoneOneApiTests(unittest.TestCase):
@@ -47,6 +47,8 @@ class MilestoneOneApiTests(unittest.TestCase):
 
     def test_phone_normalization_is_format_independent(self):
         self.assertEqual(normalize_phone("+1 (317) 555-0123"), "13175550123")
+        self.assertEqual(canonicalize_phone("(317) 555-0123"), "+13175550123")
+        self.assertEqual(canonicalize_phone("+44 20 7946 0958"), "+442079460958")
         self.assertEqual(normalize_phone("123"), "")
 
     @patch("controllers.discovery_controller.TranslatorModel.search")

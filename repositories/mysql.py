@@ -16,7 +16,7 @@ from models.sql_models import (
     SqlParticipant, SqlReferenceDialect, SqlReferenceLanguage,
     SqlReferenceSpecialty, SqlReview, SqlTranscript, SqlTranslator, SqlTransactionalOutbox, SqlUser,
 )
-from repositories.normalization import normalize_email, normalize_phone
+from repositories.normalization import canonicalize_phone, normalize_email, normalize_phone
 from services.geo_service import haversine_miles, validate_coordinates
 
 
@@ -162,8 +162,8 @@ class MySqlAccountRepository:
     def find_by_phone(self, phone):
         value = normalize_phone(phone)
         if not value: return None
-        row = self.session.scalar(select(SqlUser).where(SqlUser.phone_normalized == value).limit(1))
-        return self._lookup(row, include_phone=True)
+        rows = self.session.scalars(select(SqlUser).where(SqlUser.phone_normalized == value).limit(2)).all()
+        return self._lookup(rows[0], include_phone=True) if len(rows) == 1 else None
 
     @staticmethod
     def _lookup(row, include_phone):
@@ -189,9 +189,14 @@ class MySqlAccountRepository:
             return _document(existing, ACCOUNT_FIELDS, "uid")
         role = "customer"
         now = _now(); email = normalize_email(identity.get("email"))
-        phone = str(data.get("phone") or "").strip()
+        supplied_phone = str(data.get("phone") or "").strip()
+        phone = canonicalize_phone(supplied_phone)
+        if supplied_phone and not phone: raise ValueError("Enter a valid phone number including its country code.")
+        phone_normalized = normalize_phone(phone)
+        if phone_normalized and self.session.scalar(select(SqlUser.id).where(SqlUser.phone_normalized == phone_normalized).limit(1)):
+            raise ValueError("That phone number is already connected to another FiniSpeak account.")
         payload = {"uid": uid, "email": email, "displayName": str(data.get("displayName") or identity.get("displayName") or email).strip(),
-                   "phone": phone, "phoneNormalized": normalize_phone(phone), "role": role, "status": "active", "createdAt": now, "updatedAt": now}
+                   "phone": phone, "phoneNormalized": phone_normalized, "role": role, "status": "active", "createdAt": now, "updatedAt": now}
         try:
             self.session.add(SqlUser(id=uid, email_normalized=email, raw_document=_json_safe(payload), migrated_at=now, mutation_version=1, **{column: payload.get(api) for api, column in ACCOUNT_FIELDS.items()}))
             _commit(self.session)
@@ -203,7 +208,15 @@ class MySqlAccountRepository:
         row = self.session.scalar(select(SqlUser).where(SqlUser.uid == uid).with_for_update())
         if not row: return None
         changes = {key: data[key] for key in ("displayName", "phone") if key in data}
-        if "phone" in changes: changes["phoneNormalized"] = normalize_phone(changes["phone"])
+        if "phone" in changes:
+            supplied_phone = str(changes["phone"] or "").strip()
+            changes["phone"] = canonicalize_phone(supplied_phone)
+            if supplied_phone and not changes["phone"]: raise ValueError("Enter a valid phone number including its country code.")
+            changes["phoneNormalized"] = normalize_phone(changes["phone"])
+            duplicate = self.session.scalar(select(SqlUser.id).where(
+                SqlUser.phone_normalized == changes["phoneNormalized"], SqlUser.uid != uid
+            ).limit(1)) if changes["phoneNormalized"] else None
+            if duplicate: raise ValueError("That phone number is already connected to another FiniSpeak account.")
         changes["updatedAt"] = _now(); _touch(row, changes, ACCOUNT_FIELDS); _commit(self.session)
         return _document(row, ACCOUNT_FIELDS, "uid")
 
@@ -321,6 +334,12 @@ class MySqlTranslatorRepository:
             raise ValueError("Interpreter profile not found.")
         private = self.session.scalar(select(SqlInterpreterPrivate).where(SqlInterpreterPrivate.id == translator_id).with_for_update())
         now = _now()
+        private_data = dict(private_data)
+        if "phone" in private_data:
+            supplied_phone = str(private_data["phone"] or "").strip()
+            private_data["phone"] = canonicalize_phone(supplied_phone)
+            if supplied_phone and not private_data["phone"]:
+                raise ValueError("Enter a valid phone number including its country code.")
         try:
             raw = _raw(public)
             for sensitive_key in ("email", "phone", "credentialDocuments", "verificationNotes"):
@@ -351,8 +370,10 @@ class MySqlTranslatorRepository:
         account = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
         if not account:
             raise ValueError("Create the account before interpreter enrollment.")
+        canonical_phone = canonicalize_phone(phone)
+        if phone and not canonical_phone: raise ValueError("Enter a valid phone number including its country code.")
         now = _now(); public = {"uid": uid, "displayName": identity.get("displayName") or identity.get("email"), "onboardingStatus": "draft", "verificationStatus": "unverified", "languages": [], "dialects": [], "specialties": [], "credentials": [], "credentialStatus": "unsubmitted", "yearsExperience": 0, "availability": {"days": [], "start": "", "end": "", "availableNow": False}, "rating": None, "ratingCount": 0, "createdAt": now, "updatedAt": now}
-        private = {"uid": uid, "email": normalize_email(identity.get("email")), "phone": str(phone or ""), "credentialDocuments": [], "createdAt": now, "updatedAt": now}
+        private = {"uid": uid, "email": normalize_email(identity.get("email")), "phone": canonical_phone, "credentialDocuments": [], "createdAt": now, "updatedAt": now}
         translator = SqlTranslator(id=uid, raw_document=_json_safe(public), migrated_at=now, mutation_version=1, **{column: public.get(api) for api, column in TRANSLATOR_FIELDS.items()})
         self.session.add(translator)
         # These models intentionally do not expose an ORM relationship. Flush

@@ -1202,13 +1202,22 @@ function normalizePhoneNumber(value = "") {
 }
 
 function initializePhoneFields() {
-    const options = phoneCountries.map(([iso, name, code]) =>
-        `<option value="${code}" data-country="${iso}">${iso} ${code} — ${name}</option>`
-    ).join("");
     document.querySelectorAll("[data-phone-country]").forEach(select => {
-        select.innerHTML = options;
+        const options = phoneCountries.map(([iso, name, code]) => {
+            const option = document.createElement("option");
+            option.value = code;
+            option.dataset.country = iso;
+            option.textContent = `${countryFlag(iso)} ${iso} ${code}`;
+            option.title = `${name} (${code})`;
+            return option;
+        });
+        select.replaceChildren(...options);
         select.value = "+1";
     });
+}
+
+function countryFlag(iso) {
+    return [...iso.toUpperCase()].map(character => String.fromCodePoint(127397 + character.charCodeAt(0))).join("");
 }
 
 function completePhoneNumber(inputId) {

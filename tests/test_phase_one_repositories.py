@@ -93,6 +93,11 @@ class MySqlAccountRepositoryTests(unittest.TestCase):
         self.assertIsNone(repository.find_by_email(""))
         self.assertIsNone(repository.find_by_phone("not a phone"))
 
+    def test_duplicate_phone_lookup_fails_closed(self):
+        rows = [sql_user("user-1"), sql_user("user-2")]
+        repository = MySqlAccountRepository(FakeSession(scalar_rows=rows))
+        self.assertIsNone(repository.find_by_phone("+1 317 555 0100"))
+
     def test_failed_commit_rolls_back(self):
         row = sql_user()
         session = FakeSession({(SqlUser, "user-1"): row}, commit_error=RuntimeError("database unavailable"))

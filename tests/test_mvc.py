@@ -72,6 +72,8 @@ class MvcRouteTests(unittest.TestCase):
             self.assertIn(f'completePhoneNumber("{phone_id}")', script)
         self.assertIn('countryCode !== "+39"', script)
         self.assertIn('return `${countryCode}${nationalDigits}`', script)
+        self.assertIn("countryFlag(iso)", script)
+        self.assertIn('option.textContent = `${countryFlag(iso)} ${iso} ${code}`', script)
 
     def test_call_media_fails_safely_before_creating_a_call_on_http(self):
         script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()

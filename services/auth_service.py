@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from extensions import db
 from models.sql_models import SqlAuthCredential, SqlAuthRateLimit, SqlAuthSession, SqlAuthToken, SqlUser
-from repositories.normalization import normalize_email
+from repositories.normalization import canonicalize_phone, normalize_email, normalize_phone
 
 
 PASSWORD_HASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4, hash_len=32, salt_len=16)
@@ -116,16 +116,23 @@ def register_account(email, password, display_name, phone="", role="customer"):
         raise ValueError("A valid display name is required.")
     if not _password_valid(password):
         raise ValueError("Password must be 12–256 characters and contain letters and numbers.")
+    canonical_phone = canonicalize_phone(phone)
+    if phone and not canonical_phone:
+        raise ValueError("Enter a valid phone number including its country code.")
+    phone_normalized = normalize_phone(canonical_phone)
     existing = db.session.scalar(select(SqlUser).where(SqlUser.email_normalized == email).limit(1))
     if existing:
         if db.session.get(SqlAuthCredential, existing.id):
             raise ValueError("An account with that email already exists.")
         raise ValueError("This migrated account must be activated through password reset.")
+    if phone_normalized and db.session.scalar(select(SqlUser.id).where(SqlUser.phone_normalized == phone_normalized).limit(1)):
+        raise ValueError("That phone number is already connected to another FiniSpeak account.")
     now, user_id = _now(), uuid.uuid4().hex
-    raw = {"uid": user_id, "email": email, "displayName": display_name, "phone": str(phone or "").strip(),
+    raw = {"uid": user_id, "email": email, "displayName": display_name, "phone": canonical_phone,
+           "phoneNormalized": phone_normalized,
            "role": role, "status": "active", "createdAt": now.isoformat(), "updatedAt": now.isoformat()}
     user = SqlUser(id=user_id, uid=user_id, display_name=display_name, email=email, email_normalized=email,
-        phone=raw["phone"], role=role, status="active", created_at=now, updated_at=now,
+        phone=raw["phone"], phone_normalized=phone_normalized, role=role, status="active", created_at=now, updated_at=now,
         raw_document=raw, migrated_at=now, mutation_version=1)
     credential = SqlAuthCredential(user_id=user_id, email_normalized=email,
         password_hash=PASSWORD_HASHER.hash(password), password_changed_at=now, created_at=now, updated_at=now)

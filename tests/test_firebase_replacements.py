@@ -85,6 +85,23 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/auth/logout", headers=headers).status_code, 200)
         self.assertEqual(self.client.get("/api/auth/session", headers=headers).status_code, 401)
 
+    def test_registration_stores_e164_phone_and_rejects_duplicates(self):
+        with patch("controllers.auth_controller.send_account_link"):
+            first = self.client.post("/api/auth/register", json={
+                "email": "phone-one@example.test", "password": "CorrectHorse123",
+                "displayName": "Phone One", "phone": "(317) 555-0123",
+            })
+            duplicate = self.client.post("/api/auth/register", json={
+                "email": "phone-two@example.test", "password": "CorrectHorse123",
+                "displayName": "Phone Two", "phone": "+1 317 555 0123",
+            })
+        self.assertEqual(first.status_code, 201)
+        row = db.session.get(SqlUser, first.get_json()["user"]["uid"])
+        self.assertEqual(row.phone, "+13175550123")
+        self.assertEqual(row.phone_normalized, "13175550123")
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertIn("already connected", duplicate.get_json()["error"])
+
     def test_explicit_test_deployment_bypasses_registration_email_only(self):
         environment = {
             "FINISPEAK_TEST_DEPLOYMENT": "true",
