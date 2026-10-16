@@ -59,7 +59,7 @@ def handle_socket(ws):
 
             if not received_audio:
                 received_audio = True
-                ws.send(json.dumps({"type": "listening"}))
+                ws.send(json.dumps({"type": "listening", "generation": generation, "processingMode": mode}))
 
             for event in pipeline.feed(message): _send_pipeline_event(ws, event, tracker, call_id, confirmed_language)
     except Exception as exc:

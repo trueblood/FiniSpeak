@@ -32,7 +32,7 @@ class TranscriptionServiceTests(unittest.TestCase):
         request = create.call_args.kwargs
         self.assertEqual(request["model"], "gpt-transcribe")
         self.assertEqual(request["file"].name, "finispeak-audio.wav")
-        self.assertIn("FiniSpeak", request["extra_body"]["keywords"])
+        self.assertIn("FiniSpeak", request["keywords"])
 
     def test_short_audio_does_not_call_api(self):
         from services.transcription_service import transcribe_pcm

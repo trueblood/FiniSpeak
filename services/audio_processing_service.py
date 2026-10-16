@@ -18,6 +18,7 @@ class AudioProcessingPipeline:
         self.sequence = 0
         self.next_result = 0
         self.received_bytes = 0
+        self.last_capture_progress = -1
         self.started_at = time.perf_counter()
         seconds = (
             float(os.getenv("STREAMING_TRANSCRIPTION_CHUNK_SECONDS", "1.5"))
@@ -42,6 +43,18 @@ class AudioProcessingPipeline:
         self.buffer.extend(raw)
         self.received_bytes += len(raw)
         events = self.poll()
+        captured_seconds = self.received_bytes / 2 / self.sample_rate
+        progress_bucket = int(captured_seconds * 2)
+        if progress_bucket > self.last_capture_progress:
+            self.last_capture_progress = progress_bucket
+            events.append({
+                "type": "capture",
+                "capturedSeconds": round(captured_seconds, 2),
+                "bufferedSeconds": round(len(self.buffer) / 2 / self.sample_rate, 2),
+                "chunkSeconds": self.chunk_seconds,
+                "generation": self.generation,
+                "processingMode": self.mode,
+            })
         while len(self.buffer) >= self.target_bytes and (not self.executor or len(self.pending) < self.max_pending):
             chunk = bytes(self.buffer[:self.target_bytes])
             del self.buffer[:self.target_bytes]

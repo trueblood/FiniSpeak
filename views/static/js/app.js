@@ -10,7 +10,7 @@ let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = 
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let rtcConfiguration = { iceServers: [] };
-let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, currentCallRole = null;
+let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, transcriptionGain = null, currentCallRole = null;
 let selectedProcessingMode = "baseline", processingModesEnabled = false, transcriptionGeneration = Date.now();
 let transcriptionSwitching = false, transcriptionBufferedAudio = [], transcriptionBufferedBytes = 0, transcriptionStopResolver = null, browserSpeechRecognition = null;
 let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
@@ -2136,7 +2136,13 @@ async function ensureTranscriptionCapture() {
     transcriptionAudioContext = new (window.AudioContext || window.webkitAudioContext)();
     await transcriptionAudioContext.audioWorklet.addModule("/static/js/pcm-worklet.js");
     transcriptionSource=transcriptionAudioContext.createMediaStreamSource(new MediaStream(localStream.getAudioTracks())); transcriptionNode=new AudioWorkletNode(transcriptionAudioContext,"finispeak-pcm");
-    const gain=transcriptionAudioContext.createGain(); gain.gain.value=0; transcriptionSource.connect(transcriptionNode); transcriptionNode.connect(gain).connect(transcriptionAudioContext.destination);
+    transcriptionGain=transcriptionAudioContext.createGain(); transcriptionGain.gain.value=0; transcriptionSource.connect(transcriptionNode); transcriptionNode.connect(transcriptionGain).connect(transcriptionAudioContext.destination);
+    if (transcriptionAudioContext.state !== "running") await transcriptionAudioContext.resume();
+    if (transcriptionAudioContext.state !== "running") throw new Error("Microphone processing could not start. Click the page and try again.");
+    transcriptionAudioContext.onstatechange=()=>{
+        if (!transcriptionAudioContext || transcriptionAudioContext.state === "running" || !activeCallId) return;
+        $("transcriptionStatus").textContent="Microphone processing paused. Click the page to resume.";
+    };
     transcriptionNode.port.onmessage=event=>{ const floats=event.data, pcm=new Int16Array(floats.length); for(let i=0;i<floats.length;i++){const s=Math.max(-1,Math.min(1,floats[i]));pcm[i]=s<0?s*32768:s*32767;} if(transcriptionSwitching||!transcriptionSocket||transcriptionSocket.readyState!==WebSocket.OPEN) bufferTranscriptionAudio(pcm.buffer); else transcriptionSocket.send(pcm.buffer); };
 }
 function bufferTranscriptionAudio(buffer){
@@ -2148,7 +2154,7 @@ function flushTranscriptionAudio(){ if(!transcriptionSocket||transcriptionSocket
 async function openTranscriptionPipeline(callId,mode){
     const generation=++transcriptionGeneration, scheme=location.protocol==="https:"?"wss":"ws", socket=new WebSocket(`${scheme}://${location.host}/ws/transcription`); transcriptionSocket=socket;socket.binaryType="arraybuffer";
     return new Promise((resolve,reject)=>{let ready=false;socket.onopen=()=>socket.send(JSON.stringify({type:"start",callId,sampleRate:transcriptionAudioContext.sampleRate,processingMode:mode,generation,language:confirmedDetectedLanguage}));
-      socket.onmessage=async event=>{const m=JSON.parse(event.data);if(m.generation!==undefined&&m.generation!==generation)return;if(m.type==="ready"){ready=true;transcriptionSwitching=false;renderProcessingMode();flushTranscriptionAudio();startBrowserStreamingPartials(mode);$("transcriptionStatus").textContent=`${mode} connected`;$("processingModeStatus").textContent=`Running ${mode} for your microphone only.`;resolve();return;}if(m.type==="stopped"){transcriptionStopResolver?.();return;}if(m.type==="listening"){$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;return;}if(m.type==="processing"){$("transcriptionStatus").textContent=`Processing speech · ${mode}`;return;}if(m.type==="error"){const e=new Error(m.message);if(!ready){socket.close();reject(e);}else handleProcessingFailure(e);return;}if(m.type==="final"&&m.text?.trim()&&activeCallId===callId&&generation===transcriptionGeneration)await saveFinalTranscript(callId,m,mode,generation);};
+      socket.onmessage=async event=>{const m=JSON.parse(event.data);if(m.generation!==undefined&&m.generation!==generation)return;if(m.type==="ready"){ready=true;transcriptionSwitching=false;renderProcessingMode();flushTranscriptionAudio();startBrowserStreamingPartials(mode);$("transcriptionStatus").textContent=`Capturing microphone · ${mode}`;$("processingModeStatus").textContent=`Running ${mode} for your microphone only.`;resolve();return;}if(m.type==="stopped"){transcriptionStopResolver?.();return;}if(m.type==="listening"){$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;return;}if(m.type==="capture"){const buffered=Number(m.bufferedSeconds||0).toFixed(1),needed=Number(m.chunkSeconds||0).toFixed(1);$("transcriptionStatus").textContent=`Capturing speech ${buffered}s / ${needed}s · ${mode}`;return;}if(m.type==="processing"){$("transcriptionStatus").textContent=`Processing speech · ${mode}`;return;}if(m.type==="error"){const e=new Error(m.message);if(!ready){socket.close();reject(e);}else handleProcessingFailure(e);return;}if(m.type==="final"&&m.text?.trim()&&activeCallId===callId&&generation===transcriptionGeneration){try{await saveFinalTranscript(callId,m,mode,generation);}catch(error){console.error("Transcript save failed",error);$("transcriptionStatus").textContent=`Speech recognized, but saving failed: ${error.message}`;}}};
       socket.onerror=()=>{const e=new Error("Transcription connection error.");if(!ready){socket.close();reject(e);}else handleProcessingFailure(e);};socket.onclose=()=>{if(transcriptionSocket===socket)transcriptionSocket=null;};});
 }
 async function saveFinalTranscript(callId,m,mode,generation){
@@ -2353,7 +2359,8 @@ function stopTranscription(updateStatus = true) {
     transcriptionSocket = null;
     try { transcriptionNode?.disconnect(); } catch (_) {}
     try { transcriptionSource?.disconnect(); } catch (_) {}
-    transcriptionNode = null; transcriptionSource = null;
+    try { transcriptionGain?.disconnect(); } catch (_) {}
+    transcriptionNode = null; transcriptionSource = null; transcriptionGain = null;
     if (transcriptionAudioContext) transcriptionAudioContext.close().catch(() => {});
     transcriptionAudioContext = null;
     transcriptionSwitching=false;transcriptionBufferedAudio=[];transcriptionBufferedBytes=0;transcriptionStopResolver?.();transcriptionStopResolver=null;renderProcessingMode();

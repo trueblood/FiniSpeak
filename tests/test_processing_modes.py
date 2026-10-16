@@ -55,7 +55,7 @@ class AudioProcessingPipelineTests(unittest.TestCase):
             events = pipeline.feed(b"\x00" * pipeline.target_bytes)
             elapsed = time.perf_counter() - started
             self.assertLess(elapsed, 0.5)
-            self.assertEqual(events[0]["type"], "processing")
+            self.assertTrue(any(event["type"] == "processing" for event in events))
             release_worker.set()
             final = next(event for event in pipeline.finish() if event["type"] == "final")
             self.assertEqual(final["processingMode"], "concurrent")
@@ -71,6 +71,16 @@ class AudioProcessingPipelineTests(unittest.TestCase):
         self.assertEqual(pipeline.chunk_seconds, 0.5)
         self.assertEqual(final["processingMode"], "streaming")
         transcribe_pcm.assert_called_once()
+        pipeline.close()
+
+    @patch("services.audio_processing_service.transcribe_pcm", return_value=TRANSCRIPTION_RESULT)
+    def test_capture_progress_is_reported_before_a_full_chunk(self, _transcribe_pcm):
+        pipeline = AudioProcessingPipeline("concurrent", 16000, generation=10)
+        events = pipeline.feed(b"\x00" * 16000)
+        capture = next(event for event in events if event["type"] == "capture")
+        self.assertEqual(capture["capturedSeconds"], 0.5)
+        self.assertEqual(capture["bufferedSeconds"], 0.5)
+        self.assertEqual(capture["generation"], 10)
         pipeline.close()
 
 
@@ -119,6 +129,14 @@ class ProcessingModeBrowserContractTests(unittest.TestCase):
         self.assertIn("flushTranscriptionAudio()", script)
         self.assertIn("generation===transcriptionGeneration", script)
         self.assertIn('`${currentUser.uid}-${generation}-${m.sequence??0}`', script)
+
+    def test_capture_resumes_audio_context_and_surfaces_progress(self):
+        script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        worklet = (Path(__file__).parents[1] / "views/static/js/pcm-worklet.js").read_text()
+        self.assertIn("await transcriptionAudioContext.resume()", script)
+        self.assertIn('if(m.type==="capture")', script)
+        self.assertIn("new Float32Array(4096)", worklet)
+        self.assertIn("[this.pending.buffer]", worklet)
 
 
 if __name__ == "__main__":

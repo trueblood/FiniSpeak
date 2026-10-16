@@ -146,9 +146,6 @@ def transcribe_pcm(raw: bytes, sample_rate: int, language: str | None = None, la
         for value in os.getenv("OPENAI_TRANSCRIPTION_KEYWORDS", "FiniSpeak").split(",")
         if value.strip()
     ]
-    extra_body = {}
-    if keywords:
-        extra_body["keywords"] = keywords
     duration = len(raw) / 2 / float(sample_rate)
     print(f"[Transcription] Sending {duration:.1f}s of audio to {model}...", flush=True)
     started = time.time()
@@ -156,8 +153,9 @@ def transcribe_pcm(raw: bytes, sample_rate: int, language: str | None = None, la
         "model": model,
         "file": pcm16_wav_file(raw, sample_rate),
         "prompt": prompt or None,
-        "extra_body": extra_body or None,
     }
+    if keywords:
+        request["keywords"] = keywords
     if language:
         request["language"] = language
     transcription = _get_client().audio.transcriptions.create(**request)
