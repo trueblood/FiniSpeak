@@ -116,7 +116,11 @@ class MySql8CutoverIntegrationTests(unittest.TestCase):
     def _account(self, label, role="customer"):
         uid = f"{self.prefix}_{label}"
         identity = {"uid": uid, "email": f"{label}-{self.prefix}@example.invalid", "displayName": label.title()}
-        account = self.repositories["accounts"].bootstrap(identity, {"displayName": identity["displayName"], "phone": "+1 317 555 0100"})
+        phone_suffix = {"caller": "0100", "receiver": "0101", "interpreter": "0102", "admin": "0103"}[label]
+        account = self.repositories["accounts"].bootstrap(
+            identity,
+            {"displayName": identity["displayName"], "phone": f"+1 317 555 {phone_suffix}"},
+        )
         if role != "customer":
             updated = self.repositories["accounts"].update_status(uid, "active")
             db.session.execute(text("UPDATE users SET role=:role WHERE id=:uid"), {"role": role, "uid": uid})
