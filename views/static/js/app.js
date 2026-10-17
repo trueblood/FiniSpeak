@@ -1,5 +1,5 @@
-import { createCallExperience } from "./call-experience.js?v=20261017-playback";
-import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer } from "./webrtc-mesh.js?v=20261017-playback";
+import { createCallExperience } from "./call-experience.js?v=20261017-translator";
+import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, releaseOfferHold, resendLocalOffer, sendOffer } from "./webrtc-mesh.js?v=20261017-translator";
 
 const $ = (id) => document.getElementById(id);
 let callExperience;
@@ -2327,11 +2327,12 @@ function peerSender(remoteUid) {
     };
 }
 
-function openPeer(remoteUid, profile, offerer) {
+function openPeer(remoteUid, profile, offerer, { holdOffer = false } = {}) {
     const send = peerSender(remoteUid);
     const pc = new RTCPeerConnection({ iceServers: rtcConfiguration.iceServers });
     pc._iceKey = iceKey();
     pc._offerer = offerer;
+    pc._holdOffer = holdOffer;
     peerConnections.set(remoteUid, pc);
     peerProfiles.set(remoteUid, profile || null);
     const publishState = () => {
@@ -2353,12 +2354,21 @@ function openPeer(remoteUid, profile, offerer) {
         onTrack: (track, stream) => attachRemoteTrack(remoteUid, profile, track, stream),
         onError: error => recordPeer(remoteUid, { error: error.message, connection: "error" })
     });
-    const audioTrack = localStream?.getAudioTracks()[0];
-    const videoTrack = callExperience?.outgoingVideoTrack() || localStream?.getVideoTracks()[0];
-    if (audioTrack) pc.addTrack(audioTrack, localStream);
-    if (videoTrack) pc.addTrack(videoTrack, localStream);
+    attachLocalTracks(pc);
     publishState();
     return pc;
+}
+
+function attachLocalTracks(pc) {
+    const audioTrack = localStream?.getAudioTracks()?.find(track => track.readyState === "live");
+    const preferredVideo = callExperience?.outgoingVideoTrack();
+    const videoTrack = preferredVideo?.readyState === "live"
+        ? preferredVideo
+        : localStream?.getVideoTracks()?.find(track => track.readyState === "live");
+    if (audioTrack && !pc.getSenders().some(sender => sender.track?.kind === "audio")) pc.addTrack(audioTrack, localStream);
+    const videoSender = pc.getSenders().find(sender => sender.track?.kind === "video");
+    if (videoTrack && !videoSender) pc.addTrack(videoTrack, localStream);
+    else if (videoTrack && videoSender && videoSender.track !== videoTrack) videoSender.replaceTrack(videoTrack).catch(() => {});
 }
 
 async function ensurePeer(callId, remoteUid, profile) {
@@ -2375,20 +2385,25 @@ async function ensurePeer(callId, remoteUid, profile) {
     const send = peerSender(remoteUid);
     if (existing) {
         existing._offerer = offerer;
+        attachLocalTracks(existing);
         recordPeer(remoteUid, { note: relayNote(existing), ...peerSnapshot(existing) });
         try {
-            if (offerer && existing.signalingState === "have-local-offer" && existing.localDescription) await resendLocalOffer(existing, send);
-            else if (offerer && existing.signalingState === "stable" && !existing.currentRemoteDescription) await sendOffer(existing, send);
+            let sent = false;
+            if (existing.signalingState === "have-local-offer" && existing.localDescription) sent = await resendLocalOffer(existing, send);
+            else if (existing.signalingState === "stable" && !existing.currentRemoteDescription) sent = await sendOffer(existing, send);
+            if (sent) recordPeer(remoteUid, { error: "" });
         } catch (error) {
             recordPeer(remoteUid, { error: error.message, connection: "error" });
         }
         return;
     }
     if (!localStream) throw new Error("Local camera is not ready.");
-    const pc = openPeer(remoteUid, profile, offerer);
-    for (const message of pendingSignals.get(remoteUid) || []) await applySignal(message);
+    const queued = pendingSignals.get(remoteUid) || [];
+    const pc = openPeer(remoteUid, profile, offerer, { holdOffer: queued.some(message => message.type === "offer") });
+    for (const message of queued) await applySignal(message);
     pendingSignals.delete(remoteUid);
-    if (peerConnections.get(remoteUid) === pc && offerer && pc.signalingState === "stable" && !pc.currentRemoteDescription) {
+    if (peerConnections.get(remoteUid) === pc) await releaseOfferHold(pc);
+    if (peerConnections.get(remoteUid) === pc && pc.signalingState === "stable" && !pc.currentRemoteDescription) {
         await sendOffer(pc, send);
     }
 }
@@ -2415,7 +2430,7 @@ function connectSignaling(callId) {
             if (message.type === "ready") { settled = true; resolve(); return; }
             if (message.type === "error") { fail(new Error(message.message || "Signaling failed.")); return; }
             if (message.type === "signal-error") {
-                const uid = message.from || [...peerConnections.keys()][0];
+                const uid = message.to || message.from;
                 if (uid) recordPeer(uid, { error: message.message || "Signaling rejected the camera offer." });
                 return;
             }
@@ -2462,8 +2477,9 @@ async function applySignal(message) {
             pc.close();
             peerConnections.delete(message.from);
             if (!localStream) throw new Error("Local camera is not ready.");
-            openPeer(message.from, peerProfiles.get(message.from), false);
+            const restarted = openPeer(message.from, peerProfiles.get(message.from), false, { holdOffer: true });
             await applySignal(message);
+            if (peerConnections.get(message.from) === restarted) await releaseOfferHold(restarted);
             return;
         }
         if (message.type === "offer" || message.type === "answer") await flushPendingIce(message.from, peerConnections.get(message.from) || pc);

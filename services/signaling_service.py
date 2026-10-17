@@ -82,6 +82,7 @@ def handle_signaling_socket(ws):
         while getattr(ws, "connected", True):
             message = ws.receive(timeout=.35)
             if isinstance(message, str):
+                parsed = {}
                 try:
                     parsed = json.loads(message)
                     event_id, duplicate = _store_event(call_id, identity["uid"], participants, parsed)
@@ -89,7 +90,8 @@ def handle_signaling_socket(ws):
                         "eventId": event_id, "duplicate": duplicate})
                 except Exception as exc:
                     db.session.rollback()
-                    _send(ws, {"type": "signal-error", "message": str(exc)})
+                    recipient = parsed.get("to") if isinstance(parsed, dict) else None
+                    _send(ws, {"type": "signal-error", "message": str(exc), "to": recipient})
                     continue
             rows = db.session.scalars(select(SqlSignalingEvent).where(
                 SqlSignalingEvent.call_id == call_id,
