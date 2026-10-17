@@ -338,7 +338,7 @@ export function createCallExperience(deps) {
             stream?.addTrack(track);
         }
         track.enabled = true;
-        deps.$("localVideo").srcObject = stream;
+        if (deps.$("localVideo").srcObject !== stream) deps.$("localVideo").srcObject = stream;
         deps.replaceOutgoingVideo(track);
         markCameraMode(true);
         deps.$("cameraButton").setAttribute("aria-pressed", "false");
@@ -699,10 +699,14 @@ export function createCallExperience(deps) {
         const speaking = cards.find(card => card.classList.contains("is-speaking") && card.dataset.role !== "local");
         const active = speaking || cards.find(card => card.dataset.role !== "local") || cards[0];
         for (const card of cards) {
-            card.classList.toggle("is-stage", card === active);
-            (card === active ? stage : film).appendChild(card);
+            const onStage = card === active;
+            card.classList.toggle("is-stage", onStage);
+            const parent = onStage ? stage : film;
+            // Moving a live video element restarts it and flashes the camera.
+            if (card.parentElement !== parent) parent.appendChild(card);
         }
-        film.hidden = cards.length < 2;
+        const hideFilm = cards.length < 2;
+        if (film.hidden !== hideFilm) film.hidden = hideFilm;
     }
 
     function maybeSpeak() {}
@@ -1141,11 +1145,11 @@ export function createCallExperience(deps) {
                 }
                 state.level = Math.min(1, Math.sqrt(energy / samples.length) * 4);
             } else state.level = 0;
-            const wasSpeaking = state.speaking;
-            state.speaking = state.level > 0.08;
-            const local = document.querySelector('.video-card[data-role="local"]');
-            local?.classList.toggle("is-speaking", state.speaking);
-            if (wasSpeaking !== state.speaking) layout();
+            const speakingNow = state.speaking ? state.level > 0.045 : state.level > 0.1;
+            if (speakingNow !== state.speaking) {
+                state.speaking = speakingNow;
+                document.querySelector('.video-card[data-role="local"]')?.classList.toggle("is-speaking", state.speaking);
+            }
             const pose = {
                 mouth: state.speaking ? Math.min(1, state.level * 2.4) : 0.08,
                 blink: state.reducedMotion ? 1 : (Math.sin(time / 1800) > 0.97 ? 0.1 : 1),

@@ -2263,7 +2263,8 @@ function attachRemoteVideo(uid, profile, stream) {
     card.dataset.role = role;
     card.dataset.speaker = uid;
     card.classList.add("is-camera-on");
-    card.querySelector("video").srcObject = stream;
+    const video = card.querySelector("video");
+    if (video.srcObject !== stream) video.srcObject = stream;
     card.querySelector(".video-role").textContent = participantRoleLabel(role);
     card.querySelector(".video-name").textContent = profile?.displayName || "FiniSpeak guest";
     card.querySelector(".video-slate strong").textContent = profile?.displayName || "FiniSpeak guest";
