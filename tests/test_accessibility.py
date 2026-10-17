@@ -58,6 +58,16 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="smartInterpreter" class="smart-interpreter" aria-label="Smart Interpreter"', self.html)
         self.assertIn('id="participantGrid" class="participant-grid" hidden', self.html)
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
+        script = (Path(__file__).parents[1] / "views/static/js/call-experience.js").read_text()
+        styles = (Path(__file__).parents[1] / "views/static/css/call.css").read_text()
+        layout = script[script.index("function layout()"):script.index("function setInterpreterActivity")]
+        self.assertIn("cameraGridShape", script)
+        self.assertIn("stage.appendChild(card)", layout)
+        self.assertNotIn("? stage : film", layout)
+        self.assertIn("--camera-columns", layout)
+        self.assertIn("--camera-rows", layout)
+        self.assertIn("grid-template-columns:repeat(var(--camera-columns, 1), minmax(0, 1fr))", styles)
+        self.assertIn("grid-template-rows:repeat(var(--camera-rows, 1), minmax(0, 1fr))", styles)
 
     def test_transcripts_are_named_logs(self):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)

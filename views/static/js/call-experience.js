@@ -193,7 +193,10 @@ export function createCallExperience(deps) {
         document.querySelectorAll("[data-call-pane]").forEach(button => {
             button.onclick = () => setPane(button.dataset.callPane);
         });
-        window.addEventListener("resize", resizeCanvases);
+        window.addEventListener("resize", () => {
+            resizeCanvases();
+            layout();
+        });
         refreshInterpreterLanguages();
         startLoop();
     }
@@ -696,27 +699,39 @@ export function createCallExperience(deps) {
         }
     }
 
+    function cameraGridShape(count, width, height) {
+        if (count <= 1 || width <= 0 || height <= 0) return { columns: 1, rows: Math.max(1, count) };
+        let best = null;
+        for (let columns = 1; columns <= count; columns += 1) {
+            const rows = Math.ceil(count / columns);
+            const tileWidth = width / columns;
+            const tileHeight = height / rows;
+            if (tileWidth < 96 || tileHeight < 72) continue;
+            const aspect = tileWidth / tileHeight;
+            const score = Math.abs(Math.log(aspect / (16 / 9)));
+            if (!best || score < best.score) best = { columns, rows, score };
+        }
+        if (best) return best;
+        const columns = width >= height ? Math.min(4, count) : Math.min(2, count);
+        return { columns, rows: Math.ceil(count / columns) };
+    }
+
     function layout() {
         const cards = [...document.querySelectorAll("#callView .video-card")];
         const stage = deps.$("videoGrid");
-        const film = deps.$("videoFilmstrip");
-        const grid = deps.$("participantGrid");
-        if (!stage || !film || !cards.length) return;
-        const speaking = cards.find(card => card.classList.contains("is-speaking") && card.dataset.role !== "local");
-        const active = speaking || cards.find(card => card.dataset.role !== "local") || cards[0];
+        if (!stage || !cards.length) return;
         for (const card of cards) {
-            const onStage = card === active;
-            card.classList.toggle("is-stage", onStage);
-            const parent = onStage ? stage : film;
+            card.classList.add("is-stage");
             // Moving a live video element restarts it and flashes the camera.
-            if (card.parentElement !== parent) parent.appendChild(card);
+            if (card.parentElement !== stage) stage.appendChild(card);
         }
-        const hideFilm = cards.length < 2;
-        if (grid) {
-            if (grid.hidden !== hideFilm) grid.hidden = hideFilm;
-        } else if (film.hidden !== hideFilm) {
-            film.hidden = hideFilm;
-        }
+        const frame = stage.getBoundingClientRect();
+        const shape = cameraGridShape(cards.length, frame.width, frame.height);
+        stage.style.setProperty("--camera-columns", String(shape.columns));
+        stage.style.setProperty("--camera-rows", String(shape.rows));
+        stage.dataset.count = String(cards.length);
+        if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
+        if (deps.$("videoFilmstrip")) deps.$("videoFilmstrip").hidden = true;
         if (deps.$("participantCount")) deps.$("participantCount").textContent = String(cards.length);
     }
 
