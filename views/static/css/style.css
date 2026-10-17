@@ -159,6 +159,19 @@ code { background:#e2e8f0; padding:3px 6px; border-radius:6px; }
 .transcript-modal-card { width: min(760px, 100%); max-height: 85vh; display: flex; flex-direction: column; }
 .history-transcript-list { min-height: 260px; max-height: 58vh; overflow-y: auto; }
 .translator-request-modal-card { width:min(660px,100%); max-height:90vh; overflow-y:auto; }
+.sign-access-card { width:min(680px,100%); max-height:90vh; overflow-y:auto; }
+.sign-access-card h2 { font-size:1.35rem; line-height:1.25; }
+.sign-access-card > p,.sign-access-notes p { margin:1rem 0; color:#cbd5e1; }
+.sign-access-notes { margin:0 0 16px; padding:16px; border-radius:16px; background:#172033; border:1px solid rgba(147,197,253,.28); }
+.sign-access-notes h3 { margin:.35rem 0 0; color:#f8fafc; font-size:1.05rem; }
+.sign-access-notes ul { margin:0; padding-left:1.15rem; color:#e2e8f0; }
+.sign-access-notes li + li { margin-top:6px; }
+.sign-access-lanes { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.sign-access-lanes article { display:grid; gap:6px; align-content:start; margin:0; padding:14px; border-radius:16px; background:#172033; border:1px solid rgba(126,182,255,.28); }
+.sign-access-lanes h3 { margin:0; color:#f8fafc; font-size:1rem; }
+.sign-access-lanes p { margin:0; color:#cbd5e1; font-size:.9rem; }
+.sign-access-badge { justify-self:start; margin-top:6px; padding:4px 8px; border-radius:999px; background:rgba(245,166,91,.16); color:#f5a65b; font-size:.72rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+@media (max-width:560px) { .sign-access-lanes { grid-template-columns:1fr; } }
 .translator-request-modal-card h2,.translator-request-modal-card .request-language-heading strong { color:#f8fafc; }
 .translator-request-modal-card > p { margin:1rem 0; color:#cbd5e1; }
 .request-language-section { margin:0 0 1rem; padding:1rem; border:1px solid rgba(147,197,253,.32); border-radius:14px; background:rgba(37,99,235,.12); }

@@ -65,6 +65,12 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertEqual(self.html.count('data-processing-mode="concurrent" aria-pressed="false"'), 1)
         self.assertEqual(self.html.count('data-processing-mode="streaming" aria-pressed="false"'), 1)
 
+    def test_sign_language_option_is_a_placeholder_dialog(self):
+        self.assertIn('id="signAccessButton" class="secondary" type="button"', self.html)
+        self.assertIn('id="signAccessModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="signAccessTitle"', self.html)
+        self.assertIn('id="signNetNotesTitle">FiniSpeak SignNet v1', self.html)
+        self.assertIn("this window does not read the camera or microphone", self.html)
+
     def test_every_phone_input_has_a_country_code_selector(self):
         self.assertEqual(self.html.count('type="tel"'), 5)
         self.assertEqual(self.html.count('data-phone-country'), 5)
