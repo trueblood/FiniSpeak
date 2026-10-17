@@ -166,12 +166,22 @@ code { background:#e2e8f0; padding:3px 6px; border-radius:6px; }
 .sign-access-notes h3 { margin:.35rem 0 0; color:#f8fafc; font-size:1.05rem; }
 .sign-access-notes ul { margin:0; padding-left:1.15rem; color:#e2e8f0; }
 .sign-access-notes li + li { margin-top:6px; }
+.signnet-architecture { margin:0 0 16px; padding:16px; border-radius:16px; background:#f8fafc; color:#0f172a; text-align:center; }
+.signnet-architecture h3 { margin:0 0 14px; color:#0f172a; font-size:1.05rem; text-align:left; }
+.signnet-source-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.signnet-step { display:grid; justify-items:center; gap:2px; }
+.signnet-architecture strong { display:block; color:#0f172a; }
+.signnet-architecture small { display:block; color:#64748b; font-size:.82rem; font-weight:650; }
+.signnet-arrow { display:block; margin:8px 0; color:#94a3b8; font-size:1.15rem; line-height:1; }
+.signnet-icon { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; color:#334155; }
+.signnet-model { display:grid; justify-items:center; gap:2px; margin:0; padding:14px 12px; border-radius:14px; background:#e8eef6; }
+.signnet-model .signnet-icon { color:#2563eb; }
 .sign-access-lanes { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 .sign-access-lanes article { display:grid; gap:6px; align-content:start; margin:0; padding:14px; border-radius:16px; background:#172033; border:1px solid rgba(126,182,255,.28); }
 .sign-access-lanes h3 { margin:0; color:#f8fafc; font-size:1rem; }
 .sign-access-lanes p { margin:0; color:#cbd5e1; font-size:.9rem; }
 .sign-access-badge { justify-self:start; margin-top:6px; padding:4px 8px; border-radius:999px; background:rgba(245,166,91,.16); color:#f5a65b; font-size:.72rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
-@media (max-width:560px) { .sign-access-lanes { grid-template-columns:1fr; } }
+@media (max-width:560px) { .sign-access-lanes,.signnet-source-grid { grid-template-columns:1fr; } }
 .translator-request-modal-card h2,.translator-request-modal-card .request-language-heading strong { color:#f8fafc; }
 .translator-request-modal-card > p { margin:1rem 0; color:#cbd5e1; }
 .request-language-section { margin:0 0 1rem; padding:1rem; border:1px solid rgba(147,197,253,.32); border-radius:14px; background:rgba(37,99,235,.12); }

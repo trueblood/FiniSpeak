@@ -69,6 +69,11 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="signAccessButton" class="secondary" type="button"', self.html)
         self.assertIn('id="signAccessModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="signAccessTitle"', self.html)
         self.assertIn('id="signNetNotesTitle">FiniSpeak SignNet v1', self.html)
+        self.assertIn('id="signNetArchitectureTitle">Our simplified AI architecture', self.html)
+        self.assertIn("FiniSpeak SignNet v0.1", self.html)
+        self.assertIn("MediaPipe Hands", self.html)
+        self.assertIn("21 landmarks per hand", self.html)
+        self.assertIn("Speech text + recognized hand signs", self.html)
         self.assertIn("this window does not read the camera or microphone", self.html)
 
     def test_every_phone_input_has_a_country_code_selector(self):
