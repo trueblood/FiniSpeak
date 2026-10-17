@@ -15,7 +15,7 @@ let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Ma
 let pendingSignals = new Map(), signalingCursor = 0;
 let rtcConfiguration = { iceServers: [] };
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, transcriptionGain = null, currentCallRole = null;
-let selectedProcessingMode = "baseline", processingModesEnabled = false, transcriptionGeneration = Date.now();
+let selectedProcessingMode = "streaming", processingModesEnabled = false, transcriptionGeneration = Date.now();
 let transcriptionSwitching = false, transcriptionBufferedAudio = [], transcriptionBufferedBytes = 0, transcriptionStopResolver = null, browserSpeechRecognition = null;
 let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
 let directoryProfiles = [], activeDirectoryProfile = null, selectedInterpreterProfile = null;
@@ -236,6 +236,8 @@ function bindUI() {
     $("dashboardAvailableNow").onchange = updateDashboardAvailability;
     $("settingsSignOut").onclick = async () => localSignOut();
     $("refreshAdmin").onclick = loadAdminDashboard;
+    $("refreshFriends").onclick = loadFriends;
+    $("friendForm").onsubmit = addFriend;
     $("organizationForm").onsubmit = createOrganization;
     $("directorySearch").addEventListener("input", filterInterpreterDirectory);
     $("directoryRating").addEventListener("change", refreshInterpreterDirectory);
@@ -514,7 +516,7 @@ function hydrateDashboardProfile() {
 }
 
 function openDashboardPanel(panel) {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings" };
+    const ids = { home: "dashboardHome", directory: "dashboardDirectory", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings" };
     Object.entries(ids).forEach(([key, id]) => $(id).classList.toggle("hidden", key !== panel));
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => {
         const active = button.dataset.dashboardPanel === panel;
@@ -523,6 +525,7 @@ function openDashboardPanel(panel) {
     });
     window.scrollTo({ top: 0, behavior: "auto" });
     if (panel === "directory") loadInterpreterDirectory();
+    if (panel === "friends") loadFriends();
     if (panel === "admin") loadAdminDashboard();
 }
 
@@ -544,7 +547,7 @@ async function apiFetch(path, options = {}) {
 async function loadProcessingCapabilities() {
     const result = await apiFetch("/api/calls/processing-capabilities"); processingModesEnabled = result.experimental === true;
     document.querySelectorAll(".processing-mode-panel").forEach(panel => panel.classList.toggle("hidden", !processingModesEnabled));
-    if (!processingModesEnabled) selectedProcessingMode = "baseline"; renderProcessingMode();
+    selectedProcessingMode = result.default || "streaming"; renderProcessingMode();
 }
 function renderProcessingMode() {
     document.querySelectorAll("[data-processing-mode]").forEach(button => { button.setAttribute("aria-pressed", String(button.dataset.processingMode === selectedProcessingMode)); button.disabled = transcriptionSwitching; });
@@ -552,7 +555,7 @@ function renderProcessingMode() {
     document.querySelectorAll("[data-active-processing-label]").forEach(label => label.textContent = processingLabels[selectedProcessingMode] || selectedProcessingMode);
 }
 async function selectProcessingMode(mode) {
-    if (!processingModesEnabled || transcriptionSwitching) return; const next = selectedProcessingMode === mode ? "baseline" : mode;
+    if (!processingModesEnabled || transcriptionSwitching) return; const next = mode;
     if (!activeCallId) { selectedProcessingMode = next; renderProcessingMode(); return; }
     await switchProcessingMode(next);
 }
@@ -593,20 +596,85 @@ function renderAdminAccounts(accounts) {
     if (!accounts.length) { container.innerHTML = adminEmpty("No accounts found."); return; }
     container.innerHTML = accounts.map(account => {
         const isCurrentAdmin = account.uid === currentUser?.uid;
-        return `<article class="admin-list-row"><div><strong>${escapeHtml(account.displayName || account.email || "User")}</strong><small>${escapeHtml(account.role || "customer")} · ${escapeHtml(account.email || account.uid || "")}</small></div><label class="admin-inline-control"><span class="sr-only">Account status for ${escapeHtml(account.displayName || account.email || "user")}</span><select data-account-id="${escapeHtml(account.uid || "")}"${isCurrentAdmin ? " disabled title=\"You cannot suspend your current administrator session\"" : ""}><option value="active"${account.status === "active" || !account.status ? " selected" : ""}>Active</option><option value="pending"${account.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${account.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></article>`;
+        const deleted = account.status === "deleted" || Boolean(account.deletedAt);
+        return `<article class="admin-account-editor" data-admin-account="${escapeHtml(account.uid || "")}"><div class="admin-account-heading"><strong>${escapeHtml(account.displayName || account.email || "User")}</strong><span class="status-badge">${escapeHtml(deleted ? "deleted" : account.status || "active")}</span></div><div class="admin-account-fields"><label>Name<input data-account-field="displayName" value="${escapeHtml(account.displayName || "")}"${deleted ? " disabled" : ""}></label><label>Email<input data-account-field="email" type="email" value="${escapeHtml(account.email || "")}"${deleted ? " disabled" : ""}></label><label>Phone<input data-account-field="phone" type="tel" value="${escapeHtml(account.phone || "")}"${deleted ? " disabled" : ""}></label><label>Role<select data-account-field="role"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="customer"${account.role === "customer" ? " selected" : ""}>Customer</option><option value="translator_applicant"${account.role === "translator_applicant" ? " selected" : ""}>Translator applicant</option><option value="translator"${account.role === "translator" ? " selected" : ""}>Translator</option><option value="admin"${account.role === "admin" ? " selected" : ""}>Administrator</option></select></label><label>Status<select data-account-field="status"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="active"${account.status === "active" || !account.status ? " selected" : ""}>Active</option><option value="pending"${account.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${account.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></div><div class="admin-account-actions"><button type="button" data-save-account${deleted ? " disabled" : ""}>Save profile</button><button class="secondary reject-action" type="button" data-delete-account${deleted || isCurrentAdmin ? " disabled" : ""}>${deleted ? "Deleted" : "Delete account"}</button></div></article>`;
     }).join("");
-    container.querySelectorAll("[data-account-id]").forEach(select => select.onchange = () => updateAdminAccountStatus(select));
+    container.querySelectorAll("[data-save-account]").forEach(button => button.onclick = () => saveAdminAccount(button.closest("[data-admin-account]")));
+    container.querySelectorAll("[data-delete-account]").forEach(button => button.onclick = () => deleteAdminAccount(button.closest("[data-admin-account]")));
 }
 
-async function updateAdminAccountStatus(select) {
-    select.disabled = true;
+async function saveAdminAccount(editor) {
+    const button = editor.querySelector("[data-save-account]"); button.disabled = true;
+    const values = Object.fromEntries([...editor.querySelectorAll("[data-account-field]")].filter(field => !field.disabled).map(field => [field.dataset.accountField, field.value.trim()]));
     try {
-        await apiFetch(`/api/accounts/${encodeURIComponent(select.dataset.accountId)}/status`, { method: "PATCH", body: JSON.stringify({ status: select.value }) });
-        $("adminStatus").textContent = "Account status updated.";
-    } catch (error) {
-        $("adminStatus").textContent = `Could not update account status: ${error.message}`;
+        await apiFetch(`/api/admin/accounts/${encodeURIComponent(editor.dataset.adminAccount)}`, { method: "PATCH", body: JSON.stringify(values) });
+        $("adminStatus").textContent = "Account profile updated.";
         await loadAdminDashboard();
-    } finally { select.disabled = false; }
+    } catch (error) {
+        $("adminStatus").textContent = `Could not update account: ${error.message}`;
+        button.disabled = false;
+    }
+}
+
+async function deleteAdminAccount(editor) {
+    if (!window.confirm("Soft-delete this account? The user will be signed out and the record will be retained for audit purposes.")) return;
+    const button = editor.querySelector("[data-delete-account]"); button.disabled = true;
+    try {
+        await apiFetch(`/api/admin/accounts/${encodeURIComponent(editor.dataset.adminAccount)}`, { method: "DELETE" });
+        $("adminStatus").textContent = "Account soft-deleted and active sessions revoked.";
+        await loadAdminDashboard();
+    } catch (error) {
+        $("adminStatus").textContent = `Could not delete account: ${error.message}`;
+        button.disabled = false;
+    }
+}
+
+async function loadFriends() {
+    const container = $("friendsList"); container.innerHTML = "<p>Loading friends…</p>";
+    try {
+        const result = await apiFetch("/api/friends"); renderFriends(result.friends || []);
+        $("friendsStatus").textContent = `${(result.friends || []).length} saved friend${(result.friends || []).length === 1 ? "" : "s"}.`;
+    } catch (error) {
+        container.innerHTML = `<p class="status">Could not load friends: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+async function addFriend(event) {
+    event.preventDefault(); const button = event.currentTarget.querySelector("button[type=submit]"); button.disabled = true;
+    try {
+        const phone = completePhoneNumber("friendPhone");
+        await apiFetch("/api/friends", { method: "POST", body: JSON.stringify({ email: $("friendEmail").value.trim(), phone, savedPhone: phone, nickname: $("friendNickname").value.trim() }) });
+        event.currentTarget.reset(); $("friendPhoneCountry").value = "+1"; $("friendsStatus").textContent = "Friend added."; await loadFriends();
+    } catch (error) { $("friendsStatus").textContent = `Could not add friend: ${error.message}`; }
+    finally { button.disabled = false; }
+}
+
+function renderFriends(friends) {
+    const container = $("friendsList");
+    if (!friends.length) { container.innerHTML = '<p class="admin-empty">No friends saved yet.</p>'; return; }
+    container.innerHTML = friends.map(friend => `<article class="friend-card" data-friend-id="${escapeHtml(friend.uid)}"><div class="friend-card-heading"><span class="presence-dot ${friend.online ? "online" : ""}" aria-hidden="true"></span><div><strong>${escapeHtml(friend.nickname || friend.displayName || friend.email)}</strong><small>${friend.online ? "Online now" : "Offline"} · ${escapeHtml(friend.email || "")}</small></div></div><div class="friend-fields"><label>Nickname<input data-friend-field="nickname" maxlength="160" value="${escapeHtml(friend.nickname || "")}"></label><label>Saved number<input data-friend-field="savedPhone" type="tel" value="${escapeHtml(friend.savedPhone || friend.phone || "")}"></label></div><div class="friend-actions"><button type="button" data-call-friend>Start call</button><button class="secondary" type="button" data-save-friend>Save</button><button class="secondary reject-action" type="button" data-remove-friend>Remove</button></div></article>`).join("");
+    container.querySelectorAll("[data-call-friend]").forEach(button => button.onclick = () => callFriend(button.closest("[data-friend-id]"), friends));
+    container.querySelectorAll("[data-save-friend]").forEach(button => button.onclick = () => saveFriend(button.closest("[data-friend-id]")));
+    container.querySelectorAll("[data-remove-friend]").forEach(button => button.onclick = () => removeFriend(button.closest("[data-friend-id]")));
+}
+
+function callFriend(card, friends) {
+    const friend = friends.find(item => item.uid === card.dataset.friendId); if (!friend) return;
+    openDashboardPanel("home"); $("receiverEmail").value = friend.email || ""; setPhoneFieldValue("receiverPhone", friend.savedPhone || friend.phone || "");
+    $("callStartCard").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function saveFriend(card) {
+    const button = card.querySelector("[data-save-friend]"); button.disabled = true;
+    const data = Object.fromEntries([...card.querySelectorAll("[data-friend-field]")].map(field => [field.dataset.friendField, field.value.trim()]));
+    try { await apiFetch(`/api/friends/${encodeURIComponent(card.dataset.friendId)}`, { method: "PATCH", body: JSON.stringify(data) }); $("friendsStatus").textContent = "Friend updated."; await loadFriends(); }
+    catch (error) { $("friendsStatus").textContent = `Could not update friend: ${error.message}`; button.disabled = false; }
+}
+
+async function removeFriend(card) {
+    if (!window.confirm("Remove this friend from your saved list?")) return;
+    try { await apiFetch(`/api/friends/${encodeURIComponent(card.dataset.friendId)}`, { method: "DELETE" }); $("friendsStatus").textContent = "Friend removed."; await loadFriends(); }
+    catch (error) { $("friendsStatus").textContent = `Could not remove friend: ${error.message}`; }
 }
 
 function renderAdminSessions(sessions) {
@@ -2833,7 +2901,7 @@ function renderTranscriptInto(list, rows) {
 function escapeHtml(value) {
     const div = document.createElement("div");
     div.textContent = value ?? "";
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 boot();

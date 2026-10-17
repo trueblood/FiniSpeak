@@ -78,7 +78,7 @@ def main():
     checks.append(("readiness", status == 200 and ready.get("status") == "ready"))
     backends = ready.get("repositoryBackends", {}) if isinstance(ready, dict) else {}
     checks.append(("all repositories use MySQL", set(backends) == EXPECTED_DOMAINS and set(backends.values()) == {"mysql"}))
-    checks.append(("schema revision 0003", isinstance(ready, dict) and ready.get("schemaRevision") == "20261014_0003"))
+    checks.append(("schema revision 0004", isinstance(ready, dict) and ready.get("schemaRevision") == "20261016_0004"))
     user = first.login(email, password); checks.append(("first-party login", bool(user.get("uid"))))
     status, _ = first.request("/api/accounts/me"); checks.append(("protected account API", status == 200))
     status, relay = first.request("/api/webrtc-config")

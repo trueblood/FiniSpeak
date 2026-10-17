@@ -15,3 +15,4 @@ admin_bp.add_url_rule("/api-keys", view_func=admin_controller.api_keys, methods=
 admin_bp.add_url_rule("/api-keys/<key_id>/revoke", view_func=admin_controller.revoke_api_key, methods=["POST"])
 admin_bp.add_url_rule("/api-usage", view_func=admin_controller.api_usage, methods=["GET"])
 admin_bp.add_url_rule("/language-metrics", view_func=admin_controller.language_metrics, methods=["GET"])
+admin_bp.add_url_rule("/accounts/<uid>", view_func=admin_controller.account_detail, methods=["PATCH", "DELETE"])

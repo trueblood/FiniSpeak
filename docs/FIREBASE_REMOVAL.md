@@ -11,7 +11,7 @@ Firebase until the final verification and retention window have completed.
 
 ## Required production services
 
-- MySQL 8 at Alembic revision `20261014_0003`.
+- MySQL 8 at Alembic revision `20261016_0004`.
 - A private directory outside `/var/www/finispeak`, owned by the service account
   with mode `0750`; files are created with mode `0640`.
 - SMTP over TLS for verification, activation, and password-reset links.
@@ -104,7 +104,7 @@ real MySQL 8 integration suite with `MYSQL_DATABASE` forcibly set to
 `finispeak_migration_test`, and only then synchronizes the release into
 `/var/www/finispeak`. The remote deployment script accepts only the `finispeak`
 application database and schema revisions `20261013_0002` or
-`20261014_0003`.
+`20261016_0004`.
 
 The workflow's only privileged entry point is the operator-installed,
 root-owned `/usr/local/sbin/finispeak-deploy-test-server` helper. Its sudo rule
@@ -121,7 +121,7 @@ On the first successful run it performs this ordered transaction boundary:
 
 1. Create a mode-0600, single-transaction MySQL dump and SHA-256 sidecar under
    `/var/backups/finispeak`, then validate the compressed stream.
-2. Apply Alembic `20261014_0003`. The revision adds tables and does not remove
+2. Apply Alembic `20261016_0004`. The revisions add tables and do not remove
    imported records or Firestore document IDs.
 3. Validate Firebase Storage read-only, import into the private storage root,
    and apply again. The second apply must commit zero objects and verify every
@@ -183,11 +183,11 @@ an isolated database and directory. Never restore over production as a test.
    ```bash
    cd /var/www/finispeak
    set -a; . /etc/finispeak/finispeak.env; set +a
-   ./venv/bin/alembic upgrade 20261014_0003
+   ./venv/bin/alembic upgrade 20261016_0004
    ./venv/bin/alembic current
    ```
 
-   The final command must report exactly `20261014_0003`.
+   The final command must report exactly `20261016_0004`.
 6. Validate legacy Storage without writes, then apply and repeat to prove
    idempotency. Neither command deletes or updates Firebase objects:
 
@@ -253,7 +253,7 @@ Require every line to say `PASS`. Also verify registration, email verification,
 password reset, logout/revocation, profile photo access, private credential
 denial for another account, interpreter discovery, a two-network audio/video
 call through TURN, transcription, and an application restart. Confirm
-`/api/ready` lists all ten repositories as `mysql` and schema `20261014_0003`.
+`/api/ready` lists all ten repositories as `mysql` and schema `20261016_0004`.
 
 ## Rollback
 

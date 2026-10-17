@@ -28,6 +28,18 @@ class SqlUser(FirestoreDocumentMixin, db.Model):
     status = db.Column(String(32))
     created_at = db.Column(DateTime(timezone=True))
     updated_at = db.Column(DateTime(timezone=True))
+    deleted_at = db.Column(DateTime(timezone=True), index=True)
+    deleted_by = db.Column(String(128), ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class SqlFriend(db.Model):
+    __tablename__ = "friends"
+    owner_id = db.Column(String(128), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    friend_id = db.Column(String(128), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    nickname = db.Column(String(160))
+    saved_phone = db.Column(String(64))
+    created_at = db.Column(DateTime(timezone=True), nullable=False)
+    updated_at = db.Column(DateTime(timezone=True), nullable=False)
 
 
 class SqlAuthCredential(db.Model):
@@ -359,7 +371,7 @@ class SqlSyncTombstone(db.Model):
 
 class SqlTransactionalOutbox(db.Model):
     __tablename__ = "transactional_outbox"
-    id = db.Column(BigInteger, primary_key=True, autoincrement=True)
+    id = db.Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     event_id = db.Column(String(36), nullable=False, unique=True)
     aggregate_type = db.Column(String(64), nullable=False)
     aggregate_key = db.Column(String(512), nullable=False)

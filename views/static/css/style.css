@@ -570,3 +570,25 @@ button:disabled,select:disabled { cursor:not-allowed; opacity:.58; }
 @media (max-width:1050px) { .admin-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:900px) { .admin-operations-grid { grid-template-columns:1fr; } }
 @media (max-width:700px) { .admin-metric-grid { grid-template-columns:1fr; }.admin-review-item { display:grid; }.admin-review-actions { justify-content:flex-start; flex-wrap:wrap; }.admin-list-row { align-items:flex-start; flex-direction:column; }.admin-inline-control { width:100%; } }
+
+/* Friends and account administration */
+.friends-layout { display:grid; grid-template-columns:minmax(280px,.75fr) minmax(0,1.4fr); gap:18px; }
+.friends-layout .form-card { margin:0; }
+.friends-list { display:grid; gap:12px; }
+.friend-card,.admin-account-editor { display:grid; gap:14px; padding:16px; border:1px solid var(--border); border-radius:15px; background:#f8fafc; }
+.friend-card-heading,.admin-account-heading { display:flex; align-items:center; gap:10px; }
+.friend-card-heading>div,.admin-account-heading>strong { flex:1; }
+.friend-card-heading strong,.friend-card-heading small { display:block; }
+.friend-card-heading small { margin-top:3px; color:var(--muted); }
+.presence-dot { width:11px; height:11px; flex:0 0 11px; border-radius:50%; background:#94a3b8; box-shadow:0 0 0 4px #e2e8f0; }
+.presence-dot.online { background:#22a35a; box-shadow:0 0 0 4px #dcfce7; }
+.friend-fields,.admin-account-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.admin-account-fields { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.friend-fields label,.admin-account-fields label { margin:0; font-size:.78rem; }
+.friend-fields input,.admin-account-fields input,.admin-account-fields select { min-height:42px; padding:8px 10px; }
+.friend-actions,.admin-account-actions { display:flex; flex-wrap:wrap; gap:9px; }
+.friend-actions button,.admin-account-actions button { padding:9px 13px; }
+.friend-actions .reject-action,.admin-account-actions .reject-action { border-color:#fecaca; color:#991b1b; background:#fff; }
+.admin-account-heading { justify-content:space-between; }
+@media(max-width:900px){.friends-layout{grid-template-columns:1fr}.admin-account-fields{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.friend-fields,.admin-account-fields{grid-template-columns:1fr}}

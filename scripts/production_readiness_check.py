@@ -19,7 +19,7 @@ def main():
     args = parser.parse_args()
     checks = {}
     required_files = [
-        "migrations/versions/20261014_0003_firebase_replacements.py", "docs/FIREBASE_REMOVAL.md", "docs/ACCESSIBILITY_AUDIT.md",
+        "migrations/versions/20261014_0003_firebase_replacements.py", "migrations/versions/20261016_0004_friends_and_soft_delete.py", "docs/FIREBASE_REMOVAL.md", "docs/ACCESSIBILITY_AUDIT.md",
         "docs/COMMERCIAL_API.md", "docs/LANGUAGE_DETECTION.md", "views/templates/index.html",
     ]
     checks["requiredArtifacts"] = all((ROOT / path).exists() for path in required_files)
@@ -36,7 +36,7 @@ def main():
             "emailDelivery": all(os.getenv(name, "").strip() for name in ("FINISPEAK_SMTP_HOST", "FINISPEAK_EMAIL_FROM", "FINISPEAK_PUBLIC_URL")),
             "webrtcRelay": bool(os.getenv("FINISPEAK_TURN_URLS", "").strip()) and len(os.getenv("FINISPEAK_TURN_SECRET", "")) >= 32,
             "mysqlOnlyRouting": os.getenv("FINISPEAK_REPOSITORY_BACKEND", "mysql").strip().lower() == "mysql",
-            "schemaAttestation": os.getenv("FINISPEAK_MYSQL_EXPECTED_REVISION", "").strip() == "20261014_0003",
+            "schemaAttestation": os.getenv("FINISPEAK_MYSQL_EXPECTED_REVISION", "").strip() == "20261016_0004",
         })
     deferred = {"emailDelivery", "webrtcRelay"} if args.production and test_deployment else set()
     failed = [name for name, passed in checks.items() if not passed and name not in deferred]

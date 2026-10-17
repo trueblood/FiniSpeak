@@ -11,7 +11,7 @@ from decimal import Decimal
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from models.sql_models import (
-    SqlApiKey, SqlApiUsageCounter, SqlApiUsageEvent, SqlCall,
+    SqlApiKey, SqlApiUsageCounter, SqlApiUsageEvent, SqlAuthCredential, SqlAuthSession, SqlAuthToken, SqlCall,
     SqlInterpreterPrivate, SqlLanguageDetectionMetric, SqlOrganization,
     SqlParticipant, SqlReferenceDialect, SqlReferenceLanguage,
     SqlReferenceSpecialty, SqlReview, SqlTranscript, SqlTranslator, SqlTransactionalOutbox, SqlUser,
@@ -138,7 +138,8 @@ def _enqueue_pending_mutations(session):
 ACCOUNT_FIELDS = {
     "uid": "uid", "displayName": "display_name", "email": "email", "phone": "phone",
     "phoneNormalized": "phone_normalized", "role": "role", "status": "status",
-    "createdAt": "created_at", "updatedAt": "updated_at",
+    "createdAt": "created_at", "updatedAt": "updated_at", "deletedAt": "deleted_at",
+    "deletedBy": "deleted_by",
 }
 CALL_FIELDS = {
     "callerId": "caller_id", "callerName": "caller_name", "receiverId": "receiver_id",
@@ -162,7 +163,7 @@ TRANSLATOR_FIELDS = {
 
 
 class MySqlAccountRepository:
-    public_fields = {"uid", "displayName", "email", "phone", "role", "status", "createdAt", "updatedAt"}
+    public_fields = {"uid", "displayName", "email", "phone", "role", "status", "createdAt", "updatedAt", "deletedAt", "deletedBy"}
 
     def __init__(self, session): self.session = session
 
@@ -199,8 +200,67 @@ class MySqlAccountRepository:
     def update_status(self, uid, status):
         row = self.session.get(SqlUser, uid)
         if not row: return None
+        if row.deleted_at: raise ValueError("Deleted accounts cannot be reactivated.")
         _touch(row, {"status": status, "updatedAt": _now()}, ACCOUNT_FIELDS)
         _commit(self.session)
+        return _document(row, ACCOUNT_FIELDS, "uid")
+
+    def admin_update(self, uid, data, actor_id):
+        row = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
+        if not row: return None
+        if row.deleted_at: raise ValueError("Deleted accounts cannot be edited.")
+        changes = {}
+        if "displayName" in data:
+            name = str(data.get("displayName") or "").strip()
+            if not name or len(name) > 160: raise ValueError("A valid display name is required.")
+            changes["displayName"] = name
+        if "email" in data:
+            email = normalize_email(data.get("email"))
+            if not email or "@" not in email or len(email) > 320: raise ValueError("A valid email is required.")
+            duplicate = self.session.scalar(select(SqlUser.id).where(
+                SqlUser.email_normalized == email, SqlUser.id != uid
+            ).limit(1))
+            if duplicate: raise ValueError("That email is already connected to another account.")
+            changes["email"] = email
+            row.email_normalized = email
+            credential = self.session.get(SqlAuthCredential, uid)
+            if credential: credential.email_normalized = email; credential.updated_at = _now()
+        if "phone" in data:
+            supplied = str(data.get("phone") or "").strip()
+            phone = canonicalize_phone(supplied)
+            if supplied and not phone: raise ValueError("Enter a valid phone number including its country code.")
+            normalized = normalize_phone(phone)
+            duplicate = self.session.scalar(select(SqlUser.id).where(
+                SqlUser.phone_normalized == normalized, SqlUser.id != uid
+            ).limit(1)) if normalized else None
+            if duplicate: raise ValueError("That phone number is already connected to another account.")
+            changes.update({"phone": phone, "phoneNormalized": normalized})
+        if "role" in data:
+            role = str(data.get("role") or "").strip()
+            if role not in {"customer", "translator_applicant", "translator", "admin"}:
+                raise ValueError("Invalid account role.")
+            if uid == actor_id and role != "admin": raise ValueError("You cannot remove your own administrator role.")
+            changes["role"] = role
+        if "status" in data:
+            status = str(data.get("status") or "").strip()
+            if status not in {"active", "pending", "suspended"}: raise ValueError("Invalid account status.")
+            if uid == actor_id and status != "active": raise ValueError("You cannot disable your current administrator account.")
+            changes["status"] = status
+        changes["updatedAt"] = _now()
+        _touch(row, changes, ACCOUNT_FIELDS)
+        _commit(self.session)
+        return _document(row, ACCOUNT_FIELDS, "uid")
+
+    def soft_delete(self, uid, actor_id):
+        row = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
+        if not row: return None
+        if uid == actor_id: raise ValueError("You cannot delete your current administrator account.")
+        now = _now()
+        if not row.deleted_at:
+            _touch(row, {"status": "deleted", "deletedAt": now, "deletedBy": actor_id, "updatedAt": now}, ACCOUNT_FIELDS)
+            self.session.query(SqlAuthSession).filter_by(user_id=uid, revoked_at=None).update({"revoked_at": now})
+            self.session.query(SqlAuthToken).filter_by(user_id=uid, used_at=None).update({"used_at": now})
+            _commit(self.session)
         return _document(row, ACCOUNT_FIELDS, "uid")
 
     def bootstrap(self, identity, data):
@@ -449,7 +509,7 @@ class MySqlCallRepository:
                 for row in self.session.scalars(select(SqlCall)).all()]
 
     def create(self, caller, receiver, translator=None, language=None, dialect=None, specialty=None,
-               purpose="", scheduled_at=None, idempotency_key=None, processing_mode="baseline"):
+               purpose="", scheduled_at=None, idempotency_key=None, processing_mode="streaming"):
         now = _now()
         call_id = "req_" + hashlib.sha256(f"{caller['uid']}:{idempotency_key}".encode()).hexdigest()[:48] if idempotency_key else _new_id()
         existing = self.session.get(SqlCall, call_id)

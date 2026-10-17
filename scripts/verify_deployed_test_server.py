@@ -73,7 +73,7 @@ def main():
             "reviews", "organizations", "api_access", "taxonomy", "language_metrics",
         }
         check("ten MySQL repositories", set(backends) == expected_domains and set(backends.values()) == {"mysql"})
-        check("schema revision 0003", ready.get("schemaRevision") == "20261014_0003")
+        check("schema revision 0004", ready.get("schemaRevision") == "20261016_0004")
         first.login(caller["email"], password); second.login(peer["email"], password)
         check("first-party login", bool(first.token and second.token))
 

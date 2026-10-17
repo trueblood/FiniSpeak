@@ -11,13 +11,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app import create_app
 from extensions import db
 from models.sql_models import (
     SqlAuthCredential, SqlAuthRateLimit, SqlAuthSession, SqlAuthToken, SqlCall,
-    SqlSignalingEvent, SqlStoredFile, SqlUser,
+    SqlFriend, SqlSignalingEvent, SqlStoredFile, SqlTransactionalOutbox, SqlUser,
 )
 from repositories.provider import EXTENSION_KEY
 from services.file_storage_service import file_path
@@ -37,7 +37,7 @@ from services.synchronization_service import ReconciliationResult
 TABLES = (
     SqlUser.__table__, SqlAuthCredential.__table__, SqlAuthSession.__table__,
     SqlAuthToken.__table__, SqlAuthRateLimit.__table__, SqlStoredFile.__table__, SqlCall.__table__,
-    SqlSignalingEvent.__table__,
+    SqlSignalingEvent.__table__, SqlFriend.__table__, SqlTransactionalOutbox.__table__,
 )
 
 
@@ -86,6 +86,70 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertEqual(session.get_json()["user"]["uid"], user["uid"])
         self.assertEqual(self.client.post("/api/auth/logout", headers=headers).status_code, 200)
         self.assertEqual(self.client.get("/api/auth/session", headers=headers).status_code, 401)
+
+    def test_friends_can_be_added_updated_listed_and_removed_with_presence(self):
+        owner = self.register_and_verify("owner@example.test")
+        owner_login = self.login("owner@example.test")
+        friend = self.register_and_verify("friend@example.test")
+        self.login("friend@example.test")
+        headers = self.bearer(owner_login["accessToken"])
+
+        added = self.client.post("/api/friends", headers=headers, json={
+            "email": friend["email"], "nickname": "My friend", "savedPhone": "+13175550123",
+        })
+        self.assertEqual(added.status_code, 201)
+        self.assertTrue(added.get_json()["friend"]["online"])
+        self.assertEqual(added.get_json()["friend"]["nickname"], "My friend")
+
+        listing = self.client.get("/api/friends", headers=headers)
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual([item["uid"] for item in listing.get_json()["friends"]], [friend["uid"]])
+
+        updated = self.client.patch(f"/api/friends/{friend['uid']}", headers=headers, json={
+            "nickname": "Best friend", "savedPhone": "+14845550199",
+        })
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.get_json()["friend"]["savedPhone"], "+14845550199")
+        self.assertEqual(self.client.delete(f"/api/friends/{friend['uid']}", headers=headers).status_code, 204)
+        self.assertEqual(self.client.get("/api/friends", headers=headers).get_json()["friends"], [])
+
+    def test_admin_can_edit_and_soft_delete_an_account(self):
+        admin = self.register_and_verify("admin@example.test")
+        admin_row = db.session.get(SqlUser, admin["uid"])
+        admin_row.role = "admin"
+        db.session.commit()
+        admin_login = self.login("admin@example.test")
+        target = self.register_and_verify("target@example.test")
+        target_login = self.login("target@example.test")
+        headers = self.bearer(admin_login["accessToken"])
+
+        edited = self.client.patch(f"/api/admin/accounts/{target['uid']}", headers=headers, json={
+            "displayName": "Updated Target", "phone": "+13175550124", "status": "suspended",
+        })
+        self.assertEqual(edited.status_code, 200)
+        self.assertEqual(edited.get_json()["account"]["displayName"], "Updated Target")
+
+        deleted = self.client.delete(f"/api/admin/accounts/{target['uid']}", headers=headers)
+        self.assertEqual(deleted.status_code, 200)
+        row = db.session.get(SqlUser, target["uid"])
+        self.assertEqual(row.status, "deleted")
+        self.assertIsNotNone(row.deleted_at)
+        self.assertEqual(row.deleted_by, admin["uid"])
+        target_session = db.session.get(SqlAuthSession, target_login["sessionId"])
+        self.assertIsNotNone(target_session.revoked_at)
+        self.assertEqual(self.client.post("/api/auth/forgot-password", json={"email": target["email"]}).status_code, 200)
+        self.assertIsNone(db.session.scalar(select(SqlAuthToken).where(
+            SqlAuthToken.user_id == target["uid"], SqlAuthToken.purpose == "reset_password"
+        )))
+
+    def test_admin_cannot_soft_delete_current_account(self):
+        admin = self.register_and_verify("admin-self@example.test")
+        row = db.session.get(SqlUser, admin["uid"]); row.role = "admin"; db.session.commit()
+        login = self.login("admin-self@example.test")
+        response = self.client.delete(
+            f"/api/admin/accounts/{admin['uid']}", headers=self.bearer(login["accessToken"]),
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_registration_stores_e164_phone_and_rejects_duplicates(self):
         with patch("controllers.auth_controller.send_account_link"):
@@ -459,7 +523,7 @@ class FirebaseReplacementTests(unittest.TestCase):
             "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
         ))
         db.session.execute(text(
-            "INSERT INTO alembic_version (version_num) VALUES ('20261014_0003')"
+            "INSERT INTO alembic_version (version_num) VALUES ('20261016_0004')"
         ))
         db.session.commit()
         environment = {

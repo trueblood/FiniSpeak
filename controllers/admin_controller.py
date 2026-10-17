@@ -16,7 +16,7 @@ def overview():
     _, error = identity_or_response(admin=True)
     if error:
         return error
-    accounts = AccountModel.all()
+    accounts = [account for account in AccountModel.all() if account.get("status") != "deleted" and not account.get("deletedAt")]
     interpreters = TranslatorModel.all()
     calls = CallModel.all()
     organizations = OrganizationModel.all()
@@ -111,3 +111,17 @@ def language_metrics():
     if error:
         return error
     return jsonify(language_metrics_summary())
+
+
+def account_detail(uid):
+    identity, error = identity_or_response(admin=True)
+    if error:
+        return error
+    try:
+        if request.method == "DELETE":
+            account = AccountModel.soft_delete(uid, identity["uid"])
+        else:
+            account = AccountModel.admin_update(uid, json_body(), identity["uid"])
+        return (jsonify({"account": account}), 200) if account else (jsonify({"error": "Account not found."}), 404)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400

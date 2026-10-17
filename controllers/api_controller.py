@@ -84,7 +84,7 @@ def readiness():
             schema_revision = db.session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         except Exception:
             db.session.rollback()
-        checks["schemaRevision"] = schema_revision == "20261014_0003"
+        checks["schemaRevision"] = schema_revision == "20261016_0004"
     readiness_values = [value for key, value in checks.items() if key != "mysqlRequired"]
     deferred_services = []
     if test_deployment:

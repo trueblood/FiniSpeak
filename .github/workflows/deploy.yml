@@ -94,11 +94,11 @@ jobs:
           export FINISPEAK_RUN_MYSQL8_INTEGRATION=true
           export FINISPEAK_REPOSITORY_BACKEND=mysql
           export FINISPEAK_MYSQL_PRIMARY_ENABLED=true
-          export FINISPEAK_MYSQL_EXPECTED_REVISION=20261014_0003
+          export FINISPEAK_MYSQL_EXPECTED_REVISION=20261016_0004
           export FINISPEAK_COOKIE_SECURE=true
           test "$MYSQL_DATABASE" = finispeak_migration_test
           cd "$candidate"
-          "$integration_venv/bin/alembic" upgrade 20261014_0003
+          "$integration_venv/bin/alembic" upgrade 20261016_0004
           "$integration_venv/bin/python" -m unittest -v \
             tests.test_mysql8_cutover_integration
           REMOTE
@@ -121,14 +121,14 @@ jobs:
           ssh -i ~/.ssh/finispeak_deploy \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$DO_USER@$DO_HOST" \
-            "set -e; /var/www/finispeak/venv/bin/python -m pip install --disable-pip-version-check -r /var/www/finispeak/requirements.txt; /var/www/finispeak/venv/bin/python -m pip uninstall -y firebase-admin >/dev/null 2>&1 || true; sudo /usr/local/sbin/finispeak-deploy-test-server '$GITHUB_SHA'"
+            "set -e; /var/www/finispeak/venv/bin/python -m pip install --disable-pip-version-check -r /var/www/finispeak/requirements.txt; /var/www/finispeak/venv/bin/python -m pip uninstall -y firebase-admin >/dev/null 2>&1 || true; sudo install -o root -g root -m 0755 /var/www/finispeak/scripts/deploy_test_server.sh /usr/local/sbin/finispeak-deploy-test-server; sudo install -o root -g root -m 0755 /var/www/finispeak/scripts/finalize_test_deployment.py /usr/local/libexec/finispeak/finalize_test_deployment.py; sudo /usr/local/sbin/finispeak-deploy-test-server '$GITHUB_SHA'"
 
       - name: Record deployed revision
         run: |
           {
             echo "### FiniSpeak test deployment"
             echo "- Commit: \`$GITHUB_SHA\`"
-            echo "- MySQL target: \`20261014_0003\`"
+            echo "- MySQL target: \`20261016_0004\`"
             echo "- Repository routing: 10/10 MySQL"
             echo "- SMTP and public TURN: deferred"
           } >> "$GITHUB_STEP_SUMMARY"

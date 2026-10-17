@@ -121,6 +121,7 @@
                 <nav class="dashboard-nav" aria-label="Dashboard sections">
                     <button class="dashboard-nav-item active" type="button" data-dashboard-panel="home" aria-current="page"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3.5 10.5 8.5-7 8.5 7v9a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"/></svg></span><span>Home</span></button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="directory"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5M11 8v6M8 11h6"/></svg></span><span>Discover</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="friends"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.5"/><path d="M3.5 20c.5-4 2.4-6 5.5-6s5 2 5.5 6M14 15c3.5 0 5.5 1.7 6 5"/></svg></span><span>Friends</span></button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="profile"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c.8-4 3.3-6 7.5-6s6.7 2 7.5 6"/></svg></span><span>Profile</span></button>
                     <button id="interpreterProfileNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="interpreter"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.2c0 4.4-2.8 7.7-7 9.3-4.2-1.6-7-4.9-7-9.3V6z"/><path d="m9 12 2 2 4-4"/></svg></span><span>Interpreter</span></button>
                     <button id="adminNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="admin"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span><span>Admin</span></button>
@@ -162,7 +163,6 @@
                                     <div class="call-method-separator" aria-hidden="true"><span>or</span></div>
                                     <label for="receiverPhone">Phone number</label><div class="phone-input-group"><select id="receiverPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="receiverPhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="Enter their saved phone number" aria-describedby="receiverPhoneHelp"></div>
                                     <p id="receiverPhoneHelp" class="field-help call-phone-help">This starts a secure in-app call. It does not dial a cellular or landline number.</p>
-                                    <fieldset id="preCallProcessingModes" class="processing-mode-panel hidden"><legend>Experimental transcription logging</legend><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Streaming</button></div><small>Active method: <strong data-active-processing-label>Baseline</strong>. Select again to return to baseline.</small></fieldset>
                                     <button type="submit">Start in-app call</button>
                                 </form>
                                 <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
@@ -298,6 +298,24 @@
                     </div>
                 </div>
 
+                <div id="dashboardFriends" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Your contacts</span><h2>Friends</h2><p>Save FiniSpeak contacts, their numbers, and see who is recently online.</p></div><button id="refreshFriends" class="secondary" type="button">Refresh</button></div>
+                    <div class="friends-layout">
+                        <section class="card form-card" aria-labelledby="addFriendTitle">
+                            <h3 id="addFriendTitle">Add a friend</h3>
+                            <form id="friendForm">
+                                <label for="friendEmail">FiniSpeak email<input id="friendEmail" type="email" autocomplete="email" placeholder="friend@example.com"></label>
+                                <div class="call-method-separator" aria-hidden="true"><span>or</span></div>
+                                <label for="friendPhone">FiniSpeak phone number</label><div class="phone-input-group"><select id="friendPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="friendPhone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="317 555 0123"></div>
+                                <label for="friendNickname">Nickname (optional)<input id="friendNickname" maxlength="160" placeholder="How you know them"></label>
+                                <button type="submit">Add friend</button>
+                            </form>
+                            <p id="friendsStatus" class="status" role="status" aria-live="polite"></p>
+                        </section>
+                        <section class="card" aria-labelledby="friendsListTitle"><div class="section-heading"><span class="eyebrow">Saved contacts</span><h3 id="friendsListTitle">Friends list</h3></div><div id="friendsList" class="friends-list" aria-live="polite"><p>Loading friends…</p></div></section>
+                    </div>
+                </div>
+
                 <div id="dashboardAdmin" class="dashboard-panel hidden">
                     <div class="dashboard-heading"><div><span class="eyebrow">Administration</span><h2>Platform oversight</h2><p>Review credentials, accounts, sessions, organizations, and moderation activity.</p></div><button id="refreshAdmin" class="secondary" type="button">Refresh</button></div>
                     <div class="admin-metric-grid" aria-label="Platform activity">
@@ -410,7 +428,7 @@
                             <p class="transcript-note">Only finalized text is saved to FiniSpeak. Raw microphone audio is not stored. Partial captions stay on this device.</p>
                         </section>
                         <div class="translator-request-row"><button id="requestTranslatorButton" type="button">Request Translator</button></div>
-                        <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle"><div><span class="eyebrow">Translation mode</span><h3 id="processingModeTitle">Translation mode</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent Audio Processing</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Real-Time Streaming</button></div><p>Active method: <strong data-active-processing-label>Baseline</strong>. Select a mode again to return to baseline.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
+                        <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle"><div><span class="eyebrow">Tester controls</span><h3 id="processingModeTitle">Transcription logging method</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="baseline" aria-pressed="false">Baseline</button><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Streaming</button></div><p>Active method: <strong data-active-processing-label>Real-Time Streaming</strong>.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
                         <section id="interpreterMatches" class="interpreter-matches hidden" aria-live="polite">
                             <div class="interpreter-matches-heading"><div><span class="eyebrow">Available now</span><h3>Interpreter matches</h3></div><span id="interpreterMatchSummary"></span></div>
                             <div id="interpreterMatchList" class="interpreter-match-list"></div>

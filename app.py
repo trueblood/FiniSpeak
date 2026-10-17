@@ -30,6 +30,7 @@ from routes.web import web_bp
 from routes.commercial_api import commercial_api_bp
 from routes.auth import auth_bp
 from routes.files import files_bp
+from routes.friends import friends_bp
 from routes.signaling import register_signaling_socket
 ApiKeyModel = repository_proxy("api_access")
 
@@ -124,6 +125,7 @@ def create_app(repository_overrides=None):
     app.register_blueprint(commercial_api_bp, url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(files_bp, url_prefix="/api/files")
+    app.register_blueprint(friends_bp, url_prefix="/api/friends")
     app.register_blueprint(web_bp)
 
     @app.errorhandler(413)

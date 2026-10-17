@@ -182,7 +182,7 @@ def authenticate_password(email, password):
     if PASSWORD_HASHER.check_needs_rehash(credential.password_hash):
         credential.password_hash = PASSWORD_HASHER.hash(password)
     user = db.session.get(SqlUser, credential.user_id)
-    if not user or user.status == "suspended":
+    if not user or user.status in {"suspended", "deleted"} or user.deleted_at:
         db.session.rollback(); raise AuthorizationError("This FiniSpeak account is suspended.")
     db.session.commit()
     return _profile(user), create_session(user)
@@ -211,7 +211,9 @@ def issue_action_token(user_id, purpose):
 
 def request_password_reset(email):
     user = db.session.scalar(select(SqlUser).where(SqlUser.email_normalized == normalize_email(email)).limit(1))
-    return (user, issue_action_token(user.id, "reset_password")) if user else (None, None)
+    if not user or user.deleted_at or user.status == "deleted":
+        return None, None
+    return user, issue_action_token(user.id, "reset_password")
 
 
 def set_test_account_password(user_id, password):
@@ -221,7 +223,7 @@ def set_test_account_password(user_id, password):
     if not _password_valid(password):
         raise ValueError("Password must be 12–256 characters and contain letters and numbers.")
     user = db.session.get(SqlUser, str(user_id or "").strip())
-    if not user:
+    if not user or user.deleted_at or user.status == "deleted":
         raise AuthenticationError("The requested account does not exist.")
     token = issue_action_token(user.id, "reset_password")
     return consume_action_token(token, "reset_password", password)
@@ -234,6 +236,8 @@ def consume_action_token(raw_token, purpose, password=None):
     if not row or row.used_at or _aware(row.expires_at) <= now:
         raise AuthenticationError("This token is invalid or expired.")
     credential, user = db.session.get(SqlAuthCredential, row.user_id), db.session.get(SqlUser, row.user_id)
+    if not user or user.deleted_at or user.status == "deleted":
+        raise AuthenticationError("This token is invalid or expired.")
     if purpose == "verify_email":
         if not credential: raise AuthenticationError("Account credentials are unavailable.")
         credential.email_verified_at, credential.updated_at = now, now
@@ -268,7 +272,8 @@ def authenticate_request(_request=None, optional=False):
     if not session or session.user_id != user_id or session.revoked_at or _aware(session.expires_at) <= now:
         raise AuthenticationError("The FiniSpeak session is invalid or expired.")
     user = db.session.get(SqlUser, user_id)
-    if not user: raise AuthenticationError("The FiniSpeak account no longer exists.")
+    if not user or user.deleted_at or user.status == "deleted":
+        raise AuthenticationError("The FiniSpeak account no longer exists.")
     if user.status == "suspended": raise AuthorizationError("This FiniSpeak account is suspended.")
     session.last_seen_at = now; db.session.commit()
     identity = _profile(user); identity["claims"] = claims

@@ -78,7 +78,7 @@ def processing_capabilities():
     if error:
         return error
     modes = allowed_processing_modes(identity)
-    return jsonify({"experimental": len(modes) > 1, "modes": modes, "default": "baseline"})
+    return jsonify({"experimental": len(modes) > 1, "modes": modes, "default": "streaming"})
 
 
 def update_processing_mode(call_id):

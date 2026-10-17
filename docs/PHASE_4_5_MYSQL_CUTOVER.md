@@ -23,7 +23,7 @@ taxonomy documents directly.
 1. Take and verify a DigitalOcean backup using
    `DIGITALOCEAN_MYSQL_BACKUP_RESTORE.md`. Record the backup identifier outside
    application logs.
-2. Confirm `alembic current` reports `20261014_0003`. Do not run Alembic from
+2. Confirm `alembic current` reports `20261016_0004`. Do not run Alembic from
    the web process.
 3. Stop all Phase 3 catch-up workers only after their checkpoints are idle and
    no batch is retrying. Confirm the transactional outbox has no failed rows.
@@ -144,7 +144,7 @@ Use one maintenance change with these values only after the preflight passes:
 ```text
 FINISPEAK_REPOSITORY_BACKEND=mysql
 FINISPEAK_MYSQL_PRIMARY_ENABLED=true
-FINISPEAK_MYSQL_EXPECTED_REVISION=20261014_0003
+FINISPEAK_MYSQL_EXPECTED_REVISION=20261016_0004
 FINISPEAK_MYSQL_RECONCILED_AT=<fresh UTC timestamp>
 FINISPEAK_MYSQL_RECONCILIATION_DIGEST=<64 lowercase hex characters>
 FINISPEAK_SHADOW_COMPARISON_ENABLED=false

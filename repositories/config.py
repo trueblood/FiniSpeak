@@ -66,8 +66,8 @@ def cutover_safety(environ=None, now=None):
     if not enabled:
         raise RuntimeError("MySQL-primary requires FINISPEAK_MYSQL_PRIMARY_ENABLED=true.")
     revision = str(environ.get("FINISPEAK_MYSQL_EXPECTED_REVISION", "")).strip()
-    if revision != "20261014_0003":
-        raise RuntimeError("MySQL-primary requires an explicit 20261014_0003 schema attestation.")
+    if revision != "20261016_0004":
+        raise RuntimeError("MySQL-primary requires an explicit 20261016_0004 schema attestation.")
     digest = str(environ.get("FINISPEAK_MYSQL_RECONCILIATION_DIGEST", "")).strip().lower()
     if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
         raise RuntimeError("MySQL-primary requires a SHA-256 reconciliation digest.")

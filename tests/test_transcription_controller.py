@@ -43,7 +43,7 @@ class TranscriptionControllerTests(unittest.TestCase):
         final = next(message for message in socket.sent if message.get("type") == "final")
         self.assertEqual(final["language"], "es")
         self.assertEqual(final["languageConfidence"], 1.0)
-        self.assertEqual(final["processingMode"], "baseline")
+        self.assertEqual(final["processingMode"], "streaming")
         self.assertEqual(socket.sent[-1]["type"], "stopped")
 
     @patch("controllers.transcription_controller.record_language_event")
@@ -54,7 +54,9 @@ class TranscriptionControllerTests(unittest.TestCase):
     ):
         from controllers.transcription_controller import handle_socket
 
-        verify_participant.return_value = {"uid": "tester-1", "role": "customer"}
+        verify_participant.return_value = {
+            "uid": "tester-1", "role": "customer", "email": "timtrueblood@outlook.com",
+        }
         transcribe_pcm.return_value = {"text": "", "language": None, "languageConfidence": None}
         for mode in ("concurrent", "streaming"):
             with self.subTest(mode=mode):
@@ -79,7 +81,9 @@ class TranscriptionControllerTests(unittest.TestCase):
     ):
         from controllers.transcription_controller import handle_socket
 
-        verify_participant.return_value = {"uid": "tester-1", "role": "customer"}
+        verify_participant.return_value = {
+            "uid": "tester-1", "role": "customer", "email": "timtrueblood@outlook.com",
+        }
         release_worker = threading.Event()
         def delayed_transcription(*_args):
             release_worker.wait(2)

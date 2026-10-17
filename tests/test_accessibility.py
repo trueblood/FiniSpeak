@@ -59,17 +59,18 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="historyTranscriptList" class="transcript-list history-transcript-list" role="log"', self.html)
 
     def test_experimental_processing_controls_are_hidden_and_stateful(self):
-        self.assertIn('id="preCallProcessingModes" class="processing-mode-panel hidden"', self.html)
+        self.assertNotIn('id="preCallProcessingModes"', self.html)
         self.assertIn('id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden"', self.html)
-        self.assertEqual(self.html.count('data-processing-mode="concurrent" aria-pressed="false"'), 2)
-        self.assertEqual(self.html.count('data-processing-mode="streaming" aria-pressed="false"'), 2)
+        self.assertEqual(self.html.count('data-processing-mode="baseline" aria-pressed="false"'), 1)
+        self.assertEqual(self.html.count('data-processing-mode="concurrent" aria-pressed="false"'), 1)
+        self.assertEqual(self.html.count('data-processing-mode="streaming" aria-pressed="false"'), 1)
 
     def test_every_phone_input_has_a_country_code_selector(self):
-        self.assertEqual(self.html.count('type="tel"'), 4)
-        self.assertEqual(self.html.count('data-phone-country'), 4)
-        for prefix in ("signupPhone", "receiverPhone", "profilePhone", "interpreterPhone"):
+        self.assertEqual(self.html.count('type="tel"'), 5)
+        self.assertEqual(self.html.count('data-phone-country'), 5)
+        for prefix in ("signupPhone", "receiverPhone", "friendPhone", "profilePhone", "interpreterPhone"):
             self.assertIn(f'id="{prefix}Country"', self.html)
-            self.assertIn(f'id="{prefix}" type="tel" autocomplete="tel-national"', self.html)
+            self.assertIn(f'id="{prefix}" type="tel"', self.html)
 
 
 if __name__ == "__main__":

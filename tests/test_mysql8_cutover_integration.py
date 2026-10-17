@@ -49,7 +49,7 @@ class MySql8CutoverIntegrationTests(unittest.TestCase):
         if selected != EXPECTED_DATABASE or not str(version).startswith("8.0."):
             raise RuntimeError(f"Unsafe or unsupported MySQL target: {selected!r} {version!r}")
         revision = db.session.execute(text("SELECT version_num FROM alembic_version"), {}).scalar_one()
-        if revision != "20261014_0003":
+        if revision != "20261016_0004":
             raise RuntimeError(f"Unexpected Alembic revision: {revision!r}")
 
     @classmethod

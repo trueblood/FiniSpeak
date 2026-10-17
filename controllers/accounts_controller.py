@@ -74,5 +74,8 @@ def update_status(uid):
     status = json_body().get("status")
     if status not in {"active", "pending", "suspended"}:
         return jsonify({"error": "status must be active, pending, or suspended"}), 400
-    account = AccountModel.update_status(uid, status)
+    try:
+        account = AccountModel.update_status(uid, status)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return (jsonify({"account": account}), 200) if account else (jsonify({"error": "Account not found"}), 404)

@@ -17,18 +17,18 @@ TRANSCRIPTION_RESULT = {
 
 
 class ProcessingModeAuthorizationTests(unittest.TestCase):
-    def test_all_signed_in_users_receive_trial_modes(self):
-        identity = {"uid": "ordinary-user"}
+    def test_designated_tester_receives_all_modes(self):
+        identity = {"uid": "tester", "email": "timtrueblood@outlook.com"}
         self.assertEqual(
             allowed_processing_modes(identity),
             ["baseline", "concurrent", "streaming"],
         )
         self.assertEqual(authorize_processing_mode(identity, "concurrent"), "concurrent")
 
-    def test_missing_identity_cannot_enable_experimental_modes(self):
-        self.assertEqual(allowed_processing_modes({}), ["baseline"])
+    def test_ordinary_users_receive_streaming_only(self):
+        self.assertEqual(allowed_processing_modes({"uid": "ordinary", "email": "other@example.com"}), ["streaming"])
         with self.assertRaises(PermissionError):
-            authorize_processing_mode({}, "streaming")
+            authorize_processing_mode({}, "concurrent")
 
 
 class AudioProcessingPipelineTests(unittest.TestCase):
@@ -91,17 +91,27 @@ class ProcessingModeControllerTests(unittest.TestCase):
         self.client = self.app.test_client()
 
     @patch("controllers.calls_controller.identity_or_response")
-    def test_capabilities_show_trial_modes_to_signed_in_users(self, identity):
-        identity.return_value = ({"uid": "ordinary-user", "role": "customer"}, None)
+    def test_capabilities_hide_trial_modes_from_ordinary_users(self, identity):
+        identity.return_value = ({"uid": "ordinary-user", "role": "customer", "email": "other@example.com"}, None)
+        response = self.client.get("/api/calls/processing-capabilities")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["modes"], ["streaming"])
+        self.assertEqual(response.get_json()["default"], "streaming")
+        self.assertFalse(response.get_json()["experimental"])
+
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_capabilities_show_three_modes_to_designated_tester(self, identity):
+        identity.return_value = ({"uid": "tester-1", "role": "customer", "email": "timtrueblood@outlook.com"}, None)
         response = self.client.get("/api/calls/processing-capabilities")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["modes"], ["baseline", "concurrent", "streaming"])
+        self.assertEqual(response.get_json()["default"], "streaming")
         self.assertTrue(response.get_json()["experimental"])
 
     @patch("controllers.calls_controller.CallModel.set_processing_mode")
     @patch("controllers.calls_controller.identity_or_response")
     def test_mode_change_is_scoped_to_requesting_participant(self, identity, set_mode):
-        identity.return_value = ({"uid": "tester-1", "role": "customer"}, None)
+        identity.return_value = ({"uid": "tester-1", "role": "customer", "email": "timtrueblood@outlook.com"}, None)
         set_mode.return_value = {"id": "call-1", "processingModes": {"tester-1": "streaming"}}
         response = self.client.patch(
             "/api/calls/call-1/processing-mode",

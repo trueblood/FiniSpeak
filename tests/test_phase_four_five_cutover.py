@@ -14,7 +14,7 @@ class CutoverConfigurationTests(unittest.TestCase):
     def valid_environment(self):
         return {
             "FINISPEAK_MYSQL_PRIMARY_ENABLED": "true",
-            "FINISPEAK_MYSQL_EXPECTED_REVISION": "20261014_0003",
+            "FINISPEAK_MYSQL_EXPECTED_REVISION": "20261016_0004",
             "FINISPEAK_MYSQL_RECONCILIATION_DIGEST": "a" * 64,
             "FINISPEAK_MYSQL_RECONCILED_AT": "2026-10-13T20:00:00Z",
         }
@@ -38,7 +38,7 @@ class CutoverConfigurationTests(unittest.TestCase):
 
     def test_mysql_primary_accepts_fresh_digest_and_revision(self):
         result = cutover_safety(self.valid_environment(), datetime(2026, 10, 13, 20, 1, tzinfo=timezone.utc))
-        self.assertEqual(result["revision"], "20261014_0003")
+        self.assertEqual(result["revision"], "20261016_0004")
         self.assertEqual(result["digest"], "a" * 64)
 
 

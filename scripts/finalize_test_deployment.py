@@ -32,7 +32,7 @@ def update_environment(path, attestation_path, commit):
         "FINISPEAK_COOKIE_SECURE": "true",
         "FINISPEAK_REPOSITORY_BACKEND": "mysql",
         "FINISPEAK_MYSQL_PRIMARY_ENABLED": "true",
-        "FINISPEAK_MYSQL_EXPECTED_REVISION": "20261014_0003",
+        "FINISPEAK_MYSQL_EXPECTED_REVISION": "20261016_0004",
         "FINISPEAK_MYSQL_RECONCILED_AT": timestamp,
         "FINISPEAK_MYSQL_RECONCILIATION_DIGEST": digest,
         "FINISPEAK_SHADOW_COMPARISON_ENABLED": "false",

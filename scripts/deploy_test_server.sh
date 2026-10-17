@@ -51,10 +51,10 @@ cd "$APP_ROOT"
 export FINISPEAK_ENV=migration
 current_revision="$(run_service ./venv/bin/alembic current 2>/dev/null | awk 'NF {print $1}' | tail -1)"
 case "$current_revision" in
-  20261013_0002)
+  20261013_0002|20261014_0003)
     backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-    backup_tmp="/var/backups/finispeak/.mysql-pre-0003-${backup_stamp}.sql.gz.tmp"
-    backup_file="/var/backups/finispeak/mysql-pre-0003-${backup_stamp}.sql.gz"
+    backup_tmp="/var/backups/finispeak/.mysql-pre-0004-${backup_stamp}.sql.gz.tmp"
+    backup_file="/var/backups/finispeak/mysql-pre-0004-${backup_stamp}.sql.gz"
     umask 077
     mysqldump --login-path=finispeak-backup --single-transaction --routines \
       --triggers --set-gtid-purged=OFF "$MYSQL_DATABASE" | gzip -9 > "$backup_tmp"
@@ -63,21 +63,14 @@ case "$current_revision" in
     sha256sum "$backup_file" > "${backup_file}.sha256"
     chmod 0600 "$backup_file" "${backup_file}.sha256"
     echo "MYSQL BACKUP VERIFIED file=$(basename "$backup_file")"
-    run_service ./venv/bin/alembic upgrade 20261014_0003
+    run_service ./venv/bin/alembic upgrade 20261016_0004
     ;;
-  20261014_0003) ;;
+  20261016_0004) ;;
   *) fail "unexpected MySQL revision: ${current_revision:-none}" ;;
 esac
 
-if test "$current_revision" = 20261014_0003 && ! test -f "$DEPLOYMENT_MARKER"; then
-  previous_backup="$(find /var/backups/finispeak -maxdepth 1 -type f -name 'mysql-pre-0003-*.sql.gz' -print | sort | tail -1)"
-  test -n "$previous_backup" || fail "revision 0003 has no pre-migration backup"
-  test -f "${previous_backup}.sha256" || fail "pre-migration backup checksum is missing"
-  sha256sum --check --status "${previous_backup}.sha256" || fail "pre-migration backup checksum failed"
-fi
-
-test "$(run_service ./venv/bin/alembic current 2>/dev/null | awk 'NF {print $1}' | tail -1)" = 20261014_0003 \
-  || fail "MySQL did not reach revision 0003"
+test "$(run_service ./venv/bin/alembic current 2>/dev/null | awk 'NF {print $1}' | tail -1)" = 20261016_0004 \
+  || fail "MySQL did not reach revision 0004"
 
 activation_report="$CUTOVER_ROOT/account-activation-readiness-${COMMIT_SHA}.json"
 run_service ./venv/bin/python scripts/check_account_activation_readiness.py > "$activation_report"
@@ -154,7 +147,7 @@ fi
 attestation="$CUTOVER_ROOT/deployment-attestation-${COMMIT_SHA}.txt"
 {
   echo "commit=$COMMIT_SHA"
-  echo "schema=20261014_0003"
+  echo "schema=20261016_0004"
   echo "database=finispeak"
   echo "storage_marker=$(test -f "$STORAGE_MARKER" && echo present)"
   if test "$initial_cutover" = true; then
@@ -184,13 +177,13 @@ set +a
 export FINISPEAK_ENV=production
 run_service ./venv/bin/python scripts/production_readiness_check.py --production
 run_service ./venv/bin/python -c 'from repositories.config import cutover_safety; cutover_safety()'
-run_service ./venv/bin/alembic current 2>/dev/null | grep -q 20261014_0003
+run_service ./venv/bin/alembic current 2>/dev/null | grep -q 20261016_0004
 
 systemctl restart finispeak.service
 systemctl is-active --quiet finispeak.service
 ready_url="${FINISPEAK_INTERNAL_READY_URL:-http://127.0.0.1:8080/api/ready}"
 curl --fail --silent --show-error --retry 15 --retry-delay 2 --retry-connrefused "$ready_url" |
-  ./venv/bin/python -c 'import json,sys; p=json.load(sys.stdin); b=p.get("repositoryBackends",{}); expected={"accounts","translators","calls","participants","transcripts","reviews","organizations","api_access","taxonomy","language_metrics"}; assert p.get("status")=="ready"; assert p.get("deploymentProfile")=="test"; assert p.get("schemaRevision")=="20261014_0003"; assert set(b)==expected and set(b.values())=={"mysql"}'
+  ./venv/bin/python -c 'import json,sys; p=json.load(sys.stdin); b=p.get("repositoryBackends",{}); expected={"accounts","translators","calls","participants","transcripts","reviews","organizations","api_access","taxonomy","language_metrics"}; assert p.get("status")=="ready"; assert p.get("deploymentProfile")=="test"; assert p.get("schemaRevision")=="20261016_0004"; assert set(b)==expected and set(b.values())=={"mysql"}'
 
 main_pid="$(systemctl show --property MainPID --value finispeak.service)"
 test "$main_pid" -gt 1 || fail "service has no main process"
@@ -205,7 +198,7 @@ run_service env FINISPEAK_STORAGE_OWNER="$SERVICE_USER" \
   > "$CUTOVER_ROOT/storage-integrity-post-smoke-${COMMIT_SHA}.json"
 chmod 0600 "$CUTOVER_ROOT/storage-integrity-post-smoke-${COMMIT_SHA}.json"
 
-printf 'commit=%s\nschema=20261014_0003\nstatus=verified\n' "$COMMIT_SHA" > "$DEPLOYMENT_MARKER"
+printf 'commit=%s\nschema=20261016_0004\nstatus=verified\n' "$COMMIT_SHA" > "$DEPLOYMENT_MARKER"
 chmod 0600 "$DEPLOYMENT_MARKER"
 printf 'STORAGE MIGRATION VERIFIED '
 cat "$STORAGE_MARKER"
@@ -213,4 +206,4 @@ printf 'PRIVATE STORAGE VERIFIED '
 cat "$CUTOVER_ROOT/storage-integrity-post-smoke-${COMMIT_SHA}.json"
 printf 'ACCOUNT ACTIVATION READY '
 cat "$activation_report"
-echo "DEPLOYMENT VERIFIED commit=$COMMIT_SHA schema=20261014_0003"
+echo "DEPLOYMENT VERIFIED commit=$COMMIT_SHA schema=20261016_0004"
