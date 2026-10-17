@@ -11,8 +11,11 @@ def index():
         limit = min(max(int(request.args.get("limit", 50)), 1), 100)
         page_token = max(int(request.args.get("pageToken", 0)), 0)
         query_limit = min(page_token + limit + 1, 100)
+        languages = [str(value).strip() for value in request.args.getlist("language") if str(value).strip()]
         profiles = TranslatorModel.search(
-            language=request.args.get("language"), dialect=request.args.get("dialect"),
+            language=languages[0] if len(languages) == 1 else None,
+            languages=languages if len(languages) > 1 else None,
+            dialect=request.args.get("dialect"),
             specialty=request.args.get("specialty"), available_now=request.args.get("available") == "now",
             minimum_rating=request.args.get("minimumRating", 0),
             verified_only=request.args.get("verified") in {"1", "true", "yes"},

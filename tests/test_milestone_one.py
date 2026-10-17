@@ -61,10 +61,31 @@ class MilestoneOneApiTests(unittest.TestCase):
         self.assertEqual(response.get_json()["count"], 1)
         search.assert_called_once_with(
             language="Spanish",
+            languages=None,
             dialect="Mexican Spanish",
             specialty="Medical",
             available_now=True,
             minimum_rating="4",
+            verified_only=False,
+            service_mode="both",
+            latitude=None,
+            longitude=None,
+            radius_miles=None,
+            limit=51,
+        )
+
+    @patch("controllers.discovery_controller.TranslatorModel.search")
+    def test_discovery_requires_every_selected_language(self, search):
+        search.return_value = []
+        response = self.client.get("/api/discovery?language=English&language=Spanish&available=now")
+        self.assertEqual(response.status_code, 200)
+        search.assert_called_once_with(
+            language=None,
+            languages=["English", "Spanish"],
+            dialect=None,
+            specialty=None,
+            available_now=True,
+            minimum_rating=0,
             verified_only=False,
             service_mode="both",
             latitude=None,

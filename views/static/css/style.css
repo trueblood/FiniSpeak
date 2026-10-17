@@ -201,13 +201,15 @@ button.interpreter-match.is-invited,button.request-match-card.is-invited { borde
 .request-language-option input { width:auto; margin:0; accent-color:#60a5fa; }
 .request-language-option.detected span::after { content:"Detected"; margin-left:.5rem; color:#93c5fd; font-size:.67rem; font-weight:850; text-transform:uppercase; }
 .request-language-error { margin:.75rem 0 0; color:#fca5a5; font-weight:700; }
-.request-best-matches,.request-map-options { display:none; }
+.request-best-matches { display:block; margin:0 0 1rem; }
 .request-best-matches[hidden],#requestMatchMapPanel[hidden] { display:none !important; }
 .request-search-disclosure > summary,.request-more > summary { cursor:pointer; color:#f8fafc; font-weight:800; }
 .request-search-disclosure > summary { margin:0 0 .75rem; }
 .request-more { margin-top:10px; }
 .request-more > summary { color:#93c5fd; }
 .request-match-card { display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px; margin-top:10px; padding:14px; border-radius:18px; background:#10151d; border:1px solid rgba(255,255,255,.1); color:#e8eef6; }
+.translator-request-modal-card button.request-match-card { background:#10151d; color:#e8eef6; }
+.translator-request-modal-card button.request-match-card:hover,.translator-request-modal-card button.request-match-card.is-invited { background:#172033; color:#fff; }
 button.request-match-card:hover,button.request-match-card.is-invited { background:#172033; }
 .request-match-avatar { width:58px; height:58px; display:grid; place-items:center; border-radius:16px; background:#dbeafe; color:#1e3a8a; font-weight:850; background-size:cover; background-position:center; }
 .request-match-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }

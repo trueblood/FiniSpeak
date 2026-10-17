@@ -97,6 +97,16 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn(">More translators<", self.html)
         self.assertIn(">Map options<", self.html)
         self.assertIn('id="requestMatchMapButton"', self.html)
+        self.assertIn(">Top matches<", self.html)
+        self.assertIn('id="requestMatchHint"', self.html)
+        script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        styles = (Path(__file__).parents[1] / "views/static/css/style.css").read_text()
+        opener = script[script.index("function openTranslatorRequest"):script.index("async function loadAvailableRequestMatches")]
+        self.assertIn("loadAvailableRequestMatches()", opener)
+        self.assertNotIn("if (mobile) loadAvailableRequestMatches()", opener)
+        self.assertIn("matches.slice(0, 3)", script)
+        self.assertIn(".request-best-matches { display:block;", styles)
+        self.assertNotIn(".request-best-matches,.request-map-options { display:none; }", styles)
 
     def test_every_phone_input_has_a_country_code_selector(self):
         self.assertEqual(self.html.count('type="tel"'), 5)

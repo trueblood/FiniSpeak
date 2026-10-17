@@ -580,10 +580,11 @@
                 <div><span class="eyebrow">Language matching</span><h2 id="translatorRequestTitle">Request a translator</h2></div>
                 <button id="closeTranslatorRequestModal" class="secondary" type="button">Close</button>
             </div>
-            <p id="translatorRequestDescription">Choose every language being used in this call. Languages detected from the conversation are selected automatically.</p>
+            <p id="translatorRequestDescription">The top translators for the languages in this call are listed first. Click one to invite them, or change the languages below and pick someone else.</p>
             <form id="translatorRequestForm">
                 <section id="requestBestMatches" class="request-best-matches" aria-live="polite">
-                    <div class="request-language-heading"><strong>Available best matches</strong><span id="requestBestMatchCount"></span></div>
+                    <div class="request-language-heading"><strong>Top matches</strong><span id="requestBestMatchCount"></span></div>
+                    <p id="requestMatchHint" class="request-language-empty">Click a translator to invite them to this call.</p>
                     <div id="requestBestMatchList"></div>
                     <details id="requestMoreMatches" class="request-more hidden">
                         <summary>More translators</summary>

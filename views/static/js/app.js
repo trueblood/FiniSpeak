@@ -2388,18 +2388,50 @@ function openTranslatorRequest() {
     setRequestMatchView("list");
     renderRequestMatchCards();
     openModal("translatorRequestModal");
-    if (mobile) loadAvailableRequestMatches().catch(error => console.warn("Available translators could not be loaded:", error));
+    loadAvailableRequestMatches().catch(error => console.warn("Available translators could not be loaded:", error));
 }
 
-async function loadAvailableRequestMatches() {
-    const language = [...selectedRequestLanguages][0] || "";
-    const params = new URLSearchParams({ available: "now", limit: "6", mode: "both" });
-    if (language) params.set("language", language);
+let requestMatchRelaxed = false;
+let requestMatchTimer = 0;
+
+function scheduleRequestMatchLoad() {
+    window.clearTimeout(requestMatchTimer);
+    requestMatchTimer = window.setTimeout(() => {
+        if ($("translatorRequestModal")?.classList.contains("hidden")) return;
+        loadAvailableRequestMatches().catch(error => console.warn("Available translators could not be loaded:", error));
+    }, 250);
+}
+
+async function fetchDiscoveryInterpreters(params) {
     const response = await fetch(`/api/discovery?${params}`);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Could not load translators");
-    requestMatchProfiles = (payload.interpreters || []).filter(profile => profile.displayName)
-        .sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.ratingCount || 0) - Number(a.ratingCount || 0));
+    return (payload.interpreters || []).filter(profile => profile.displayName);
+}
+
+function rankRequestMatches(profiles) {
+    return [...profiles].sort((a, b) =>
+        Number(Boolean(b.availability?.availableNow)) - Number(Boolean(a.availability?.availableNow))
+        || Number(b.rating || 0) - Number(a.rating || 0)
+        || Number(b.ratingCount || 0) - Number(a.ratingCount || 0));
+}
+
+async function loadAvailableRequestMatches() {
+    const languages = [...selectedRequestLanguages];
+    const params = new URLSearchParams({ available: "now", limit: "12", mode: "both" });
+    languages.forEach(language => params.append("language", language));
+    let profiles = await fetchDiscoveryInterpreters(params);
+    requestMatchRelaxed = false;
+    if (!profiles.length) {
+        params.delete("available");
+        profiles = await fetchDiscoveryInterpreters(params);
+        requestMatchRelaxed = profiles.length > 0;
+    }
+    requestMatchProfiles = rankRequestMatches(profiles);
+    const label = languages.join(" + ") || "Selected languages";
+    interpreterMatchesByLanguage.clear();
+    interpreterMatchesByLanguage.set(label, requestMatchProfiles);
+    renderInterpreterMatches();
     renderRequestMatchCards();
 }
 
@@ -2505,9 +2537,21 @@ function renderRequestMatchCards() {
     const moreList = $("requestMoreMatchList");
     if (!list || !more || !moreList) return;
     const matches = visibleRequestMatches();
-    const [best, ...rest] = matches;
-    list.replaceChildren(best ? requestMatchCard(best) : Object.assign(document.createElement("p"), { className: "request-language-empty", textContent: "No available match yet. Open search to choose a language." }));
-    $("requestBestMatchCount").textContent = matches.length ? `${matches.length} available` : "None yet";
+    const top = matches.slice(0, 3);
+    const rest = matches.slice(3);
+    const online = top.filter(profile => profile.availability?.availableNow).length;
+    list.replaceChildren(...(top.length
+        ? top.map(requestMatchCard)
+        : [Object.assign(document.createElement("p"), { className: "request-language-empty", textContent: "No translator matches these languages yet. Choose another language below." })]));
+    $("requestBestMatchCount").textContent = !matches.length
+        ? "None yet"
+        : requestMatchRelaxed
+            ? "No one is online"
+            : `${online || top.length} online`;
+    const hint = $("requestMatchHint");
+    if (hint) hint.textContent = requestMatchRelaxed
+        ? "No one is online for these languages. You can still click a matching translator to invite them."
+        : "Click a translator to invite them to this call.";
     more.classList.toggle("hidden", rest.length === 0);
     more.querySelector("summary").textContent = `More translators (${rest.length})`;
     moreList.replaceChildren(...rest.map(requestMatchCard));
@@ -2583,6 +2627,7 @@ function renderTranslatorLanguageOptions() {
             else selectedRequestLanguages.delete(language);
             $("translatorRequestError").classList.add("hidden");
             updateSelectedRequestLanguageCount();
+            scheduleRequestMatchLoad();
         };
         const name = document.createElement("span");
         name.textContent = language;
@@ -2809,23 +2854,20 @@ async function requestTranslator(event) {
         return;
     }
     const submit = $("submitTranslatorRequest");
-    const mobile = window.matchMedia("(max-width:700px)").matches;
     submit.disabled = true;
     submit.textContent = "Finding…";
     try {
-        const result = await loadRequestMatches();
-        const count = Number(result?.count || 0);
+        await loadAvailableRequestMatches();
+        const count = requestMatchProfiles.length;
         $("callStatus").textContent = count
-            ? `Translator requested for ${languages.join(", ")} · ${count} matching interpreter${count === 1 ? "" : "s"} found.`
-            : `Translator requested for ${languages.join(", ")} · no exact match is available yet.`;
-        if (mobile) {
-            $("requestLanguageSearchPanel").open = false;
-            $("requestBestMatchList")?.scrollIntoView({ block: "nearest" });
-        } else closeModal("translatorRequestModal");
+            ? `${Math.min(3, count)} translator${count === 1 ? "" : "s"} match ${languages.join(", ")}. Click one to invite them.`
+            : `No translator matches ${languages.join(", ")} yet.`;
+        $("requestLanguageSearchPanel").open = false;
+        $("requestBestMatchList")?.scrollIntoView({ block: "nearest" });
     } catch (error) {
         $("translatorRequestError").textContent = error.message || "Translator matching is unavailable right now.";
         $("translatorRequestError").classList.remove("hidden");
-        if (mobile) $("requestLanguageSearchPanel").open = true;
+        $("requestLanguageSearchPanel").open = true;
     } finally {
         submit.textContent = "Find translators";
         submit.disabled = selectedRequestLanguages.size === 0;
