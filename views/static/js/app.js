@@ -1,4 +1,4 @@
-import { createCallExperience } from "./call-experience.js?v=20261017-cameras";
+import { createCallExperience } from "./call-experience.js?v=20261017-gallery";
 import { applyMeshSignal, attachMeshHandlers, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer } from "./webrtc-mesh.js?v=20261017-cameras";
 
 const $ = (id) => document.getElementById(id);

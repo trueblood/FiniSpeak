@@ -740,15 +740,17 @@ export function createCallExperience(deps) {
         let best = null;
         for (let columns = 1; columns <= count; columns += 1) {
             const rows = Math.ceil(count / columns);
-            const tileWidth = width / columns;
-            const tileHeight = height / rows;
-            if (tileWidth < 96 || tileHeight < 72) continue;
+            const tileWidth = (width - 10 * (columns - 1)) / columns;
+            const tileHeight = (height - 10 * (rows - 1)) / rows;
+            if (tileWidth < 140 || tileHeight < 120) continue;
             const aspect = tileWidth / tileHeight;
-            const score = Math.abs(Math.log(aspect / (16 / 9)));
+            const target = width >= height ? 3 / 4 : 4 / 3;
+            const empty = columns * rows - count;
+            const score = Math.abs(Math.log(aspect / target)) + empty * 0.9;
             if (!best || score < best.score) best = { columns, rows, score };
         }
         if (best) return best;
-        const columns = width >= height ? Math.min(4, count) : Math.min(2, count);
+        const columns = width >= height ? Math.min(3, count) : 1;
         return { columns, rows: Math.ceil(count / columns) };
     }
 
@@ -759,6 +761,8 @@ export function createCallExperience(deps) {
         for (const card of cards) {
             card.classList.add("is-stage");
             card.classList.remove("is-self-pip", "is-main", "is-thumb");
+            card.style.gridColumn = "";
+            card.style.gridRow = "";
             // Moving a live video element restarts it and flashes the camera.
             if (card.parentElement !== stage) stage.appendChild(card);
         }
@@ -796,6 +800,10 @@ export function createCallExperience(deps) {
         const shape = cameraGridShape(counted.length, frame.width, frame.height);
         stage.style.setProperty("--camera-columns", String(shape.columns));
         stage.style.setProperty("--camera-rows", String(shape.rows));
+        counted.forEach((card, index) => {
+            card.style.gridColumn = String((index % shape.columns) + 1);
+            card.style.gridRow = String(Math.floor(index / shape.columns) + 1);
+        });
         stage.dataset.count = String(cards.length);
         if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
         if (deps.$("videoFilmstrip")) deps.$("videoFilmstrip").hidden = true;
