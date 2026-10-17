@@ -536,7 +536,7 @@ function hydrateDashboardProfile() {
 }
 
 function openDashboardPanel(panel) {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings" };
+    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings" };
     Object.entries(ids).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== panel));
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => {
         const active = button.dataset.dashboardPanel === panel;

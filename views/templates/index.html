@@ -121,6 +121,7 @@
                 <nav class="dashboard-nav" aria-label="Dashboard sections">
                     <button class="dashboard-nav-item active" type="button" data-dashboard-panel="home" aria-current="page"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3.5 10.5 8.5-7 8.5 7v9a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"/></svg></span><span>Home</span></button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="directory"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5M11 8v6M8 11h6"/></svg></span><span>Discover</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="classroom" aria-label="Language Classroom"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span>Classroom</span></button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="friends"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.5"/><path d="M3.5 20c.5-4 2.4-6 5.5-6s5 2 5.5 6M14 15c3.5 0 5.5 1.7 6 5"/></svg></span><span>Friends</span></button>
                     <button class="dashboard-nav-item" type="button" data-dashboard-panel="profile"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c.8-4 3.3-6 7.5-6s6.7 2 7.5 6"/></svg></span><span>Profile</span></button>
                     <button id="interpreterProfileNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="interpreter"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.2c0 4.4-2.8 7.7-7 9.3-4.2-1.6-7-4.9-7-9.3V6z"/><path d="m9 12 2 2 4-4"/></svg></span><span>Interpreter</span></button>
@@ -287,6 +288,30 @@
                         <div id="interpreterFinalActions" class="form-actions hidden"><button id="submitInterpreterVerification" type="button">Submit for verification</button><button id="saveInterpreterProfile" class="secondary" type="submit">Save profile</button></div>
                     </form>
                     <p id="interpreterProfileStatus" class="status" aria-live="polite"></p>
+                </div>
+
+                <div id="dashboardClassroom" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Language Classroom</span><h2>Learn with an avatar or a teacher</h2><p>Students will be able to attend language classes taught by AI avatars or by human translators who choose to teach. This page is a placeholder. Classes are not open, and billing is not active.</p></div><span class="status-badge pending-badge">Placeholder</span></div>
+                    <div class="classroom-grid">
+                        <article class="card"><span class="eyebrow">Classes</span><h3>Create, browse, and join</h3><p>Schedule a class, look through upcoming lessons, and join when the classroom opens.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">AI teachers</span><h3>Vocabulary, grammar, and pronunciation</h3><p>An avatar teacher will explain words, grammar, and how to say them.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">Human teachers</span><h3>Translators can opt in</h3><p>Verified translators will be able to apply or opt in to teach. Profiles will show languages, qualifications, and availability.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">Live classroom</span><h3>Video, avatars, and subtitles</h3><p>Classrooms will use live video, avatar participation, and translated subtitles for everyone in the room.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">In class</span><h3>Enrollment, hands, and chat</h3><p>Students will enroll, raise a hand, and use classroom chat. Teachers will share a screen, lessons, and assignments.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">Later</span><h3>Paid classes stay off</h3><p>The classroom can support paid classes later. No prices, checkout, or billing are turned on from this page.</p><span class="classroom-placeholder">Placeholder</span></article>
+                    </div>
+                    <section class="classroom-personal" aria-labelledby="aiLanguageTeacherTitle">
+                        <div class="dashboard-heading"><div><span class="eyebrow">Personal learning</span><h2 id="aiLanguageTeacherTitle">AI Language Teacher</h2><p>A one-on-one learning experience, separate from group classrooms. An AI avatar will practice with one student at a time. Lessons are not open yet.</p></div><span class="status-badge pending-badge">Placeholder</span></div>
+                        <div class="classroom-grid">
+                            <article class="card"><span class="eyebrow">One-on-one</span><h3>Avatar lessons</h3><p>Practice with a personal AI avatar instead of joining a group class.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Conversation</span><h3>Spoken practice</h3><p>Hold a conversation in the language you are learning, with the avatar responding as you go.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Exercises</span><h3>Vocabulary and grammar</h3><p>Work through words and grammar chosen for the lesson.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Speaking</span><h3>Pronunciation coaching</h3><p>Hear a correction when a sound or phrase needs another try.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Level</span><h3>Beginner to advanced</h3><p>Start at beginner, intermediate, or advanced, then keep the lesson at that level.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Progress</span><h3>Lessons that follow you</h3><p>Later lessons will use what you have already practiced.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Your calls</span><h3>Practice real phrases</h3><p>Phrases from earlier calls can be used for practice only with the student's permission. Nothing is pulled from a call automatically.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        </div>
+                    </section>
                 </div>
 
                 <div id="dashboardSettings" class="dashboard-panel hidden">

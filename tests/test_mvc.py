@@ -54,6 +54,12 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('id="openStartCall"', html)
         self.assertIn('data-discovery-category="Business"', html)
         self.assertIn('data-dashboard-panel="directory"', html)
+        self.assertIn('data-dashboard-panel="classroom" aria-label="Language Classroom"', html)
+        self.assertIn('id="dashboardClassroom"', html)
+        self.assertIn("billing is not active", html)
+        self.assertIn('id="aiLanguageTeacherTitle">AI Language Teacher', html)
+        self.assertIn("separate from group classrooms", html)
+        self.assertIn("only with the student's permission", html)
 
     def test_phone_call_prototype_exposes_signup_profile_and_call_fields(self):
         response = self.client.get("/")

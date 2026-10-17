@@ -312,10 +312,17 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible { 
 .history-card .conversation-item strong { margin-bottom:2px; }
 .history-card .conversation-meta { font-size:.82rem; line-height:1.35; }
 .field-help { font-size:.85rem; margin:-8px 0 12px; }
+.classroom-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.classroom-grid .card { display:grid; align-content:start; gap:8px; }
+.classroom-grid h3 { margin:0; }
+.classroom-grid p { margin:0; color:#526277; }
+.classroom-placeholder { justify-self:start; padding:4px 8px; border-radius:999px; background:#fef3c7; color:#92400e; font-size:.72rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+.classroom-personal { margin-top:28px; padding-top:22px; border-top:1px solid #e1e8f0; }
+.classroom-personal .classroom-grid .card:last-child { grid-column:1 / -1; }
 .settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
 .settings-grid .card:first-child { grid-column:1 / -1; }
 @media (max-width:1050px) { .app-shell { grid-template-columns:220px minmax(0,1fr); gap:24px; } .dashboard-grid { grid-template-columns:1fr; } }
-@media (max-width:850px) { .app-shell { grid-template-columns:1fr; } .dashboard-sidebar { position:static; } .dashboard-nav { grid-template-columns:repeat(3,1fr); } .dashboard-nav-item { justify-content:center; text-align:center; } .settings-grid { grid-template-columns:1fr; } .settings-grid .card:first-child { grid-column:auto; } }
+@media (max-width:850px) { .app-shell { grid-template-columns:1fr; } .dashboard-sidebar { position:static; } .dashboard-nav { grid-template-columns:repeat(3,1fr); } .dashboard-nav-item { justify-content:center; text-align:center; } .settings-grid,.classroom-grid { grid-template-columns:1fr; } .settings-grid .card:first-child,.classroom-personal .classroom-grid .card:last-child { grid-column:auto; } }
 
 /* Interpreter onboarding */
 textarea { width:100%; padding:13px 14px; border:1px solid #cbd5e1; border-radius:10px; background:#fff; font:inherit; resize:vertical; }
