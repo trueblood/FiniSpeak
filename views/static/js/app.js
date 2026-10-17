@@ -1,5 +1,5 @@
-import { createCallExperience } from "./call-experience.js?v=20261017-handshake";
-import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer } from "./webrtc-mesh.js?v=20261017-handshake";
+import { createCallExperience } from "./call-experience.js?v=20261017-playback";
+import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer } from "./webrtc-mesh.js?v=20261017-playback";
 
 const $ = (id) => document.getElementById(id);
 let callExperience;
@@ -2490,39 +2490,56 @@ function participantRoleLabel(role) {
 
 function remoteVideoVisible(video) {
     if (!(video?.srcObject instanceof MediaStream)) return video?.videoWidth > 0;
-    return video.srcObject.getVideoTracks().some(track => track.readyState === "live" && track.muted === false && track.enabled) || video.videoWidth > 0;
+    if (video.videoWidth > 0) return true;
+    return video.srcObject.getVideoTracks().some(track => track.readyState === "live" && track.enabled !== false);
 }
 
-function attachRemoteTrack(uid, profile, track) {
+function playRemoteVideo(video) {
+    if (!video) return;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.autoplay = true;
+    video.setAttribute("muted", "");
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    video.play().catch(() => {});
+}
+
+function attachRemoteTrack(uid, profile, track, stream) {
     ensureParticipantTile({ id: uid, role: profile?.role, displayName: profile?.displayName });
     const card = document.querySelector(`[data-peer="${uid}"]`);
     if (!card || !track) return;
     const video = card.querySelector("video");
-    const element = track.kind === "audio" ? remoteAudioElement(card) : video;
-    if (!element) return;
-    let target = element.srcObject instanceof MediaStream ? element.srcObject : null;
-    if (!target || (track.kind === "video" && target.getAudioTracks().length)) {
-        target = new MediaStream();
-        element.srcObject = target;
-    }
-    if (!target.getTracks().includes(track)) target.addTrack(track);
-    if (track.kind === "video") {
-        element.muted = true;
-        element.playsInline = true;
-        const show = () => {
-            card.classList.toggle("is-camera-on", remoteVideoVisible(element));
-            if (card.classList.contains("is-camera-on")) element.play().catch(() => {});
-            recordPeer(uid, peerSnapshot(peerConnections.get(uid)));
-        };
-        track.onunmute = show;
-        track.onmute = show;
-        track.onended = show;
-        element.onresize = show;
-        show();
-    } else {
-        element.play().catch(() => {});
+    if (track.kind === "audio") {
+        const audio = remoteAudioElement(card);
+        const target = audio.srcObject instanceof MediaStream ? audio.srcObject : new MediaStream();
+        if (audio.srcObject !== target) audio.srcObject = target;
+        if (!target.getTracks().includes(track)) target.addTrack(track);
+        audio.play().catch(() => {});
+        // Starting speaker audio can pause a muted video on phones. Play it again.
+        playRemoteVideo(video);
         recordPeer(uid, peerSnapshot(peerConnections.get(uid)));
+        callExperience?.layout();
+        return;
     }
+    if (!video) return;
+    const remoteStream = stream instanceof MediaStream && stream.getVideoTracks().includes(track)
+        ? stream
+        : (video.srcObject instanceof MediaStream ? video.srcObject : new MediaStream());
+    if (!remoteStream.getTracks().includes(track)) remoteStream.addTrack(track);
+    if (video.srcObject !== remoteStream) video.srcObject = remoteStream;
+    const show = () => {
+        card.classList.toggle("is-camera-on", remoteVideoVisible(video));
+        playRemoteVideo(video);
+        recordPeer(uid, peerSnapshot(peerConnections.get(uid)));
+    };
+    track.onunmute = show;
+    track.onmute = show;
+    track.onended = show;
+    video.onresize = show;
+    video.onloadedmetadata = show;
+    show();
     callExperience?.layout();
 }
 

@@ -109,7 +109,8 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertEqual(negotiated.returncode, 0, negotiated.stderr)
         self.assertIn("event.track", mesh)
         self.assertNotIn("e.streams[0]", mesh)
-        self.assertIn("track.muted", presence)
+        self.assertIn('track.readyState === "live"', presence)
+        self.assertNotIn("track.muted === false", presence)
 
     def test_transcripts_are_named_logs(self):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)

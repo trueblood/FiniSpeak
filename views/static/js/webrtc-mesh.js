@@ -17,7 +17,10 @@ export function normalizeIceConfiguration(payload) {
 export function liveReceiver(pc, kind) {
     return (pc?.getReceivers?.() || []).some(receiver => {
         const track = receiver.track;
-        return track?.kind === kind && track.readyState === "live" && track.muted === false && track.enabled !== false;
+        if (track?.kind !== kind || track.readyState !== "live" || track.enabled === false) return false;
+        // Audio stays quiet while the sender is muted. Video often reports muted on
+        // phones once the audio track starts, even though the picture is still arriving.
+        return kind === "audio" ? track.muted === false : true;
     });
 }
 

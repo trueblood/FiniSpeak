@@ -721,8 +721,9 @@ export function createCallExperience(deps) {
             if (!card) continue;
             card.classList.toggle("is-avatar", participant.mediaMode === "avatar");
             const video = card.querySelector("video");
-            const frames = video?.srcObject instanceof MediaStream && video.srcObject.getVideoTracks().some(track => track.readyState === "live" && track.muted === false && track.enabled);
-            card.classList.toggle("is-camera-on", participant.mediaMode !== "avatar" && participant.cameraEnabled !== false && Boolean(frames));
+            const liveVideo = video?.srcObject instanceof MediaStream && video.srcObject.getVideoTracks().some(track => track.readyState === "live" && track.enabled !== false);
+            // track.muted flips on when speaker audio starts, which was covering a live picture.
+            card.classList.toggle("is-camera-on", participant.mediaMode !== "avatar" && participant.cameraEnabled !== false && (Boolean(liveVideo) || video?.videoWidth > 0));
             let muted = card.querySelector(".muted-pill");
             if (participant.microphoneEnabled === false) {
                 if (!muted) {
