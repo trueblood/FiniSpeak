@@ -7,6 +7,7 @@ apply 20261016_0004. This adds only the missing objects and leaves the revision
 stamp alone so the helper can still restart the service.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -21,6 +22,40 @@ from extensions import db
 from models.sql_models import SqlFriend
 
 
+def _mysql_identifier(value):
+    if not re.fullmatch(r"[A-Za-z0-9_]+", value or ""):
+        raise RuntimeError(f"unexpected MySQL identifier: {value}")
+    return value
+
+
+def friends_table_ddl(charset, collation):
+    charset = _mysql_identifier(charset)
+    collation = _mysql_identifier(collation)
+    string = f"VARCHAR(128) CHARACTER SET {charset} COLLATE {collation} NOT NULL"
+    short = f"CHARACTER SET {charset} COLLATE {collation}"
+    return f"""CREATE TABLE friends (
+        owner_id {string},
+        friend_id {string},
+        nickname VARCHAR(160) {short} NULL,
+        saved_phone VARCHAR(64) {short} NULL,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        PRIMARY KEY (owner_id, friend_id),
+        KEY ix_friends_friend_id (friend_id),
+        CONSTRAINT fk_friends_owner_id_users FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE,
+        CONSTRAINT fk_friends_friend_id_users FOREIGN KEY (friend_id) REFERENCES users (id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={collation}"""
+
+
+def _users_id_charset(connection):
+    row = connection.execute(text("""
+        SELECT CHARACTER_SET_NAME AS charset_name, COLLATION_NAME AS collation_name
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'id'
+    """)).mappings().one()
+    return row["charset_name"], row["collation_name"]
+
+
 def ensure_account_schema(connection):
     inspector = inspect(connection)
     if "users" not in inspector.get_table_names():
@@ -31,7 +66,15 @@ def ensure_account_schema(connection):
         connection.execute(text("ALTER TABLE users ADD COLUMN deleted_at DATETIME NULL"))
         changes.append("users.deleted_at")
     if "deleted_by" not in columns:
-        connection.execute(text("ALTER TABLE users ADD COLUMN deleted_by VARCHAR(128) NULL"))
+        if connection.dialect.name == "mysql":
+            charset, collation = _users_id_charset(connection)
+            charset, collation = _mysql_identifier(charset), _mysql_identifier(collation)
+            connection.execute(text(
+                "ALTER TABLE users ADD COLUMN deleted_by "
+                f"VARCHAR(128) CHARACTER SET {charset} COLLATE {collation} NULL"
+            ))
+        else:
+            connection.execute(text("ALTER TABLE users ADD COLUMN deleted_by VARCHAR(128) NULL"))
         changes.append("users.deleted_by")
     if connection.dialect.name == "mysql":
         inspector = inspect(connection)
@@ -47,7 +90,11 @@ def ensure_account_schema(connection):
             ))
             changes.append("fk_users_deleted_by_users")
     if "friends" not in inspect(connection).get_table_names():
-        SqlFriend.__table__.create(connection, checkfirst=True)
+        if connection.dialect.name == "mysql":
+            charset, collation = _users_id_charset(connection)
+            connection.execute(text(friends_table_ddl(charset, collation)))
+        else:
+            SqlFriend.__table__.create(connection, checkfirst=True)
         changes.append("friends")
     return changes
 

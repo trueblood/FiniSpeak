@@ -14,12 +14,6 @@ branch_labels = None
 depends_on = None
 
 
-MYSQL_TABLE_OPTIONS = {
-    "mysql_charset": "utf8mb4",
-    "mysql_collate": "utf8mb4_0900_ai_ci",
-}
-
-
 def upgrade():
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -37,15 +31,25 @@ def upgrade():
     if "ix_users_deleted_at" not in indexes:
         op.create_index("ix_users_deleted_at", "users", ["deleted_at"])
     if "friends" not in inspector.get_table_names():
+        charset, collation = "utf8mb4", "utf8mb4_0900_ai_ci"
+        if bind.dialect.name == "mysql":
+            row = bind.execute(sa.text("""
+                SELECT CHARACTER_SET_NAME AS charset_name, COLLATION_NAME AS collation_name
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'id'
+            """)).mappings().one()
+            charset, collation = row["charset_name"], row["collation_name"]
+        string_id = sa.String(128, collation=collation)
         op.create_table(
             "friends",
-            sa.Column("owner_id", sa.String(128), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-            sa.Column("friend_id", sa.String(128), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-            sa.Column("nickname", sa.String(160)),
-            sa.Column("saved_phone", sa.String(64)),
+            sa.Column("owner_id", string_id, sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+            sa.Column("friend_id", string_id, sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+            sa.Column("nickname", sa.String(160, collation=collation)),
+            sa.Column("saved_phone", sa.String(64, collation=collation)),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-            **MYSQL_TABLE_OPTIONS,
+            mysql_charset=charset,
+            mysql_collate=collation,
         )
         op.create_index("ix_friends_friend_id", "friends", ["friend_id"])
 
