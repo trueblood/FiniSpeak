@@ -830,7 +830,9 @@ export function createCallExperience(deps) {
             const button = document.createElement("button");
             button.type = "button";
             button.className = "secondary";
-            button.textContent = documentRecord.title || "Untitled document";
+            const title = documentRecord.title || "Untitled document";
+            button.textContent = title;
+            button.title = title;
             button.onclick = () => selectDocument(documentRecord.id);
             item.appendChild(button);
             list.appendChild(item);
