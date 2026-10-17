@@ -7,6 +7,45 @@ const AVATARS = [
     { id: "kai", name: "Kai", skin: "#d4a574", hair: "#0f172a", accent: "#34d399", style: "crop" }
 ];
 
+const AVATAR_SKINS = [
+    ["#8d5524", "Deep"], ["#c68642", "Medium deep"], ["#d4a574", "Medium"],
+    ["#f1c27d", "Golden"], ["#efd0b4", "Light"], ["#f3d5c0", "Fair"]
+];
+const AVATAR_HAIR = [
+    ["#24160f", "Black"], ["#3b2414", "Brown"], ["#111827", "Ink"],
+    ["#6d28d9", "Purple"], ["#60a5fa", "Blue"], ["#f5a65b", "Copper"]
+];
+const AVATAR_ACCENTS = [
+    ["#f5a65b", "Amber"], ["#7eb6ff", "Blue"], ["#38bdf8", "Sky"],
+    ["#f59e0b", "Gold"], ["#c4b5fd", "Lilac"], ["#34d399", "Green"]
+];
+const AVATAR_STYLES = [
+    ["bob", "Bob"], ["short", "Short"], ["curly", "Curly"],
+    ["long", "Long"], ["crop", "Crop"], ["ai", "Smooth"]
+];
+
+function loadCustomAvatar() {
+    try {
+        const saved = JSON.parse(localStorage.getItem("finispeak.customAvatar") || "null");
+        return saved ? normalizeCustomAvatar(saved) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function normalizeCustomAvatar(input) {
+    const pick = (options, value, fallback) => options.some(([option]) => option === value) ? value : fallback;
+    const name = String(input?.name || "Mine").replace(/\s+/g, " ").trim().slice(0, 24) || "Mine";
+    return {
+        id: "custom",
+        name,
+        skin: pick(AVATAR_SKINS, input?.skin, AVATAR_SKINS[3][0]),
+        hair: pick(AVATAR_HAIR, input?.hair, AVATAR_HAIR[3][0]),
+        accent: pick(AVATAR_ACCENTS, input?.accent, AVATAR_ACCENTS[5][0]),
+        style: AVATAR_STYLES.some(([style]) => style === input?.style) ? input.style : "curly"
+    };
+}
+
 const LANGUAGE_OPTIONS = [
     ["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["pt", "Portuguese"],
     ["it", "Italian"], ["zh", "Mandarin Chinese"], ["ja", "Japanese"], ["ko", "Korean"], ["ar", "Arabic"],
@@ -17,6 +56,7 @@ export function createCallExperience(deps) {
     const state = {
         mediaMode: localStorage.getItem("finispeak.mediaMode") || "camera",
         avatarId: localStorage.getItem("finispeak.avatarId") || "amara",
+        customAvatar: loadCustomAvatar(),
         viewerLanguage: localStorage.getItem("finispeak.viewerLanguage") || "es",
         subtitleMode: localStorage.getItem("finispeak.subtitleMode") || "both",
         screenTrack: null,
@@ -44,7 +84,10 @@ export function createCallExperience(deps) {
         reducedMotion: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
     };
 
-    const avatarById = (id) => AVATARS.find(avatar => avatar.id === id) || AVATARS[0];
+    const avatarById = (id) => {
+        if (id === "custom" && state.customAvatar) return state.customAvatar;
+        return AVATARS.find(avatar => avatar.id === id) || AVATARS[0];
+    };
     const languageName = (code) => LANGUAGE_OPTIONS.find(([value]) => value === code)?.[1] || deps.languageLabel?.(code) || code || "Unknown";
 
     function fillLanguageSelect(select, selected) {
@@ -71,14 +114,28 @@ export function createCallExperience(deps) {
         fillLanguageSelect(deps.$("documentTargetLang"), state.viewerLanguage);
         deps.$("subtitleMode").value = state.subtitleMode;
         applySubtitleMode(state.subtitleMode);
-        renderAvatarChoices(deps.$("avatarStudioGrid"), state.avatarId, (id) => chooseAvatar(id));
+        if (state.avatarId === "custom" && !state.customAvatar) state.avatarId = "amara";
+        renderStudioAvatars();
         renderAvatarChoices(deps.$("aiAvatarGrid"), "nova", (id) => { state.pendingAiAvatar = id; });
         state.pendingAiAvatar = "nova";
         loadVoices();
         window.speechSynthesis?.addEventListener?.("voiceschanged", loadVoices);
 
-        deps.$("avatarButton").onclick = () => deps.openModal("avatarStudioModal");
+        deps.$("avatarButton").onclick = () => {
+            showAvatarPresets();
+            renderStudioAvatars();
+            deps.openModal("avatarStudioModal");
+        };
         deps.$("closeAvatarStudio").onclick = () => deps.closeModal("avatarStudioModal");
+        deps.$("buildOwnAvatar").onclick = openAvatarBuilder;
+        deps.$("avatarBuilderBack").onclick = showAvatarPresets;
+        deps.$("avatarBuilderUse").onclick = () => saveCustomAvatar();
+        deps.$("avatarBuilderName").oninput = () => {
+            if (!state.draftAvatar) return;
+            state.draftAvatar.name = deps.$("avatarBuilderName").value;
+            drawAvatar(deps.$("avatarBuilderPreview"), normalizeCustomAvatar(state.draftAvatar), { mouth: 0.2, blink: 1, breath: 0, head: 0 });
+        };
+        buildAvatarOptions();
         deps.$("useLiveCamera").onclick = () => useCamera();
         if (deps.$("closeAiInterpreter")) deps.$("closeAiInterpreter").onclick = () => deps.closeModal("aiInterpreterModal");
         if (deps.$("cancelAiInterpreter")) deps.$("cancelAiInterpreter").onclick = () => deps.closeModal("aiInterpreterModal");
@@ -426,10 +483,79 @@ export function createCallExperience(deps) {
         deps.$("expandTranscript").hidden = !collapsed;
     }
 
-    function renderAvatarChoices(container, selected, onSelect) {
+    function renderStudioAvatars() {
+        const extras = state.customAvatar ? [state.customAvatar] : [];
+        renderAvatarChoices(deps.$("avatarStudioGrid"), state.avatarId, (id) => chooseAvatar(id), extras);
+    }
+
+    function showAvatarPresets() {
+        deps.$("avatarBuilder").hidden = true;
+        deps.$("avatarStudioGrid").hidden = false;
+        deps.$("buildOwnAvatar").hidden = false;
+    }
+
+    function openAvatarBuilder() {
+        state.draftAvatar = normalizeCustomAvatar(state.customAvatar || { name: "Mine", style: "curly" });
+        deps.$("avatarBuilderName").value = state.draftAvatar.name;
+        deps.$("avatarStudioGrid").hidden = true;
+        deps.$("buildOwnAvatar").hidden = true;
+        deps.$("avatarBuilder").hidden = false;
+        paintAvatarOptions();
+        drawAvatar(deps.$("avatarBuilderPreview"), state.draftAvatar, { mouth: 0.2, blink: 1, breath: 0, head: 0 });
+    }
+
+    function buildAvatarOptions() {
+        const groups = [
+            ["avatarSkinChoices", AVATAR_SKINS, "skin", true],
+            ["avatarHairChoices", AVATAR_HAIR, "hair", true],
+            ["avatarAccentChoices", AVATAR_ACCENTS, "accent", true],
+            ["avatarStyleChoices", AVATAR_STYLES, "style", false]
+        ];
+        for (const [id, options, key, color] of groups) {
+            const container = deps.$(id);
+            container.innerHTML = "";
+            for (const [value, label] of options) {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.dataset.value = value;
+                button.setAttribute("aria-label", label);
+                button.textContent = color ? "" : label;
+                if (color) button.style.background = value;
+                button.onclick = () => {
+                    state.draftAvatar[key] = value;
+                    paintAvatarOptions();
+                    drawAvatar(deps.$("avatarBuilderPreview"), normalizeCustomAvatar(state.draftAvatar), { mouth: 0.2, blink: 1, breath: 0, head: 0 });
+                };
+                container.appendChild(button);
+            }
+        }
+    }
+
+    function paintAvatarOptions() {
+        const draft = state.draftAvatar || {};
+        const selected = {
+            avatarSkinChoices: draft.skin,
+            avatarHairChoices: draft.hair,
+            avatarAccentChoices: draft.accent,
+            avatarStyleChoices: draft.style
+        };
+        for (const [id, value] of Object.entries(selected)) {
+            for (const button of deps.$(id).querySelectorAll("button[data-value]")) {
+                button.setAttribute("aria-pressed", String(button.dataset.value === value));
+            }
+        }
+    }
+
+    async function saveCustomAvatar() {
+        state.customAvatar = normalizeCustomAvatar({ ...state.draftAvatar, name: deps.$("avatarBuilderName").value });
+        localStorage.setItem("finispeak.customAvatar", JSON.stringify(state.customAvatar));
+        await chooseAvatar("custom");
+    }
+
+    function renderAvatarChoices(container, selected, onSelect, extras = []) {
         if (!container) return;
         container.innerHTML = "";
-        for (const avatar of AVATARS) {
+        for (const avatar of [...AVATARS, ...extras]) {
             const button = document.createElement("button");
             button.type = "button";
             button.className = "avatar-choice";

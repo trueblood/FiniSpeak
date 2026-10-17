@@ -107,10 +107,23 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 .term-explanation[hidden] { display:none; }
 .term-explanation strong { color:#f5a65b; }
 .term-explanation p { margin:0; color:#d7e0ea; }
+.avatar-studio-card { max-height:min(86dvh, 760px); overflow:auto; }
+.avatar-studio-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .avatar-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:12px; }
+.avatar-grid[hidden],#buildOwnAvatar[hidden] { display:none !important; }
 .avatar-choice { display:grid; justify-items:center; gap:6px; padding:10px; border-radius:16px; background:#10151d; color:#fff; border:1px solid rgba(255,255,255,.08); }
 .avatar-choice[aria-pressed="true"] { border-color:#f5a65b; }
 .avatar-choice canvas { width:72px; height:72px; border-radius:16px; background:#0b0e13; }
+.avatar-builder { display:grid; gap:12px; margin-top:14px; }
+.avatar-builder[hidden] { display:none; }
+.avatar-builder h3 { margin:0; color:#fff; }
+.avatar-builder fieldset { margin:0; padding:0; border:0; display:grid; gap:8px; }
+.avatar-builder legend { color:#d7e0ea; font-size:.78rem; }
+.avatar-builder-preview canvas { width:120px; height:136px; border-radius:18px; background:#0b0e13; }
+.avatar-swatches,.avatar-style-row { display:flex; flex-wrap:wrap; gap:8px; }
+.avatar-swatches button { width:36px; height:36px; padding:0; border-radius:999px; border:2px solid transparent; }
+.avatar-swatches button[aria-pressed="true"],.avatar-style-row button[aria-pressed="true"] { border-color:#fff; }
+.avatar-style-row button { padding:8px 12px; border-radius:999px; background:#10151d; color:#fff; border:1px solid rgba(255,255,255,.12); }
 .call-mobile-switch { display:none; }
 
 @media (max-width:900px) {

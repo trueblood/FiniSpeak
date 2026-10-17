@@ -110,6 +110,12 @@ class CallExperienceTests(unittest.TestCase):
         self.assertIn("customer-3", accepted["guestIds"])
         with self.assertRaises(PermissionError):
             build_experience_changes(call, {"uid": "stranger"}, "set-interpreter", {"avatarId": "nova"})
+        built = build_experience_changes(call, actor, "set-media", {"mediaMode": "avatar", "avatarId": "custom"})
+        self.assertEqual(built, {})
+        with self.assertRaisesRegex(ValueError, "Avatar Studio"):
+            build_experience_changes(call, actor, "set-media", {"mediaMode": "avatar", "avatarId": "made-up"})
+        with self.assertRaisesRegex(ValueError, "Avatar Studio"):
+            build_experience_changes(call, actor, "set-interpreter", {"interpreter": {"avatarId": "custom", "active": True}})
 
     def test_repository_patches_experience_without_new_columns(self):
         row = call_row()

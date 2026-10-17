@@ -580,8 +580,21 @@
         <div class="modal-card avatar-studio-card">
             <div class="transcript-header"><div><span class="eyebrow">Avatar Studio</span><h2 id="avatarStudioTitle">Choose how you appear</h2></div><button id="closeAvatarStudio" class="secondary" type="button">Close</button></div>
             <p>Live Camera sends your video. My Avatar stops the camera and sends an animated avatar in the same video tile. Mouth movement follows your microphone.</p>
-            <button id="useLiveCamera" type="button">Live Camera</button>
+            <div class="avatar-studio-actions">
+                <button id="useLiveCamera" type="button">Live Camera</button>
+                <button id="buildOwnAvatar" class="secondary" type="button">Build your own</button>
+            </div>
             <div id="avatarStudioGrid" class="avatar-grid"></div>
+            <section id="avatarBuilder" class="avatar-builder" hidden aria-labelledby="avatarBuilderTitle">
+                <h3 id="avatarBuilderTitle">Build your own</h3>
+                <div class="avatar-builder-preview"><canvas id="avatarBuilderPreview" width="160" height="180" aria-hidden="true"></canvas></div>
+                <label>Name<input id="avatarBuilderName" maxlength="24" value="Mine" autocomplete="off"></label>
+                <fieldset><legend>Skin</legend><div id="avatarSkinChoices" class="avatar-swatches"></div></fieldset>
+                <fieldset><legend>Hair</legend><div id="avatarHairChoices" class="avatar-swatches"></div></fieldset>
+                <fieldset><legend>Style</legend><div id="avatarStyleChoices" class="avatar-style-row"></div></fieldset>
+                <fieldset><legend>Color</legend><div id="avatarAccentChoices" class="avatar-swatches"></div></fieldset>
+                <div class="actions"><button id="avatarBuilderBack" class="secondary" type="button">Presets</button><button id="avatarBuilderUse" type="button">Use this avatar</button></div>
+            </section>
         </div>
     </div>
 

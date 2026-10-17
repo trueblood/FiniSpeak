@@ -9,6 +9,7 @@ from services.translation_service import canonical_language
 
 
 AVATAR_IDS = {"amara", "jules", "nova", "sol", "mina", "kai"}
+CUSTOM_AVATAR_ID = "custom"
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _MAX_DOCUMENTS = 12
 _MAX_VERSIONS = 12
@@ -162,7 +163,7 @@ def build_experience_changes(call, identity, action, data, lookup_account=None):
         mode = data.get("mediaMode")
         if mode not in {"camera", "avatar"}:
             raise ValueError("Choose Live Camera or My Avatar.")
-        if mode == "avatar" and str(data.get("avatarId") or "") not in AVATAR_IDS:
+        if mode == "avatar" and str(data.get("avatarId") or "") not in AVATAR_IDS | {CUSTOM_AVATAR_ID}:
             raise ValueError("Choose an avatar from Avatar Studio.")
         return {}
     if action == "set-interpreter":
