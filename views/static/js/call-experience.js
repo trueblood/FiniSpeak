@@ -73,6 +73,8 @@ export function createCallExperience(deps) {
         rows: [],
         documentsOpen: false,
         notesOpen: false,
+        controlsCollapsed: false,
+        controlsPinned: false,
         notesDirty: false,
         notesTimer: 0,
         activeDocumentId: null,
@@ -193,8 +195,16 @@ export function createCallExperience(deps) {
         document.querySelectorAll("[data-call-pane]").forEach(button => {
             button.onclick = () => setPane(button.dataset.callPane);
         });
+        if (deps.$("toggleCallControls")) {
+            deps.$("toggleCallControls").onclick = () => {
+                setControlsCollapsed(!document.querySelector("#callView .call-frame")?.classList.contains("is-controls-collapsed"), true);
+                layout();
+            };
+        }
+        syncControlsForViewport();
         window.addEventListener("resize", () => {
             resizeCanvases();
+            syncControlsForViewport();
             layout();
         });
         refreshInterpreterLanguages();
@@ -454,11 +464,35 @@ export function createCallExperience(deps) {
         deps.$("callShell").dataset.pane = pane;
         document.querySelectorAll("[data-call-pane]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.callPane === pane)));
         if (pane === "documents") showDocuments();
-        else if (pane !== "documents" && window.matchMedia("(max-width: 900px)").matches) {
+        else if (pane !== "documents" && callLayoutIsMobile()) {
             state.documentsOpen = false;
             deps.$("documentsPanel").hidden = true;
             deps.$("documentsButton").setAttribute("aria-pressed", "false");
         }
+        layout();
+    }
+
+    function callLayoutIsMobile() {
+        return window.matchMedia("(max-width: 900px)").matches;
+    }
+
+    function setControlsCollapsed(collapsed, pinned) {
+        if (pinned) state.controlsPinned = true;
+        state.controlsCollapsed = collapsed;
+        document.querySelector("#callView .call-frame")?.classList.toggle("is-controls-collapsed", collapsed);
+        const toggle = deps.$("toggleCallControls");
+        if (!toggle) return;
+        toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        const label = collapsed ? "Show call controls" : "Hide call controls";
+        toggle.title = label;
+        toggle.setAttribute("aria-label", label);
+        const text = toggle.querySelector(".tool-label");
+        if (text) text.textContent = collapsed ? "Controls" : "Hide";
+    }
+
+    function syncControlsForViewport() {
+        if (state.controlsPinned) return;
+        setControlsCollapsed(callLayoutIsMobile(), false);
     }
 
     function showDocuments() {
@@ -722,11 +756,42 @@ export function createCallExperience(deps) {
         if (!stage || !cards.length) return;
         for (const card of cards) {
             card.classList.add("is-stage");
+            card.classList.remove("is-self-pip", "is-main", "is-thumb");
             // Moving a live video element restarts it and flashes the camera.
             if (card.parentElement !== stage) stage.appendChild(card);
         }
+        stage.classList.remove("is-zoom-pip", "is-zoom-speaker");
+        const mobile = callLayoutIsMobile();
+        let counted = cards;
+        if (mobile && cards.length === 2) {
+            const local = cards.find(card => card.dataset.role === "local") || cards[0];
+            local.classList.add("is-self-pip");
+            stage.classList.add("is-zoom-pip");
+            counted = cards.filter(card => card !== local);
+        } else if (mobile && cards.length > 2) {
+            const speaker = cards.find(card => card.classList.contains("is-speaking") && card.dataset.role !== "local")
+                || cards.find(card => card.dataset.role !== "local")
+                || cards[0];
+            stage.classList.add("is-zoom-speaker");
+            let thumbs = 0;
+            for (const card of cards) {
+                if (card === speaker) card.classList.add("is-main");
+                else {
+                    card.classList.add("is-thumb");
+                    thumbs += 1;
+                }
+            }
+            stage.style.setProperty("--thumb-count", String(Math.max(1, thumbs)));
+            stage.style.setProperty("--camera-columns", "1");
+            stage.style.setProperty("--camera-rows", "1");
+            stage.dataset.count = String(cards.length);
+            if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
+            if (deps.$("videoFilmstrip")) deps.$("videoFilmstrip").hidden = true;
+            if (deps.$("participantCount")) deps.$("participantCount").textContent = String(cards.length);
+            return;
+        }
         const frame = stage.getBoundingClientRect();
-        const shape = cameraGridShape(cards.length, frame.width, frame.height);
+        const shape = cameraGridShape(counted.length, frame.width, frame.height);
         stage.style.setProperty("--camera-columns", String(shape.columns));
         stage.style.setProperty("--camera-rows", String(shape.rows));
         stage.dataset.count = String(cards.length);

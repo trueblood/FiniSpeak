@@ -68,6 +68,12 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("--camera-rows", layout)
         self.assertIn("grid-template-columns:repeat(var(--camera-columns, 1), minmax(0, 1fr))", styles)
         self.assertIn("grid-template-rows:repeat(var(--camera-rows, 1), minmax(0, 1fr))", styles)
+        self.assertIn('id="toggleCallControls"', self.html)
+        self.assertIn('id="callControls" class="call-controls floating-controls"', self.html)
+        self.assertIn("is-self-pip", layout)
+        self.assertIn("is-zoom-speaker", layout)
+        self.assertIn("is-controls-collapsed", styles)
+        self.assertIn(".is-self-pip", styles)
 
     def test_transcripts_are_named_logs(self):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)

@@ -528,7 +528,9 @@
                     <textarea id="callNotes" rows="6" maxlength="4000" placeholder="Write a note from this call" aria-label="Call notes"></textarea>
                     <p id="callNotesStatus" class="summary-status" role="status"></p>
                 </aside>
-                <div class="call-controls floating-controls" role="toolbar" aria-label="Call controls">
+                <div id="callControls" class="call-controls floating-controls" role="toolbar" aria-label="Call controls">
+                    <button id="toggleCallControls" class="secondary" type="button" aria-expanded="true" aria-controls="callControls" title="Hide call controls" aria-label="Hide call controls"><span class="tool-label">Hide</span></button>
+                    <div class="call-control-tools">
                     <button id="muteButton" class="secondary" type="button" aria-pressed="false" title="Mute microphone" aria-label="Mute microphone"><span class="tool-label">Mute</span></button>
                     <button id="cameraButton" class="secondary" type="button" aria-pressed="false" title="Turn camera off" aria-label="Turn camera off"><span class="tool-label">Camera</span></button>
                     <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
@@ -539,6 +541,7 @@
                     <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
                     <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
                     <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
+                    </div>
                     <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>
                 </div>
                 <button id="expandTranscript" class="secondary expand-transcript" type="button" hidden>Show transcript</button>
