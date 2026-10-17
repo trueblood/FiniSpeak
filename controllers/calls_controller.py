@@ -7,7 +7,15 @@ from services.call_access import is_call_participant
 from services.call_experience_service import build_experience_changes
 from services.processing_mode_service import allowed_processing_modes, authorize_processing_mode
 from services.summary_service import summarize_lines
+from services.document_extract import extract_document_text
 from services.translation_service import canonical_language, explain_term, translate_text
+
+def _lookup_invitee(value):
+    text = str(value or "").strip()
+    if "@" in text:
+        return AccountModel.find_by_email(text)
+    return AccountModel.find_by_phone(text)
+
 
 AccountModel = repository_proxy("accounts")
 CallModel = repository_proxy("calls")
@@ -201,7 +209,7 @@ def update_experience(call_id):
     data = json_body()
     action = data.get("action")
     try:
-        changes = build_experience_changes(call, identity, action, data, AccountModel.find_by_email)
+        changes = build_experience_changes(call, identity, action, data, _lookup_invitee)
         updated = CallModel.patch_experience(
             call_id,
             identity["uid"],
@@ -265,6 +273,24 @@ def translate_transcript(call_id, transcript_id):
     result = translate_text(row.get("text") or "", data.get("sourceLanguage") or row.get("language") or "en", target, online=True)
     saved = TranscriptModel.annotate_translation(call_id, transcript_id, target, result["text"], result["status"])
     return jsonify({"translation": result, "transcript": saved})
+
+
+def extract_document(call_id):
+    _identity, _call, error = _call_for_participant(call_id)
+    if error:
+        return error
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "Choose a PDF, Word document, or text file."}), 400
+    payload = upload.read(8 * 1024 * 1024 + 1)
+    if len(payload) > 8 * 1024 * 1024:
+        return jsonify({"error": "Upload a document under 8 MB."}), 400
+    try:
+        text, title = extract_document_text(upload.filename, payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    truncated = len(text) > 20000
+    return jsonify({"text": text[:20000], "title": title, "truncated": truncated})
 
 
 def pending_requests():

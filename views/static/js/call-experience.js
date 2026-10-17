@@ -79,12 +79,9 @@ export function createCallExperience(deps) {
         deps.$("avatarButton").onclick = () => deps.openModal("avatarStudioModal");
         deps.$("closeAvatarStudio").onclick = () => deps.closeModal("avatarStudioModal");
         deps.$("useLiveCamera").onclick = () => useCamera();
-        deps.$("inviteAiButton").onclick = () => deps.openModal("aiInterpreterModal");
-        deps.$("closeAiInterpreter").onclick = () => deps.closeModal("aiInterpreterModal");
-        deps.$("cancelAiInterpreter").onclick = () => deps.closeModal("aiInterpreterModal");
-        deps.$("confirmAiInterpreter").onclick = confirmInterpreter;
-        deps.$("interpreterPause").onclick = toggleInterpreterPause;
-        deps.$("removeAiInterpreter").onclick = () => postExperience("remove-interpreter").catch(showCallError);
+        if (deps.$("closeAiInterpreter")) deps.$("closeAiInterpreter").onclick = () => deps.closeModal("aiInterpreterModal");
+        if (deps.$("cancelAiInterpreter")) deps.$("cancelAiInterpreter").onclick = () => deps.closeModal("aiInterpreterModal");
+        if (deps.$("confirmAiInterpreter")) deps.$("confirmAiInterpreter").onclick = confirmInterpreter;
         deps.$("inviteParticipantButton").onclick = () => deps.openModal("inviteParticipantModal");
         deps.$("closeInviteParticipant").onclick = () => deps.closeModal("inviteParticipantModal");
         deps.$("cancelInviteParticipant").onclick = () => deps.closeModal("inviteParticipantModal");
@@ -137,18 +134,9 @@ export function createCallExperience(deps) {
         state.call = call;
         state.participants = participants || [];
         const interpreter = call?.aiInterpreter;
-        const active = Boolean(interpreter?.active);
-        deps.$("interpreterStateTitle").textContent = active ? (interpreter.paused ? "Paused" : "In the call") : "Not in the call";
-        deps.$("interpreterStatus").textContent = !active ? "Idle" : interpreter.paused ? "Paused" : state.interpreterSpeaking ? "Speaking" : "Listening";
-        deps.$("interpreterLanguages").textContent = active
-            ? `${languageName(interpreter.sourceLanguage)} → ${languageName(interpreter.targetLanguage)} · ${interpreter.displayName || "AI interpreter"}`
-            : "Invite an AI interpreter to speak translations in the call. The participant is labeled AI for everyone.";
-        deps.$("interpreterPause").disabled = !active;
-        deps.$("interpreterPause").textContent = interpreter?.paused ? "Resume interpreter" : "Pause interpreter";
-        deps.$("interpreterPause").setAttribute("aria-pressed", String(Boolean(interpreter?.paused)));
-        deps.$("removeAiInterpreter").disabled = !active;
-        deps.$("translationIndicator").textContent = !active ? "Translation ready" : interpreter.paused ? "Interpreter paused" : "Interpreter live";
-        renderAiTile(interpreter);
+        document.querySelector('.video-card[data-role="ai"]')?.remove();
+        deps.$("translationIndicator").textContent = "Translation ready";
+        if (interpreter) state.call = { ...call, aiInterpreter: null };
         applyParticipantPresence(participants || []);
         renderDocuments(call?.documents || []);
         if (!state.summary && call?.savedSummaries?.length) showSummary(call.savedSummaries[call.savedSummaries.length - 1], "Saved with this call.");
@@ -368,7 +356,7 @@ export function createCallExperience(deps) {
         const status = deps.$("inviteStatus");
         status.textContent = "Sending invitation…";
         try {
-            await postExperience("invite", { email: deps.$("inviteEmail").value.trim() });
+            await postExperience("invite", { contact: deps.$("inviteEmail").value.trim() });
             status.textContent = "Invitation sent. They can join this call from their dashboard.";
             deps.$("inviteEmail").value = "";
         } catch (error) {
@@ -531,25 +519,7 @@ export function createCallExperience(deps) {
         film.hidden = cards.length < 2;
     }
 
-    function maybeSpeak(rows) {
-        const interpreter = state.call?.aiInterpreter;
-        if (!interpreter?.active || interpreter.paused || !window.speechSynthesis) return;
-        const target = interpreter.targetLanguage || state.viewerLanguage;
-        for (const row of rows) {
-            if (!row?.id || row.speakerId === deps.getUser()?.uid || state.spoken.has(row.id)) continue;
-            const text = row.translations?.[target]?.text;
-            if (!text || text === row.text) continue;
-            state.spoken.add(row.id);
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = target;
-            const voice = speechSynthesis.getVoices().find(item => item.voiceURI === interpreter.voiceURI) || speechSynthesis.getVoices().find(item => item.lang?.toLowerCase().startsWith(target));
-            if (voice) utterance.voice = voice;
-            utterance.onstart = () => { state.interpreterSpeaking = true; };
-            utterance.onend = () => { state.interpreterSpeaking = false; };
-            speechSynthesis.speak(utterance);
-            break;
-        }
-    }
+    function maybeSpeak() {}
 
     async function requestTranslations(callId, transcriptId, source) {
         const targets = new Set([state.viewerLanguage]);
@@ -668,13 +638,30 @@ export function createCallExperience(deps) {
         const file = event.target.files?.[0];
         event.target.value = "";
         if (!file) return;
-        if (file.size > 500000) {
-            showDocumentError(new Error("Upload a text document under 500 KB."));
+        if (file.size > 8 * 1024 * 1024) {
+            showDocumentError(new Error("Upload a document under 8 MB."));
             return;
         }
-        const text = await file.text();
+        const extension = file.name.split(".").pop()?.toLowerCase();
+        let text = "";
+        let title = file.name.replace(/\.[^.]+$/, "");
+        try {
+            if (["pdf", "doc", "docx"].includes(extension)) {
+                const body = new FormData();
+                body.append("file", file);
+                const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(deps.getCallId())}/documents/extract`, { method: "POST", body });
+                text = result.text || "";
+                title = result.title || title;
+                if (result.truncated) deps.$("documentStatus").textContent = "Only the first part of that document was imported.";
+            } else {
+                text = await file.text();
+            }
+        } catch (error) {
+            showDocumentError(error);
+            return;
+        }
         await createDocument(text);
-        deps.$("documentTitle").value = file.name.replace(/\.[^.]+$/, "");
+        deps.$("documentTitle").value = title;
         scheduleDocumentSave();
     }
 
@@ -866,13 +853,6 @@ export function createCallExperience(deps) {
                 head: state.reducedMotion ? 0 : Math.sin(time / 1400) * 0.08
             };
             if (state.mediaMode === "avatar" && !state.screenTrack) drawAvatar(deps.$("localAvatarCanvas"), avatarById(state.avatarId), pose);
-            drawAvatar(deps.$("interpreterAvatar"), avatarById(state.call?.aiInterpreter?.avatarId || "nova"), {
-                ...pose,
-                mouth: state.interpreterSpeaking ? 0.35 + Math.abs(Math.sin(time / 120)) * 0.5 : 0.08
-            });
-            const aiCanvas = document.querySelector('.video-card[data-role="ai"] canvas');
-            if (aiCanvas) drawAvatar(aiCanvas, avatarById(state.call?.aiInterpreter?.avatarId || "nova"), { ...pose, mouth: state.interpreterSpeaking ? 0.55 : 0.1 });
-            drawWave(deps.$("interpreterWave"), state.interpreterSpeaking ? 0.7 : state.level, time);
             if (state.call) updateClock(state.call);
         };
         state.raf = requestAnimationFrame(tick);
@@ -909,62 +889,157 @@ export function createCallExperience(deps) {
     };
 }
 
+function shadeColor(hex, amount) {
+    const value = String(hex || "#888888").replace("#", "");
+    const color = parseInt(value.length === 3 ? value.split("").map(part => part + part).join("") : value, 16);
+    const channel = (shift) => Math.max(0, Math.min(255, ((color >> shift) & 255) + amount));
+    return `rgb(${channel(16)}, ${channel(8)}, ${channel(0)})`;
+}
+
+function drawEye(context, x, y, blink) {
+    context.save();
+    context.translate(x, y);
+    context.scale(1, Math.max(0.08, blink));
+    context.fillStyle = "#f8fafc";
+    context.beginPath();
+    context.ellipse(0, 0, 9, 6.2, 0, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#1e293b";
+    context.beginPath();
+    context.arc(1, 0.5, 3.8, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#ffffff";
+    context.beginPath();
+    context.arc(-0.6, -1.2, 1.3, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+}
+
+function drawHair(context, avatar) {
+    context.fillStyle = avatar.hair;
+    context.beginPath();
+    if (avatar.style === "long") {
+        context.moveTo(-80, -70);
+        context.quadraticCurveTo(-90, -112, 0, -112);
+        context.quadraticCurveTo(90, -112, 80, -70);
+        context.lineTo(76, 128);
+        context.lineTo(54, 128);
+        context.lineTo(60, 8);
+        context.lineTo(-60, 8);
+        context.lineTo(-54, 128);
+        context.lineTo(-76, 128);
+        context.closePath();
+    } else if (avatar.style === "bob") {
+        context.moveTo(-78, -8);
+        context.quadraticCurveTo(-86, -106, 0, -106);
+        context.quadraticCurveTo(86, -106, 78, -8);
+        context.lineTo(72, 52);
+        context.quadraticCurveTo(48, 28, 0, 24);
+        context.quadraticCurveTo(-48, 28, -72, 52);
+        context.closePath();
+    } else if (avatar.style === "curly") {
+        for (const [x, y, radius] of [[0, -78, 30], [-34, -70, 22], [34, -70, 22], [-72, -16, 22], [72, -16, 22], [-58, 24, 18], [58, 24, 18]]) {
+            context.moveTo(x + radius, y);
+            context.arc(x, y, radius, 0, Math.PI * 2);
+        }
+    } else if (avatar.style === "ai") {
+        context.ellipse(0, -42, 78, 54, 0, Math.PI, Math.PI * 2);
+    } else if (avatar.style === "crop" || avatar.style === "short") {
+        context.ellipse(0, -58, 74, 46, 0, Math.PI, Math.PI * 2);
+    } else {
+        context.ellipse(0, -50, 80, 58, 0, Math.PI, Math.PI * 2);
+    }
+    context.fill();
+    if (avatar.style === "ai") {
+        context.fillStyle = avatar.accent;
+        context.fillRect(-16, -96, 32, 6);
+    }
+}
+
 function drawAvatar(canvas, avatar, pose) {
-    if (!canvas) return;
+    if (!canvas || !avatar) return;
     const context = canvas.getContext("2d");
     if (!context) return;
     const width = canvas.width || 180;
     const height = canvas.height || 180;
+    const mouth = Math.max(0, Math.min(1, pose?.mouth || 0));
+    const blink = pose?.blink == null ? 1 : pose.blink;
     context.clearRect(0, 0, width, height);
-    const gradient = context.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, "#1b2430");
-    gradient.addColorStop(1, "#0d1218");
-    context.fillStyle = gradient;
+    const backdrop = context.createLinearGradient(0, 0, 0, height);
+    backdrop.addColorStop(0, "#314053");
+    backdrop.addColorStop(1, "#121820");
+    context.fillStyle = backdrop;
     context.fillRect(0, 0, width, height);
+    const glow = context.createRadialGradient(width * 0.5, height * 0.36, width * 0.04, width * 0.5, height * 0.4, width * 0.46);
+    glow.addColorStop(0, shadeColor(avatar.accent, 40).replace("rgb", "rgba").replace(")", ", 0.28)"));
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    context.fillStyle = glow;
+    context.fillRect(0, 0, width, height);
+
     context.save();
-    context.translate(width / 2 + pose.head * 20, height / 2 + pose.breath);
-    const scale = Math.min(width, height) / 180;
-    context.scale(scale, scale);
+    context.translate(width / 2 + (pose?.head || 0) * width * 0.02, height * 0.56 + (pose?.breath || 0));
+    context.scale(Math.min(width / 300, height / 360), Math.min(width / 300, height / 360));
+
+    context.fillStyle = shadeColor(avatar.accent, -24);
+    context.beginPath();
+    context.ellipse(0, 128, 138, 86, 0, Math.PI, 0, true);
+    context.lineTo(138, 210);
+    context.lineTo(-138, 210);
+    context.closePath();
+    context.fill();
     context.fillStyle = avatar.accent;
     context.beginPath();
-    context.arc(0, 18, 78, 0, Math.PI * 2);
+    context.moveTo(-26, 72);
+    context.quadraticCurveTo(0, 112, 26, 72);
+    context.lineTo(16, 168);
+    context.quadraticCurveTo(0, 146, -16, 168);
+    context.closePath();
+    context.fill();
+
+    context.fillStyle = shadeColor(avatar.skin, -16);
+    context.beginPath();
+    if (context.roundRect) context.roundRect(-20, 48, 40, 42, 12);
+    else context.rect(-20, 48, 40, 42);
+    context.fill();
+    drawHair(context, avatar);
+    context.fillStyle = avatar.skin;
+    context.beginPath();
+    context.ellipse(-62, -4, 11, 16, 0, 0, Math.PI * 2);
+    context.ellipse(62, -4, 11, 16, 0, 0, Math.PI * 2);
+    context.fill();
+    context.beginPath();
+    context.ellipse(0, -10, 66, 78, 0, 0, Math.PI * 2);
     context.fill();
     context.fillStyle = avatar.hair;
     context.beginPath();
-    context.arc(0, -8, 58, Math.PI, 0);
+    context.ellipse(0, -52, 70, avatar.style === "crop" ? 34 : 46, 0, Math.PI, Math.PI * 2);
     context.fill();
-    if (avatar.style === "long" || avatar.style === "bob") {
-        context.fillRect(-54, -8, 108, avatar.style === "long" ? 86 : 48);
-    }
-    context.fillStyle = avatar.skin;
+
+    context.strokeStyle = shadeColor(avatar.hair, 20);
+    context.lineWidth = 3.2;
+    context.lineCap = "round";
     context.beginPath();
-    context.arc(0, 8, 46, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = "#102033";
-    const eyeY = -2;
-    context.save();
-    context.translate(-16, eyeY);
-    context.scale(1, pose.blink);
-    context.beginPath();
-    context.arc(0, 0, 4.5, 0, Math.PI * 2);
-    context.fill();
-    context.restore();
-    context.save();
-    context.translate(16, eyeY);
-    context.scale(1, pose.blink);
-    context.beginPath();
-    context.arc(0, 0, 4.5, 0, Math.PI * 2);
-    context.fill();
-    context.restore();
-    context.strokeStyle = "#7a3b32";
-    context.lineWidth = 3;
-    context.beginPath();
-    context.ellipse(0, 24, 12, 4 + pose.mouth * 14, 0, 0, Math.PI);
+    context.moveTo(-36, -30);
+    context.quadraticCurveTo(-22, -38, -10, -30);
+    context.moveTo(10, -30);
+    context.quadraticCurveTo(22, -38, 36, -30);
     context.stroke();
-    if (pose.mouth > 0.2) {
-        context.fillStyle = "#4a1d22";
+    drawEye(context, -20, -6, blink);
+    drawEye(context, 20, -6, blink);
+    context.strokeStyle = shadeColor(avatar.skin, -35);
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(2, -2);
+    context.quadraticCurveTo(8, 12, 1, 16);
+    context.stroke();
+    context.fillStyle = "#7a3038";
+    context.beginPath();
+    context.ellipse(0, 34, 16, 3.2 + mouth * 9, 0, 0, Math.PI * 2);
+    context.fill();
+    if (mouth > 0.2) {
+        context.fillStyle = "#3c1519";
         context.beginPath();
-        context.ellipse(0, 26, 8, pose.mouth * 12, 0, 0, Math.PI * 2);
+        context.ellipse(0, 36, 9, mouth * 7, 0, 0, Math.PI * 2);
         context.fill();
     }
     context.restore();

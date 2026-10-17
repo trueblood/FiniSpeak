@@ -12,6 +12,7 @@ calls_bp.add_url_rule("/<call_id>", view_func=calls_controller.detail, methods=[
 calls_bp.add_url_rule("/<call_id>/experience", view_func=calls_controller.update_experience, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/translate", view_func=calls_controller.translate, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/terminology", view_func=calls_controller.terminology, methods=["POST"])
+calls_bp.add_url_rule("/<call_id>/documents/extract", view_func=calls_controller.extract_document, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/summary", view_func=calls_controller.summary, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/transcripts/<transcript_id>/translation", view_func=calls_controller.translate_transcript, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/state", view_func=calls_controller.update_state, methods=["PATCH"])

@@ -1,9 +1,12 @@
+import io
 import unittest
+import zipfile
 from datetime import datetime, timezone
 
 from models.sql_models import SqlCall, SqlTranscript
 from repositories.mysql import MySqlCallRepository, MySqlTranscriptRepository
 from services.call_access import is_call_participant, participant_ids
+from services.document_extract import extract_document_text
 from services.call_experience_service import build_experience_changes
 from services.summary_service import summarize_lines
 from services.translation_service import explain_term, translate_text
@@ -85,6 +88,10 @@ class CallExperienceTests(unittest.TestCase):
         self.assertTrue(saved["savedSummaries"][0]["consent"])
         invited = build_experience_changes(call, actor, "invite", {"email": "ken@example.com"}, lambda email: {"uid": "customer-3", "displayName": "Ken"})
         self.assertEqual(invited["invitations"][0]["status"], "pending")
+        phoned = build_experience_changes(call, actor, "invite", {"contact": "+1 (555) 010-1234"}, lambda phone: {"uid": "customer-4", "displayName": "Ada", "phone": phone} if phone == "15550101234" else None)
+        self.assertEqual(phoned["invitations"][0]["inviteePhone"], "15550101234")
+        with self.assertRaisesRegex(ValueError, "phone number"):
+            build_experience_changes(call, actor, "invite", {"contact": "nope"}, lambda _value: None)
         accepted = build_experience_changes({"invitations": invited["invitations"]}, {"uid": "customer-3"}, "accept-invite", {})
         self.assertIn("customer-3", accepted["guestIds"])
         with self.assertRaises(PermissionError):
@@ -98,6 +105,23 @@ class CallExperienceTests(unittest.TestCase):
         self.assertEqual(session.commits, 1)
         self.assertTrue(MySqlCallRepository.is_participant(result, "customer-3"))
 
+    def test_document_upload_reads_word_and_pdf_text(self):
+        document = io.BytesIO()
+        with zipfile.ZipFile(document, "w") as archive:
+            archive.writestr(
+                "word/document.xml",
+                """<?xml version="1.0" encoding="UTF-8"?>
+                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:body><w:p><w:r><w:t>Schedule the meeting.</w:t></w:r></w:p></w:body></w:document>""",
+            )
+        text, title = extract_document_text("agenda.docx", document.getvalue())
+        self.assertEqual(title, "agenda")
+        self.assertIn("Schedule the meeting.", text)
+        pdf_text, _pdf_title = extract_document_text("notes.pdf", _minimal_pdf("Hello PDF"))
+        self.assertIn("Hello PDF", pdf_text)
+        with self.assertRaisesRegex(ValueError, "PDF, Word"):
+            extract_document_text("photo.png", b"not a document")
+
     def test_transcript_translation_is_stored_beside_the_original(self):
         now = datetime.now(timezone.utc)
         transcript = SqlTranscript(
@@ -108,6 +132,31 @@ class CallExperienceTests(unittest.TestCase):
         saved = MySqlTranscriptRepository(session).annotate_translation("call-1", "line-1", "es", "Hola", "translated")
         self.assertEqual(saved["text"], "Hello")
         self.assertEqual(saved["translations"]["es"]["text"], "Hola")
+
+
+def _minimal_pdf(message):
+    content = f"BT /F1 24 Tf 72 100 Td ({message}) Tj ET".encode("ascii")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    output = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, body in enumerate(objects, start=1):
+        offsets.append(len(output))
+        output.extend(f"{index} 0 obj\n".encode("ascii"))
+        output.extend(body)
+        output.extend(b"\nendobj\n")
+    xref = len(output)
+    output.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    output.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    output.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii"))
+    return bytes(output)
 
 
 if __name__ == "__main__":

@@ -409,22 +409,8 @@
                             <p id="partialTranscript" class="partial-transcript hidden" role="status" aria-live="polite"></p>
                             <p class="transcript-note">Only finalized text is saved to FiniSpeak. Raw microphone audio is not stored. Partial captions stay on this device.</p>
                         </section>
-                        <section class="interpreter-card" aria-label="Smart AI interpreter">
-                            <div class="interpreter-heading"><div><span class="eyebrow">Smart AI interpreter</span><h3 id="interpreterStateTitle">Not in the call</h3></div><span id="interpreterStatus" class="call-pill">Idle</span></div>
-                            <div class="interpreter-body">
-                                <canvas id="interpreterAvatar" width="180" height="180" aria-hidden="true"></canvas>
-                                <div class="interpreter-copy">
-                                    <p id="interpreterLanguages">Invite an AI interpreter to speak translations in the call. The participant is labeled AI for everyone.</p>
-                                    <canvas id="interpreterWave" class="interpreter-wave" width="360" height="72" aria-hidden="true"></canvas>
-                                    <div class="interpreter-actions">
-                                        <button id="interpreterPause" class="secondary" type="button" disabled aria-pressed="false">Pause interpreter</button>
-                                        <button id="removeAiInterpreter" class="secondary" type="button" disabled>Remove interpreter</button>
-                                        <button id="requestTranslatorButton" type="button">Request Translator</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle"><div><span class="eyebrow">Translation mode</span><h3 id="processingModeTitle">Translation mode</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent Audio Processing</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Real-Time Streaming</button></div><p>Active method: <strong data-active-processing-label>Baseline</strong>. Select a mode again to return to baseline.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
-                        </section>
+                        <div class="translator-request-row"><button id="requestTranslatorButton" type="button">Request Translator</button></div>
+                        <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle"><div><span class="eyebrow">Translation mode</span><h3 id="processingModeTitle">Translation mode</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent Audio Processing</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Real-Time Streaming</button></div><p>Active method: <strong data-active-processing-label>Baseline</strong>. Select a mode again to return to baseline.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
                         <section id="interpreterMatches" class="interpreter-matches hidden" aria-live="polite">
                             <div class="interpreter-matches-heading"><div><span class="eyebrow">Available now</span><h3>Interpreter matches</h3></div><span id="interpreterMatchSummary"></span></div>
                             <div id="interpreterMatchList" class="interpreter-match-list"></div>
@@ -456,7 +442,8 @@
                         <div class="documents-layout">
                             <div class="documents-list">
                                 <button id="uploadDocument" type="button">Upload document</button>
-                                <input id="documentFile" type="file" accept=".txt,.md,.csv,.text,.json,text/plain" hidden>
+                                <p class="documents-hint">PDF, Word, or text</p>
+                                <input id="documentFile" type="file" accept=".txt,.md,.csv,.text,.json,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
                                 <ul id="documentList"></ul>
                             </div>
                             <div class="documents-editor">
@@ -488,7 +475,6 @@
                     <button id="muteButton" class="secondary" type="button" aria-pressed="false" title="Mute microphone" aria-label="Mute microphone"><span class="tool-label">Mute</span></button>
                     <button id="cameraButton" class="secondary" type="button" aria-pressed="false" title="Turn camera off" aria-label="Turn camera off"><span class="tool-label">Camera</span></button>
                     <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
-                    <button id="inviteAiButton" class="secondary" type="button" title="Invite AI interpreter" aria-label="Invite AI interpreter">AI interpreter</button>
                     <button id="inviteParticipantButton" class="secondary" type="button" title="Invite participant" aria-label="Invite participant">Invite</button>
                     <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
                     <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
@@ -598,7 +584,7 @@
         <div class="modal-card">
             <div class="transcript-header"><div><span class="eyebrow">People</span><h2 id="inviteParticipantTitle">Invite a participant</h2></div><button id="closeInviteParticipant" class="secondary" type="button">Close</button></div>
             <form id="inviteParticipantForm">
-                <label>FiniSpeak email<input id="inviteEmail" type="email" autocomplete="email" required placeholder="name@example.com"></label>
+                <label>Email or phone number<input id="inviteEmail" type="text" inputmode="email" autocomplete="off" required placeholder="name@example.com or +1 555 0100"></label>
                 <p id="inviteStatus" class="status" role="status"></p>
                 <div class="actions"><button id="cancelInviteParticipant" class="secondary" type="button">Cancel</button><button type="submit">Send invite</button></div>
             </form>

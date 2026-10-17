@@ -130,6 +130,11 @@ def upsert_document(call, actor_id, payload):
     return {"documents": documents}
 
 
+def _phone_digits(value):
+    digits = "".join(character for character in str(value or "") if character.isdigit())
+    return digits if 7 <= len(digits) <= 15 else ""
+
+
 def build_experience_changes(call, identity, action, data, lookup_account=None):
     """Return the call-document fields changed by one call-screen action."""
     actor_id = identity["uid"]
@@ -173,12 +178,16 @@ def build_experience_changes(call, identity, action, data, lookup_account=None):
     if action == "invite":
         if not lookup_account:
             raise ValueError("Account lookup is unavailable.")
-        email = str(data.get("email") or "").strip().lower()
-        if not _EMAIL.match(email):
-            raise ValueError("Enter the participant's FiniSpeak email address.")
-        account = lookup_account(email)
+        contact = str(data.get("contact") or data.get("email") or data.get("phone") or "").strip()
+        email = contact.lower() if "@" in contact else ""
+        phone = "" if email else _phone_digits(contact)
+        if email and not _EMAIL.match(email):
+            raise ValueError("Enter an email address or phone number.")
+        if not email and not phone:
+            raise ValueError("Enter an email address or phone number.")
+        account = lookup_account(email or phone)
         if not account:
-            raise ValueError("No FiniSpeak account was found with that email.")
+            raise ValueError("No FiniSpeak account was found with that email or phone number.")
         invitee_id = account.get("uid") or account.get("id")
         if not invitee_id or invitee_id == actor_id:
             raise ValueError("You cannot invite yourself.")
@@ -191,8 +200,9 @@ def build_experience_changes(call, identity, action, data, lookup_account=None):
             raise ValueError("This call cannot accept more invitations.")
         invitations.append({
             "inviteeId": invitee_id,
-            "inviteeEmail": email,
-            "inviteeName": account.get("displayName") or email,
+            "inviteeEmail": account.get("email") or email,
+            "inviteePhone": account.get("phone") or phone,
+            "inviteeName": account.get("displayName") or email or phone,
             "invitedBy": actor_id,
             "status": "pending",
             "createdAt": _now(),
