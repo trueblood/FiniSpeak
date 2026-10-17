@@ -73,6 +73,14 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 .summary-status { min-height:1.2em; color:#a7b3c4; }
 
 .video-stage { position:relative; min-width:0; min-height:0; display:flex; flex-direction:column; gap:10px; border-radius:24px; overflow:hidden; background:#0c1016; padding:10px 10px 176px; box-sizing:border-box; }
+.call-roster { position:relative; z-index:4; display:grid; gap:6px; flex:0 0 auto; min-width:0; }
+.call-roster-heading { display:flex; justify-content:space-between; gap:8px; align-items:baseline; color:#d7e0ea; font-size:.72rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+.call-roster-heading span:last-child { font-weight:650; letter-spacing:0; text-transform:none; color:#a7b3c4; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.call-roster ul { display:flex; gap:6px; margin:0; padding:0; list-style:none; overflow-x:auto; min-width:0; }
+.call-roster li { display:flex; align-items:center; gap:6px; max-width:100%; padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.08); color:#fff; font-size:.72rem; white-space:nowrap; }
+.call-roster li.is-connected { box-shadow:inset 0 0 0 1px rgba(74,222,128,.8); }
+.call-roster li.is-failed { box-shadow:inset 0 0 0 1px rgba(248,113,113,.9); }
+.call-roster li small { color:#a7b3c4; overflow:hidden; text-overflow:ellipsis; }
 .call-view .video-grid { max-width:none; margin:0; flex:1 1 auto; height:auto; min-height:0; display:grid; grid-template-columns:repeat(var(--camera-columns, 1), minmax(0, 1fr)); grid-template-rows:repeat(var(--camera-rows, 1), minmax(0, 1fr)); gap:10px; }
 .call-view .video-grid > .video-card { position:relative; min-width:0; min-height:0; width:auto; height:auto; flex:none; aspect-ratio:auto; border-radius:22px; overflow:hidden; background:#07090d; border:1px solid rgba(255,255,255,.08); }
 .participant-grid { display:grid; gap:8px; flex:0 0 auto; }

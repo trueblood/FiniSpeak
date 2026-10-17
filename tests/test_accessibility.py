@@ -74,6 +74,15 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("is-zoom-speaker", layout)
         self.assertIn("is-controls-collapsed", styles)
         self.assertIn(".is-self-pip", styles)
+        self.assertIn('id="callRoster"', self.html)
+        self.assertIn('id="callRosterList"', self.html)
+        app = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        peers = app[app.index("async function ensurePeer"):app.index("function connectSignaling")]
+        self.assertIn("function ensureParticipantTile", app)
+        self.assertIn("function attachRemoteTrack", app)
+        self.assertIn("event.track", peers)
+        self.assertIn("have-local-offer", peers)
+        self.assertNotIn("e.streams[0]", peers)
 
     def test_transcripts_are_named_logs(self):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)

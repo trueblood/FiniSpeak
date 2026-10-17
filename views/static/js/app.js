@@ -10,7 +10,7 @@ const show = (id) => {
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let authActionToken = null;
-let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map();
+let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerDebug = new Map(), rosterParticipants = [], rosterTranscripts = [];
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let rtcConfiguration = { iceServers: [] };
@@ -2155,14 +2155,23 @@ function watchCall(callId) {
                         : "Customer call connected";
         if (["ended", "declined"].includes(call.status)) { cleanupCall(); show("dashboardView"); loadConversationHistory(); return; }
         const ids = new Set();
-        (participantPayload.participants || []).forEach(participant => { if (participant.id !== currentUser.uid) { ids.add(participant.id); ensurePeer(callId, participant.id, participant); } });
-        for (const [uid, pc] of peerConnections) if (!ids.has(uid)) { pc.close(); peerConnections.delete(uid); removeRemoteVideo(uid); }
+        rosterParticipants = participantPayload.participants || [];
+        for (const participant of rosterParticipants) {
+            if (!participant?.id || participant.id === currentUser.uid) continue;
+            ids.add(participant.id);
+            ensureParticipantTile(participant);
+            ensurePeer(callId, participant.id, participant).catch(error => {
+                recordPeer(participant.id, { error: error.message, connection: "error" });
+            });
+        }
+        for (const [uid, pc] of peerConnections) if (!ids.has(uid)) { pc.close(); peerConnections.delete(uid); peerDebug.delete(uid); removeRemoteVideo(uid); }
         const rows = transcriptPayload.transcripts || [];
         rows.sort((a, b) => {
             const aMs = profileTimestampMillis(a.createdAt) || a.clientCreatedAt || 0;
             const bMs = profileTimestampMillis(b.createdAt) || b.clientCreatedAt || 0;
             return aMs - bMs;
         });
+        renderCallRoster(rosterParticipants, rows);
         renderTranscript(rows);
         callExperience?.sync(call, participantPayload.participants || []);
         callExperience?.updateSubtitles(rows);
@@ -2175,28 +2184,156 @@ function watchCall(callId) {
     callUnsubs.push(() => window.clearInterval(timer));
 }
 
+function peerSnapshot(pc) {
+    const receivers = pc?.getReceivers?.() || [];
+    const live = kind => receivers.some(receiver => receiver.track?.kind === kind && receiver.track.readyState === "live");
+    return {
+        connection: pc?.connectionState || "waiting",
+        ice: pc?.iceConnectionState || "",
+        video: live("video"),
+        audio: live("audio")
+    };
+}
+
+function recordPeer(uid, patch) {
+    peerDebug.set(uid, { ...(peerDebug.get(uid) || {}), ...patch });
+    renderCallRoster(rosterParticipants);
+}
+
+function signalingLabel() {
+    if (!signalingSocket) return "signaling off";
+    if (signalingSocket.readyState === WebSocket.OPEN) return rtcConfiguration.iceServers.length ? "signaling open" : "signaling open, no relay";
+    return "signaling closed";
+}
+
+function renderCallRoster(participants = rosterParticipants, transcripts = rosterTranscripts) {
+    rosterParticipants = participants || [];
+    rosterTranscripts = transcripts || [];
+    const list = $("callRosterList");
+    const status = $("callRosterStatus");
+    if (!list || !currentUser) return;
+    const people = [];
+    const joined = new Map((participants || []).filter(person => person?.id).map(person => [person.id, person]));
+    const local = joined.get(currentUser.uid);
+    people.push({
+        id: currentUser.uid,
+        name: local?.displayName || currentProfile?.displayName || "You",
+        role: "you",
+        connection: "local",
+        video: Boolean(localStream?.getVideoTracks?.().some(track => track.readyState === "live" && track.enabled)),
+        audio: Boolean(localStream?.getAudioTracks?.().some(track => track.readyState === "live" && track.enabled))
+    });
+    for (const participant of joined.values()) {
+        if (participant.id === currentUser.uid) continue;
+        const debug = peerDebug.get(participant.id) || {};
+        const live = peerSnapshot(peerConnections.get(participant.id));
+        people.push({
+            id: participant.id,
+            name: participant.displayName || "Guest",
+            role: participant.role || "guest",
+            connection: debug.error ? "error" : (live.connection || debug.connection || "waiting"),
+            ice: live.ice || debug.ice || "",
+            video: Boolean(live.video || debug.video),
+            audio: Boolean(live.audio || debug.audio),
+            error: debug.error || "",
+            note: debug.note || ""
+        });
+    }
+    const seen = new Set(people.map(person => person.id));
+    for (const row of transcripts || []) {
+        if (!row?.speakerId || seen.has(row.speakerId)) continue;
+        seen.add(row.speakerId);
+        people.push({ id: row.speakerId, name: row.speakerName || "Speaker", role: row.speakerRole || "transcript", connection: "transcript only", video: false, audio: false, error: "heard in transcript, no camera peer" });
+    }
+    const summary = people.map(person => [person.id, person.connection, person.ice, person.video, person.audio, person.error, person.note].join(":")).join("|");
+    if (status) status.textContent = `${people.length} active · ${signalingLabel()}`;
+    if (list.dataset.summary === summary) return;
+    list.dataset.summary = summary;
+    list.replaceChildren();
+    for (const person of people) {
+        const item = document.createElement("li");
+        const failed = person.connection === "failed" || person.connection === "error" || person.connection === "transcript only";
+        item.className = person.connection === "connected" || person.connection === "local" ? "is-connected" : failed ? "is-failed" : "";
+        const name = document.createElement("strong");
+        name.textContent = person.name;
+        const meta = document.createElement("small");
+        meta.textContent = person.error || [person.role, person.connection, person.ice, person.video ? "video" : "no video", person.audio ? "audio" : "no audio", person.note].filter(Boolean).join(" · ");
+        item.append(name, meta);
+        list.appendChild(item);
+    }
+}
+
+function ensureParticipantTile(participant) {
+    if (!participant?.id || participant.id === currentUser?.uid) return;
+    let card = document.querySelector(`[data-peer="${participant.id}"]`);
+    if (!card) {
+        card = document.createElement("article");
+        card.className = "video-card";
+        card.dataset.peer = participant.id;
+        card.innerHTML = '<video autoplay playsinline></video><canvas class="avatar-canvas is-hidden" aria-hidden="true"></canvas><div class="video-slate"><strong></strong><span>Camera</span></div><span class="speaking-indicator" aria-hidden="true"></span><div class="video-label"><span class="video-role"></span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name"></span></div><p class="tile-subtitle" hidden></p>';
+        $("videoGrid").appendChild(card);
+    }
+    const role = ["translator", "caller", "receiver"].includes(participant.role) ? participant.role : "guest";
+    card.dataset.role = role;
+    card.dataset.speaker = participant.id;
+    const name = participant.displayName || "FiniSpeak guest";
+    card.querySelector(".video-role").textContent = participantRoleLabel(role);
+    card.querySelector(".video-name").textContent = name;
+    card.querySelector(".video-slate strong").textContent = name;
+    const video = card.querySelector("video");
+    const hasVideo = video.srcObject instanceof MediaStream && video.srcObject.getVideoTracks().some(track => track.readyState === "live");
+    card.classList.toggle("is-camera-on", hasVideo);
+}
+
 async function ensurePeer(callId, remoteUid, profile) {
-    if (peerConnections.has(remoteUid)) return;
     const politeOfferer = currentUser.uid.localeCompare(remoteUid) < 0;
-    if (!rtcConfiguration.iceServers.length) throw new Error("WebRTC relay configuration is unavailable.");
+    const existing = peerConnections.get(remoteUid);
+    if (existing) {
+        if (existing.connectionState === "failed" || existing.connectionState === "closed") {
+            existing.close();
+            peerConnections.delete(remoteUid);
+        } else {
+            recordPeer(remoteUid, peerSnapshot(existing));
+            if (politeOfferer && existing.signalingState === "have-local-offer" && existing.localDescription) {
+                try {
+                    await signalingReady;
+                    sendSignal("offer", remoteUid, { type: existing.localDescription.type, sdp: existing.localDescription.sdp });
+                } catch (error) {
+                    recordPeer(remoteUid, { error: error.message, connection: "error" });
+                }
+            }
+            return;
+        }
+    }
+    if (!localStream) throw new Error("Local camera is not ready.");
     const pc = new RTCPeerConnection(rtcConfiguration);
     peerConnections.set(remoteUid, pc);
+    recordPeer(remoteUid, { note: rtcConfiguration.iceServers.length ? "" : "no relay servers", ...peerSnapshot(pc) });
     const audioTrack = localStream.getAudioTracks()[0];
     const videoTrack = callExperience?.outgoingVideoTrack() || localStream.getVideoTracks()[0];
     if (audioTrack) pc.addTrack(audioTrack, localStream);
     if (videoTrack) pc.addTrack(videoTrack, localStream);
-    pc.onconnectionstatechange = () => callExperience?.noteConnection(pc.connectionState);
-    pc.ontrack = e => attachRemoteVideo(remoteUid, profile, e.streams[0]);
+    const publishState = () => {
+        recordPeer(remoteUid, peerSnapshot(pc));
+        const states = [...peerConnections.values()].map(peer => peer.connectionState);
+        const summary = states.includes("connected") ? "connected" : states.includes("failed") ? "failed" : "connecting";
+        callExperience?.noteConnection(summary);
+    };
+    pc.onconnectionstatechange = publishState;
+    pc.oniceconnectionstatechange = publishState;
+    pc.ontrack = event => attachRemoteTrack(remoteUid, profile, event.track, event.streams?.[0]);
     pc.onicecandidate = event => {
-        if (event.candidate) signalingReady?.then(() => sendSignal("ice", remoteUid, event.candidate.toJSON())).catch(console.error);
+        if (event.candidate) signalingReady?.then(() => sendSignal("ice", remoteUid, event.candidate.toJSON())).catch(error => recordPeer(remoteUid, { error: error.message }));
     };
     for (const message of pendingSignals.get(remoteUid) || []) await applySignal(message);
     pendingSignals.delete(remoteUid);
     if (politeOfferer) {
         await signalingReady;
-        const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
         sendSignal("offer", remoteUid, { type: offer.type, sdp: offer.sdp });
     }
+    publishState();
 }
 
 function connectSignaling(callId) {
@@ -2258,22 +2395,21 @@ function participantRoleLabel(role) {
     return "Guest";
 }
 
-function attachRemoteVideo(uid, profile, stream) {
-    let card = document.querySelector(`[data-peer="${uid}"]`);
-    if (!card) {
-        card = document.createElement("article"); card.className = "video-card"; card.dataset.peer = uid;
-        card.innerHTML = '<video autoplay playsinline></video><canvas class="avatar-canvas is-hidden" aria-hidden="true"></canvas><div class="video-slate"><strong></strong><span>Camera</span></div><span class="speaking-indicator" aria-hidden="true"></span><div class="video-label"><span class="video-role"></span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name"></span></div><p class="tile-subtitle" hidden></p>';
-        $("videoGrid").appendChild(card);
+function attachRemoteTrack(uid, profile, track, stream) {
+    ensureParticipantTile({ id: uid, role: profile?.role, displayName: profile?.displayName });
+    const card = document.querySelector(`[data-peer="${uid}"]`);
+    const video = card?.querySelector("video");
+    if (!video || !track) return;
+    let target = video.srcObject instanceof MediaStream ? video.srcObject : null;
+    if (!target) {
+        target = stream instanceof MediaStream ? stream : new MediaStream();
+        video.srcObject = target;
     }
-    const role = ["translator", "caller", "receiver"].includes(profile?.role) ? profile.role : "guest";
-    card.dataset.role = role;
-    card.dataset.speaker = uid;
-    card.classList.add("is-camera-on");
-    const video = card.querySelector("video");
-    if (video.srcObject !== stream) video.srcObject = stream;
-    card.querySelector(".video-role").textContent = participantRoleLabel(role);
-    card.querySelector(".video-name").textContent = profile?.displayName || "FiniSpeak guest";
-    card.querySelector(".video-slate strong").textContent = profile?.displayName || "FiniSpeak guest";
+    if (!target.getTracks().includes(track)) target.addTrack(track);
+    const hasVideo = target.getVideoTracks().some(item => item.readyState === "live");
+    card.classList.toggle("is-camera-on", hasVideo);
+    if (hasVideo) video.play().catch(() => {});
+    recordPeer(uid, peerSnapshot(peerConnections.get(uid)));
     callExperience?.layout();
 }
 function removeRemoteVideo(uid) { document.querySelector(`[data-peer="${uid}"]`)?.remove(); callExperience?.layout(); }
@@ -2916,6 +3052,11 @@ function cleanupCall(stopMedia = true) {
     if (signalingSocket) { signalingSocket.onclose = null; signalingSocket.close(); signalingSocket = null; }
     signalingReady = null; signalingCursor = 0; pendingSignals.clear(); pendingIceCandidates.clear();
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
+    peerDebug.clear();
+    rosterParticipants = [];
+    rosterTranscripts = [];
+    if ($("callRosterList")) { $("callRosterList").replaceChildren(); $("callRosterList").dataset.summary = ""; }
+    if ($("callRosterStatus")) $("callRosterStatus").textContent = "Waiting for participants";
     document.querySelectorAll("[data-peer]").forEach(e => e.remove());
     if (stopMedia && localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; $("localVideo").srcObject = null; }
     callExperience?.cleanup();
