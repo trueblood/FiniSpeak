@@ -553,18 +553,39 @@
             </div>
             <p id="translatorRequestDescription">Choose every language being used in this call. Languages detected from the conversation are selected automatically.</p>
             <form id="translatorRequestForm">
-                <section class="request-language-section" aria-labelledby="detectedRequestLanguagesLabel">
-                    <div class="request-language-heading"><strong id="detectedRequestLanguagesLabel">Detected in this call</strong><span id="detectedRequestLanguageCount"></span></div>
-                    <div id="detectedRequestLanguages" class="request-language-chips"></div>
+                <section id="requestBestMatches" class="request-best-matches" aria-live="polite">
+                    <div class="request-language-heading"><strong>Available best matches</strong><span id="requestBestMatchCount"></span></div>
+                    <div id="requestBestMatchList"></div>
+                    <details id="requestMoreMatches" class="request-more hidden">
+                        <summary>More translators</summary>
+                        <div id="requestMoreMatchList"></div>
+                    </details>
                 </section>
-                <label class="request-language-search" for="translatorLanguageSearch"><span>Search languages</span><input id="translatorLanguageSearch" type="search" autocomplete="off" placeholder="Start typing a language…"></label>
-                <div class="request-language-heading"><strong>Select one or more languages</strong><span id="selectedRequestLanguageCount">0 selected</span></div>
-                <div id="translatorLanguageOptions" class="request-language-options" role="group" aria-label="Languages to match"></div>
-                <p id="translatorRequestError" class="request-language-error hidden" role="alert"></p>
-                <div class="actions">
-                    <button id="cancelTranslatorRequest" class="secondary" type="button">Cancel</button>
-                    <button id="submitTranslatorRequest" type="submit">Find translators</button>
-                </div>
+                <details id="requestLanguageSearchPanel" class="request-search-disclosure" open>
+                    <summary>Search languages</summary>
+                    <section class="request-language-section" aria-labelledby="detectedRequestLanguagesLabel">
+                        <div class="request-language-heading"><strong id="detectedRequestLanguagesLabel">Detected in this call</strong><span id="detectedRequestLanguageCount"></span></div>
+                        <div id="detectedRequestLanguages" class="request-language-chips"></div>
+                    </section>
+                    <label class="request-language-search" for="translatorLanguageSearch"><span>Search languages</span><input id="translatorLanguageSearch" type="search" autocomplete="off" placeholder="Start typing a language…"></label>
+                    <div class="request-language-heading"><strong>Select one or more languages</strong><span id="selectedRequestLanguageCount">0 selected</span></div>
+                    <div id="translatorLanguageOptions" class="request-language-options" role="group" aria-label="Languages to match"></div>
+                    <p id="translatorRequestError" class="request-language-error hidden" role="alert"></p>
+                    <div class="actions">
+                        <button id="cancelTranslatorRequest" class="secondary" type="button">Cancel</button>
+                        <button id="submitTranslatorRequest" type="submit">Find translators</button>
+                    </div>
+                </details>
+                <section class="request-map-options" aria-label="Map options">
+                    <div class="request-language-heading"><strong>Map options</strong></div>
+                    <div class="directory-view-switch" role="group" aria-label="Match view">
+                        <button id="requestMatchList" class="secondary active" type="button" aria-pressed="true">List</button>
+                        <button id="requestMatchMapButton" class="secondary" type="button" aria-pressed="false">Map</button>
+                        <button id="requestMatchSplit" class="secondary" type="button" aria-pressed="false">Split</button>
+                    </div>
+                    <label class="request-map-mode" for="requestMatchMode">Service<select id="requestMatchMode"><option value="both">Nearby + remote</option><option value="nearby">Nearby</option><option value="remote">Remote video</option></select></label>
+                    <div id="requestMatchMapPanel" class="request-match-map" hidden><div id="requestMatchMapCanvas" aria-label="Map of matching interpreters"></div></div>
+                </section>
             </form>
         </div>
     </div>

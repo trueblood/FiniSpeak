@@ -76,6 +76,13 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("Speech text + recognized hand signs", self.html)
         self.assertIn("this window does not read the camera or microphone", self.html)
 
+    def test_mobile_translator_request_leads_with_matches(self):
+        self.assertIn('id="requestBestMatchList"', self.html)
+        self.assertIn('id="requestLanguageSearchPanel" class="request-search-disclosure" open', self.html)
+        self.assertIn(">More translators<", self.html)
+        self.assertIn(">Map options<", self.html)
+        self.assertIn('id="requestMatchMapButton"', self.html)
+
     def test_every_phone_input_has_a_country_code_selector(self):
         self.assertEqual(self.html.count('type="tel"'), 5)
         self.assertEqual(self.html.count('data-phone-country'), 5)
