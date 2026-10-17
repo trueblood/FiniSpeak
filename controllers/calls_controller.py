@@ -102,7 +102,8 @@ def detail(call_id):
     if error:
         return error
     call = CallModel.get(call_id)
-    if not call or (identity.get("role") != "admin" and not CallModel.is_participant(call, identity["uid"])):
+    invited = bool(call) and identity.get("role") == "translator" and _translator_request_visible(call, identity["uid"])
+    if not call or (identity.get("role") != "admin" and not CallModel.is_participant(call, identity["uid"]) and not invited):
         return jsonify({"error": "Call not found or access denied."}), 404
     return jsonify({"call": call})
 
@@ -127,20 +128,59 @@ def update_state(call_id):
         return jsonify({"error": str(exc)}), 409
 
 
+def _translator_request_visible(call, uid):
+    if call.get("translationStatus") != "requested":
+        return False
+    if call.get("status") in {"ended", "declined", "cancelled"}:
+        return False
+    if call.get("translatorId") not in {None, "", uid}:
+        return False
+    invited = str(call.get("invitedTranslatorId") or "").strip()
+    if invited:
+        return invited == uid
+    declined = {str(item) for item in (call.get("declinedTranslatorIds") or []) if str(item).strip()}
+    return uid not in declined
+
+
 def request_translator(call_id):
     identity, error = identity_or_response()
     if error:
         return error
     call = CallModel.get(call_id)
-    if not call or (identity.get("role") != "admin" and identity["uid"] not in {call.get("callerId"), call.get("receiverId")}):
-        return jsonify({"error": "Call not found or access denied."}), 404
+    if not call:
+        return jsonify({"error": "Call not found."}), 404
     data = json_body()
+    if data.get("decline") is True:
+        if identity.get("role") not in {"translator", "admin"}:
+            return jsonify({"error": "An interpreter account is required."}), 403
+        if call.get("translationStatus") != "requested" or call.get("status") in {"ended", "declined", "cancelled"}:
+            return jsonify({"error": "This call is not requesting an interpreter."}), 409
+        invited = str(call.get("invitedTranslatorId") or "").strip()
+        if invited and invited != identity["uid"] and identity.get("role") != "admin":
+            return jsonify({"error": "This interpretation request was sent to another interpreter."}), 403
+        updated = CallModel.request_translator(call_id, decline_translator_id=identity["uid"])
+        return (jsonify({"call": updated}), 200) if updated else (jsonify({"error": "Call not found."}), 404)
+    if identity.get("role") != "admin" and identity["uid"] not in {call.get("callerId"), call.get("receiverId")}:
+        return jsonify({"error": "Call not found or access denied."}), 404
+    if call.get("status") in {"ended", "declined", "cancelled"}:
+        return jsonify({"error": "This call has already ended."}), 409
+    if call.get("translationStatus") == "connected" and call.get("translatorId"):
+        return jsonify({"error": "A translator has already joined this call."}), 409
+    translator_id = str(data.get("translatorId") or "").strip()
+    translator_name = None
+    if translator_id:
+        translator = TranslatorModel.get(translator_id)
+        if not translator:
+            return jsonify({"error": "The selected interpreter is not verified or is unavailable."}), 400
+        translator_name = translator.get("displayName") or "Interpreter"
     updated = CallModel.request_translator(
         call_id,
         language=data.get("language"),
         languages=data.get("languages"),
         dialect=data.get("dialect"),
         specialty=data.get("specialty"),
+        translator_id=translator_id or None,
+        translator_name=translator_name,
     )
     return (jsonify({"call": updated}), 200) if updated else (jsonify({"error": "Call not found."}), 404)
 
@@ -301,8 +341,7 @@ def pending_requests():
         return jsonify({"error": "An interpreter account is required."}), 403
     if identity.get("role") != "admin" and not TranslatorModel.get(identity["uid"]):
         return jsonify({"error": "Only a verified interpreter can view requests."}), 403
-    calls = [call for call in CallModel.all()
-             if call.get("translationStatus") == "requested"
-             and call.get("status") not in {"ended", "declined", "cancelled"}
-             and call.get("translatorId") in {None, "", identity["uid"]}]
+    uid = identity["uid"]
+    calls = [call for call in CallModel.all() if _translator_request_visible(call, uid)]
+    calls.sort(key=lambda call: 0 if str(call.get("invitedTranslatorId") or "") == uid else 1)
     return jsonify({"calls": calls})

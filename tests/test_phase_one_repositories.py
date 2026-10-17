@@ -147,6 +147,52 @@ class MySqlAuthorizationTests(unittest.TestCase):
             MySqlCallRepository(session).claim_translator("call-1", {"uid": "translator-2"})
         self.assertEqual(session.rollbacks, 1)
 
+    def test_request_translator_stores_the_chosen_interpreter(self):
+        row = sql_call(status="connected", translation_status="not_requested", translator_id=None, raw_document={})
+        session = FakeSession(scalar=row)
+        result = MySqlCallRepository(session).request_translator(
+            "call-1", languages=["English"], translator_id="translator-9", translator_name="Marcus Johnson")
+        self.assertEqual(result["invitedTranslatorId"], "translator-9")
+        self.assertEqual(result["invitedTranslatorName"], "Marcus Johnson")
+        self.assertEqual(result["translationStatus"], "requested")
+        self.assertEqual(result["requestedLanguages"], ["English"])
+        self.assertEqual(session.commits, 1)
+
+    def test_language_wide_request_keeps_a_direct_invite(self):
+        row = sql_call(status="connected", translation_status="requested", translator_id=None, raw_document={
+            "invitedTranslatorId": "translator-9", "invitedTranslatorName": "Marcus Johnson"})
+        result = MySqlCallRepository(FakeSession(scalar=row)).request_translator(
+            "call-1", language="English", recommended_ids=["translator-9", "translator-2"])
+        self.assertEqual(result["invitedTranslatorId"], "translator-9")
+        self.assertEqual(result["recommendedTranslatorIds"], ["translator-9", "translator-2"])
+
+    def test_declining_a_direct_invite_hides_it_from_that_interpreter(self):
+        row = sql_call(status="connected", translation_status="requested", translator_id=None, raw_document={
+            "invitedTranslatorId": "translator-9", "invitedTranslatorName": "Marcus Johnson"})
+        result = MySqlCallRepository(FakeSession(scalar=row)).request_translator(
+            "call-1", decline_translator_id="translator-9")
+        self.assertIsNone(result["invitedTranslatorId"])
+        self.assertIn("translator-9", result["declinedTranslatorIds"])
+        self.assertEqual(result["translationStatus"], "not_requested")
+
+    def test_claim_rejects_an_interpreter_who_was_not_invited(self):
+        row = sql_call(status="connected", translation_status="requested", translator_id=None,
+            raw_document={"invitedTranslatorId": "translator-9"})
+        session = FakeSession(scalar=row)
+        with self.assertRaisesRegex(PermissionError, "sent to another interpreter"):
+            MySqlCallRepository(session).claim_translator("call-1", {"uid": "translator-2"})
+        self.assertEqual(session.rollbacks, 1)
+
+    def test_claim_lets_the_invited_interpreter_join(self):
+        row = sql_call(status="connected", translation_status="requested", translator_id=None,
+            raw_document={"invitedTranslatorId": "translator-9", "invitedTranslatorName": "Marcus Johnson"})
+        result = MySqlCallRepository(FakeSession(scalar=row)).claim_translator(
+            "call-1", {"uid": "translator-9", "displayName": "Marcus Johnson"})
+        self.assertEqual(result["translatorId"], "translator-9")
+        self.assertEqual(result["translatorName"], "Marcus Johnson")
+        self.assertEqual(result["translationStatus"], "connected")
+        self.assertIsNone(result["invitedTranslatorId"])
+
     def test_missing_call_updates_return_none(self):
         repository = MySqlCallRepository(FakeSession())
         self.assertIsNone(repository.transition("missing", "ended"))

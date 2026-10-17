@@ -30,6 +30,8 @@ let languageConfirmationPending = false;
 let confirmedDetectedLanguage = null;
 let activeTranslatorConnected = false;
 let interpreterMatchesByLanguage = new Map();
+let invitedTranslatorId = null;
+let invitingTranslatorId = null;
 let requestMatchProfiles = [];
 let requestMatchView = "list";
 let requestMatchMap = null;
@@ -2138,12 +2140,16 @@ function watchCall(callId) {
         $("callTitle").textContent = call.status === "ended" ? "Call ended" : "Live conversation";
         $("requestTranslatorButton").disabled = translatorConnected;
         $("requestTranslatorButton").title = translatorConnected ? "A translator has joined this call" : "";
+        invitedTranslatorId = call.invitedTranslatorId || null;
+        const translatorWait = call.invitedTranslatorId
+            ? `Calling ${call.invitedTranslatorName || "the translator"}… waiting for them to accept.`
+            : "Waiting for a translator to join…";
         $("callStatus").textContent = call.status === "ringing"
             ? "Calling… waiting for the other customer to accept."
             : call.status === "declined"
                 ? "Call declined."
                 : call.translationStatus === "requested"
-                    ? "Waiting for a translator to join…"
+                    ? translatorWait
                     : translatorConnected
                         ? ""
                         : "Customer call connected";
@@ -2398,14 +2404,71 @@ async function loadRequestMatches() {
     return result;
 }
 
+function bindTranslatorInvite(card, profile) {
+    const name = profile.displayName || "Interpreter";
+    card.dataset.translatorId = profile.id || "";
+    card.setAttribute("aria-label", profile.id ? `Invite ${name} to this call` : name);
+    card.title = profile.id ? `Invite ${name}` : "";
+    if (!profile.id) card.disabled = true;
+    if (profile.id && profile.id === invitedTranslatorId) card.classList.add("is-invited");
+    card.addEventListener("click", (event) => {
+        event.preventDefault();
+        inviteMatchedTranslator(profile, card);
+    });
+}
+
+async function inviteMatchedTranslator(profile, card) {
+    if (!activeCallId || !profile?.id || activeTranslatorConnected || invitingTranslatorId) return;
+    invitingTranslatorId = profile.id;
+    if (card) {
+        card.disabled = true;
+        card.setAttribute("aria-busy", "true");
+    }
+    const languages = [...selectedRequestLanguages];
+    if (!languages.length) detectedCallLanguages.forEach((_confidence, language) => languages.push(language));
+    try {
+        const updated = await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/translator-request`, {
+            method: "POST",
+            body: JSON.stringify({
+                translatorId: profile.id,
+                languages,
+                language: languages[0] || null,
+            }),
+        });
+        const call = updated.call || {};
+        invitedTranslatorId = call.invitedTranslatorId || profile.id;
+        document.querySelectorAll(".interpreter-match.is-invited, .request-match-card.is-invited").forEach(other => {
+            if (other.dataset.translatorId !== invitedTranslatorId) other.classList.remove("is-invited");
+        });
+        card?.classList.add("is-invited");
+        $("callStatus").textContent = `Calling ${call.invitedTranslatorName || profile.displayName || "the translator"}… waiting for them to accept.`;
+        if (!$("translatorRequestModal").classList.contains("hidden")) closeModal("translatorRequestModal");
+    } catch (error) {
+        $("callStatus").textContent = error.message || "Could not invite that translator.";
+        const requestError = $("translatorRequestError");
+        if (requestError && !$("translatorRequestModal").classList.contains("hidden")) {
+            requestError.textContent = error.message || "Could not invite that translator.";
+            requestError.classList.remove("hidden");
+        }
+    } finally {
+        invitingTranslatorId = null;
+        if (card) {
+            card.disabled = Boolean(activeTranslatorConnected || !profile.id);
+            card.removeAttribute("aria-busy");
+        }
+    }
+}
+
 function requestMatchCard(profile) {
-    const card = document.createElement("article");
+    const card = document.createElement("button");
+    card.type = "button";
     card.className = "request-match-card";
     const available = Boolean(profile.availability?.availableNow);
     const tags = [...(profile.languages || []), ...(profile.dialects || []), ...(profile.specialties || [])].slice(0, 5);
     const remote = profile.serviceOptions?.remote !== false;
     card.innerHTML = `<div class="request-match-avatar" aria-hidden="true"></div><div><div class="request-match-heading"><strong>${escapeHtml(profile.displayName || "Interpreter")}</strong><span class="availability-dot${available ? " available" : ""}" title="${available ? "Available now" : "Currently unavailable"}"></span></div>${ratingMarkup(profile.rating, profile.ratingCount)}<p class="card-bio">${escapeHtml(profile.bio || "Professional FiniSpeak interpreter profile.")}</p><div class="request-match-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join("")}</div><div class="request-match-meta"><span>${Number(profile.yearsExperience || 0)} years experience</span><span>${escapeHtml(profile.verificationStatus === "verified" ? "verified" : "unverified")}</span><span>${remote ? "Remote" : "In person"}</span></div></div>`;
     setProfileAvatar(card.querySelector(".request-match-avatar"), profile);
+    bindTranslatorInvite(card, profile);
     return card;
 }
 
@@ -2532,10 +2595,12 @@ function renderInterpreterMatches() {
     $("interpreterMatchSummary").textContent = sorted.length ? `${sorted.length} available now` : "";
     list.innerHTML = "";
     for (const { profile, confidence, language } of sorted) {
-        const card = document.createElement("article");
+        const card = document.createElement("button");
+        card.type = "button";
         card.className = "interpreter-match";
         const tags = [...(profile.languages || []), ...(profile.dialects || []), ...(profile.specialties || [])].slice(0, 4);
         card.innerHTML = `<div class="interpreter-match-top"><div><strong>${escapeHtml(profile.displayName || "Interpreter")}</strong><small>Matched for ${escapeHtml(language)}${profile.rating ? ` · ★ ${escapeHtml(profile.rating)}` : ""}</small></div><span class="match-confidence">${Math.round(confidence * 100)}% match</span></div><div class="interpreter-match-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`;
+        bindTranslatorInvite(card, profile);
         list.appendChild(card);
     }
 }
@@ -2574,6 +2639,7 @@ function resetDetectedLanguage() {
     $("detectedLanguageConfidence").textContent = "Waiting for enough speech";
     $("languageConfirmation").classList.add("hidden");
     interpreterMatchesByLanguage.clear();
+    invitedTranslatorId = null;
     detectedCallLanguages.clear();
     selectedRequestLanguages.clear();
     $("interpreterMatches").classList.add("hidden");
@@ -2870,11 +2936,16 @@ function startDashboardListeners() {
             openModal("incomingCallModal");
         } else if (currentProfile.role === "translator") {
             pendingIncomingCall = { ...pending, kind: "translator" };
-            $("incomingCallEyebrow").textContent = "Interpretation request";
-            $("incomingCallTitle").textContent = "A call needs a translator";
-            $("incomingCallDetails").textContent = `${pendingIncomingCall.callerName || "Customer 1"} and ${pendingIncomingCall.receiverName || "Customer 2"} are requesting interpretation.`;
+            const directInvite = pending.invitedTranslatorId && pending.invitedTranslatorId === currentUser.uid;
+            $("incomingCallEyebrow").textContent = directInvite ? "Incoming FiniSpeak call" : "Interpretation request";
+            $("incomingCallTitle").textContent = directInvite
+                ? `${pending.callerName || "Someone"} is calling you`
+                : "A call needs a translator";
+            $("incomingCallDetails").textContent = directInvite
+                ? `${pending.callerName || "Someone"} invited you to interpret this call. Accept to join as the translator.`
+                : `${pending.callerName || "Customer 1"} and ${pending.receiverName || "Customer 2"} are requesting interpretation.`;
             $("translatorRequestStatus").textContent = "New interpretation request waiting — open it to join the call.";
-            $("acceptIncomingCall").textContent = "Join Call";
+            $("acceptIncomingCall").textContent = directInvite ? "Accept" : "Join Call";
             openModal("incomingCallModal");
         }
       } catch (error) { handleDashboardListenerError("poll", error); }
@@ -2919,8 +2990,11 @@ async function declineIncomingCall() {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
                 method: "PATCH", body: JSON.stringify({ state: "declined" })
             });
+        } else if (pending.kind === "translator") {
+            await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/translator-request`, {
+                method: "POST", body: JSON.stringify({ decline: true })
+            });
         }
-        // Translator declines only this visible request locally. Another translator can still accept it.
     } catch (error) {
         $("dashboardStatus").textContent = error.message;
     }

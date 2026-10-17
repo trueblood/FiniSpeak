@@ -76,10 +76,12 @@ class CallModel:
         return apply_transition(transaction)
 
     @classmethod
-    def request_translator(cls, call_id, language=None, languages=None, language_confidence=None, dialect=None, specialty=None, recommended_ids=None):
+    def request_translator(cls, call_id, language=None, languages=None, language_confidence=None, dialect=None, specialty=None, recommended_ids=None, translator_id=None, translator_name=None, decline_translator_id=None):
         ref = get_db().collection(cls.collection_name).document(call_id)
-        if not ref.get().exists:
+        snapshot = ref.get()
+        if not snapshot.exists:
             return None
+        current = snapshot.to_dict() or {}
         changes = {
             "translationStatus": "requested",
             "updatedAt": datetime.now(timezone.utc),
@@ -98,6 +100,23 @@ class CallModel:
         if recommended_ids is not None:
             changes["recommendedTranslatorIds"] = recommended_ids
             changes["routingStatus"] = "matched" if recommended_ids else "unmatched"
+        declined = [str(item) for item in (current.get("declinedTranslatorIds") or []) if str(item).strip()]
+        chosen = str(translator_id or "").strip()
+        if chosen:
+            changes["invitedTranslatorId"] = chosen
+            changes["invitedTranslatorName"] = str(translator_name or "").strip() or None
+            declined = [item for item in declined if item != chosen]
+            changes["declinedTranslatorIds"] = declined
+        declining = str(decline_translator_id or "").strip()
+        if declining:
+            if declining not in declined:
+                declined.append(declining)
+            changes["declinedTranslatorIds"] = declined
+            invited_now = changes.get("invitedTranslatorId", current.get("invitedTranslatorId"))
+            if str(invited_now or "").strip() == declining:
+                changes["invitedTranslatorId"] = None
+                changes["invitedTranslatorName"] = None
+                changes["translationStatus"] = "not_requested"
         ref.set(changes, merge=True)
         return cls.get(call_id)
 
@@ -116,6 +135,9 @@ class CallModel:
             assigned = data.get("translatorId")
             if data.get("translationStatus") not in {"requested", "connected"}:
                 raise ValueError("This call is not requesting an interpreter.")
+            invited = str(data.get("invitedTranslatorId") or "").strip()
+            if invited and invited != translator["uid"]:
+                raise PermissionError("This interpretation request was sent to another interpreter.")
             if assigned and assigned != translator["uid"]:
                 raise PermissionError("Another interpreter has already accepted this call.")
             now = datetime.now(timezone.utc)
@@ -125,6 +147,9 @@ class CallModel:
                 "translationStatus": "connected",
                 "updatedAt": now,
             }
+            if invited:
+                changes["invitedTranslatorId"] = None
+                changes["invitedTranslatorName"] = None
             txn.set(ref, changes, merge=True)
             return {"id": snapshot.id, **data, **changes}
 

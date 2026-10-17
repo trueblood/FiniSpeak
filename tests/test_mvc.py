@@ -128,6 +128,90 @@ class MvcRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["languages"], ["English"])
 
+    def test_match_cards_post_the_chosen_translator_and_reuse_incoming_call(self):
+        script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        match_list = script[script.index("function renderInterpreterMatches"):script.index("function normalizeLanguageConfidence")]
+        request_card = script[script.index("function requestMatchCard"):script.index("function visibleRequestMatches")]
+        self.assertIn('card.className = "interpreter-match"', match_list)
+        self.assertIn('card.type = "button"', match_list)
+        self.assertIn('card.className = "request-match-card"', request_card)
+        self.assertIn('card.type = "button"', request_card)
+        self.assertIn("bindTranslatorInvite(card, profile)", match_list)
+        self.assertIn("bindTranslatorInvite(card, profile)", request_card)
+        self.assertIn("translatorId: profile.id", script)
+        self.assertIn("/translator-request", script)
+        self.assertIn('directInvite ? "Accept" : "Join Call"', script)
+        self.assertIn("is calling you", script)
+        self.assertIn("decline: true", script)
+        self.assertIn('id="incomingCallModal"', (Path(__file__).parents[1] / "views/templates/index.html").read_text())
+
+    @patch("controllers.calls_controller.TranslatorModel.get")
+    @patch("controllers.calls_controller.CallModel.request_translator")
+    @patch("controllers.calls_controller.CallModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_translator_request_stores_the_chosen_profile(self, identity, get_call, request_translator, get_translator):
+        identity.return_value = ({"uid": "customer-1", "role": "customer"}, None)
+        get_call.return_value = {
+            "id": "call-1", "callerId": "customer-1", "receiverId": "customer-2",
+            "status": "connected", "translationStatus": "not_requested", "translatorId": None,
+        }
+        get_translator.return_value = {"id": "translator-9", "displayName": "Marcus Johnson"}
+        request_translator.return_value = {
+            "id": "call-1", "translationStatus": "requested",
+            "invitedTranslatorId": "translator-9", "invitedTranslatorName": "Marcus Johnson",
+            "callerName": "Ada",
+        }
+        response = self.client.post("/api/calls/call-1/translator-request", json={
+            "translatorId": "translator-9", "languages": ["English"],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["call"]["invitedTranslatorId"], "translator-9")
+        request_translator.assert_called_once_with(
+            "call-1",
+            language=None,
+            languages=["English"],
+            dialect=None,
+            specialty=None,
+            translator_id="translator-9",
+            translator_name="Marcus Johnson",
+        )
+
+    @patch("controllers.calls_controller.TranslatorModel.get", return_value={"id": "translator-9"})
+    @patch("controllers.calls_controller.CallModel.all")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_pending_listener_shows_a_direct_invite_only_to_that_translator(self, identity, all_calls, _get_translator):
+        calls = [
+            {"id": "direct", "translationStatus": "requested", "status": "connected", "translatorId": None,
+             "invitedTranslatorId": "translator-9", "callerName": "Ada"},
+            {"id": "other-person", "translationStatus": "requested", "status": "connected", "translatorId": None,
+             "invitedTranslatorId": "translator-2"},
+            {"id": "open", "translationStatus": "requested", "status": "connected", "translatorId": None},
+        ]
+        all_calls.return_value = calls
+        identity.return_value = ({"uid": "translator-9", "role": "translator"}, None)
+        chosen = self.client.get("/api/calls/pending")
+        self.assertEqual(chosen.status_code, 200)
+        self.assertEqual([call["id"] for call in chosen.get_json()["calls"]], ["direct", "open"])
+        identity.return_value = ({"uid": "translator-2", "role": "translator"}, None)
+        other = self.client.get("/api/calls/pending")
+        self.assertEqual([call["id"] for call in other.get_json()["calls"]], ["other-person", "open"])
+
+    @patch("controllers.calls_controller.CallModel.is_participant", return_value=False)
+    @patch("controllers.calls_controller.CallModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_invited_translator_can_open_the_call_before_accepting(self, identity, get_call, _participant):
+        get_call.return_value = {
+            "id": "call-1", "callerId": "customer-1", "callerName": "Ada", "status": "connected",
+            "translationStatus": "requested", "translatorId": None, "invitedTranslatorId": "translator-9",
+        }
+        identity.return_value = ({"uid": "translator-9", "role": "translator"}, None)
+        allowed = self.client.get("/api/calls/call-1")
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed.get_json()["call"]["callerName"], "Ada")
+        identity.return_value = ({"uid": "translator-2", "role": "translator"}, None)
+        denied = self.client.get("/api/calls/call-1")
+        self.assertEqual(denied.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()
