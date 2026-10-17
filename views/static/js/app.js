@@ -1,5 +1,5 @@
-import { createCallExperience } from "./call-experience.js?v=20261017-translator";
-import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, releaseOfferHold, resendLocalOffer, sendOffer } from "./webrtc-mesh.js?v=20261017-translator";
+import { createCallExperience } from "./call-experience.js?v=20261017-cameras";
+import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldSendOffer } from "./webrtc-mesh.js?v=20261017-cameras";
 
 const $ = (id) => document.getElementById(id);
 let callExperience;
@@ -11,7 +11,7 @@ const show = (id) => {
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let authActionToken = null;
-let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerProfiles = new Map(), peerDebug = new Map(), rosterParticipants = [], rosterTranscripts = [];
+let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerProfiles = new Map(), peerDebug = new Map(), peerJobs = new Map(), rosterParticipants = [], rosterTranscripts = [];
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let rtcConfiguration = normalizeIceConfiguration(null);
@@ -135,9 +135,8 @@ async function boot() {
 function replaceOutgoingVideo(track) {
     if (!track) return;
     for (const pc of peerConnections.values()) {
-        const sender = pc.getSenders().find(item => item.track?.kind === "video");
-        if (sender) sender.replaceTrack(track).catch(console.error);
-        else pc.addTrack(track, localStream);
+        const sender = senderFor(pc, "video") || pc.addTransceiver("video", { direction: "sendrecv" }).sender;
+        sender.replaceTrack(track).catch(console.error);
     }
 }
 
@@ -187,6 +186,7 @@ function bindUI() {
     $("copyCallId").onclick = () => navigator.clipboard.writeText(activeCallId || "");
     $("muteButton").onclick = toggleMute;
     $("cameraButton").onclick = toggleCamera;
+    $("callView")?.addEventListener("pointerdown", playRemoteMedia, { passive: true });
     document.querySelectorAll("[data-processing-mode]").forEach(button => button.onclick = () => selectProcessingMode(button.dataset.processingMode));
     $("toggleCallProcessingModes").onclick = (event) => {
         event.stopPropagation();
@@ -2156,9 +2156,7 @@ function watchCall(callId) {
             if (!participant?.id || participant.id === currentUser.uid) continue;
             ids.add(participant.id);
             ensureParticipantTile(participant);
-            ensurePeer(callId, participant.id, participant).catch(error => {
-                recordPeer(participant.id, { error: error.message, connection: "error" });
-            });
+            kickPeer(callId, participant.id, participant);
         }
         for (const [uid, pc] of peerConnections) if (!ids.has(uid)) { pc.close(); peerConnections.delete(uid); peerDebug.delete(uid); removeRemoteVideo(uid); }
         const rows = transcriptPayload.transcripts || [];
@@ -2327,12 +2325,13 @@ function peerSender(remoteUid) {
     };
 }
 
-function openPeer(remoteUid, profile, offerer, { holdOffer = false } = {}) {
+function openPeer(remoteUid, profile, offerer) {
     const send = peerSender(remoteUid);
-    const pc = new RTCPeerConnection({ iceServers: rtcConfiguration.iceServers });
+    const pc = new RTCPeerConnection({ iceServers: rtcConfiguration.iceServers, bundlePolicy: "max-bundle" });
     pc._iceKey = iceKey();
     pc._offerer = offerer;
-    pc._holdOffer = holdOffer;
+    pc._suppressOffer = true;
+    pc._waitStarted = Date.now();
     peerConnections.set(remoteUid, pc);
     peerProfiles.set(remoteUid, profile || null);
     const publishState = () => {
@@ -2354,30 +2353,56 @@ function openPeer(remoteUid, profile, offerer, { holdOffer = false } = {}) {
         onTrack: (track, stream) => attachRemoteTrack(remoteUid, profile, track, stream),
         onError: error => recordPeer(remoteUid, { error: error.message, connection: "error" })
     });
-    attachLocalTracks(pc);
     publishState();
     return pc;
 }
 
-function attachLocalTracks(pc) {
-    const audioTrack = localStream?.getAudioTracks()?.find(track => track.readyState === "live");
-    const preferredVideo = callExperience?.outgoingVideoTrack();
-    const videoTrack = preferredVideo?.readyState === "live"
-        ? preferredVideo
-        : localStream?.getVideoTracks()?.find(track => track.readyState === "live");
-    if (audioTrack && !pc.getSenders().some(sender => sender.track?.kind === "audio")) pc.addTrack(audioTrack, localStream);
-    const videoSender = pc.getSenders().find(sender => sender.track?.kind === "video");
-    if (videoTrack && !videoSender) pc.addTrack(videoTrack, localStream);
-    else if (videoTrack && videoSender && videoSender.track !== videoTrack) videoSender.replaceTrack(videoTrack).catch(() => {});
+function senderFor(pc, kind) {
+    const transceiver = pc.getTransceivers?.().find(item => item.receiver?.track?.kind === kind || item.sender?.track?.kind === kind);
+    return transceiver?.sender || null;
+}
+
+function liveLocalTrack(kind) {
+    if (kind === "video") {
+        const preferred = callExperience?.outgoingVideoTrack();
+        if (preferred?.readyState === "live") return preferred;
+    }
+    return localStream?.getTracks?.().find(track => track.kind === kind && track.readyState === "live") || null;
+}
+
+async function attachLocalTracks(pc) {
+    if (!pc || pc.connectionState === "closed" || pc.signalingState === "closed") return;
+    const jobs = [];
+    for (const kind of ["audio", "video"]) {
+        let sender = senderFor(pc, kind);
+        if (!sender) sender = pc.addTransceiver(kind, { direction: "sendrecv" }).sender;
+        const track = liveLocalTrack(kind);
+        if (track && sender.track !== track) jobs.push(Promise.resolve(sender.replaceTrack(track)).catch(() => {}));
+    }
+    await Promise.all(jobs);
+}
+
+function kickPeer(callId, remoteUid, profile) {
+    const prior = peerJobs.get(remoteUid) || Promise.resolve();
+    const run = prior.catch(() => {}).then(() => ensurePeer(callId, remoteUid, profile));
+    peerJobs.set(remoteUid, run);
+    run.catch(error => recordPeer(remoteUid, { error: error.message, connection: "error" }));
+}
+
+function peerIsConnected(pc) {
+    return pc?.connectionState === "connected" || pc?.iceConnectionState === "connected" || pc?.iceConnectionState === "completed";
 }
 
 async function ensurePeer(callId, remoteUid, profile) {
+    if (activeCallId !== callId) return;
     peerProfiles.set(remoteUid, profile || null);
     const offerer = isOfferer(currentUser.uid, remoteUid);
     let existing = peerConnections.get(remoteUid);
-    const stale = existing && (existing.connectionState === "failed" || existing.connectionState === "closed" || existing.iceConnectionState === "failed");
+    const stale = existing && (existing.connectionState === "failed" || existing.connectionState === "closed" || existing.signalingState === "closed" || existing.iceConnectionState === "failed");
     const wrongNetwork = existing && existing._iceKey !== iceKey() && existing.connectionState !== "connected";
-    if (stale || wrongNetwork) {
+    const offerStuck = existing && existing.signalingState === "have-local-offer" && existing.iceConnectionState === "new" && existing._offerStarted && Date.now() - existing._offerStarted > 8000;
+    const makingStuck = existing && existing._makingOffer && existing.signalingState === "stable" && !existing.currentRemoteDescription && Date.now() - (existing._waitStarted || 0) > 8000;
+    if (stale || wrongNetwork || offerStuck || makingStuck) {
         existing.close();
         peerConnections.delete(remoteUid);
         existing = null;
@@ -2385,25 +2410,35 @@ async function ensurePeer(callId, remoteUid, profile) {
     const send = peerSender(remoteUid);
     if (existing) {
         existing._offerer = offerer;
-        attachLocalTracks(existing);
+        await attachLocalTracks(existing);
+        const connected = peerIsConnected(existing);
         recordPeer(remoteUid, { note: relayNote(existing), ...peerSnapshot(existing) });
+        if (connected || activeCallId !== callId) return;
         try {
-            let sent = false;
-            if (existing.signalingState === "have-local-offer" && existing.localDescription) sent = await resendLocalOffer(existing, send);
-            else if (existing.signalingState === "stable" && !existing.currentRemoteDescription) sent = await sendOffer(existing, send);
-            if (sent) recordPeer(remoteUid, { error: "" });
+            if (existing && peerConnections.get(remoteUid) === existing) {
+                const decision = shouldSendOffer({
+                    offerer,
+                    signalingState: existing.signalingState,
+                    hasRemote: Boolean(existing.currentRemoteDescription),
+                    waitedMs: Date.now() - (existing._waitStarted || 0),
+                    connected: false
+                });
+                if (decision === "resend") await resendLocalOffer(existing, send);
+                else if (decision === "offer") await sendOffer(existing, send);
+            }
         } catch (error) {
             recordPeer(remoteUid, { error: error.message, connection: "error" });
         }
-        return;
+        if (existing && peerConnections.get(remoteUid) === existing) return;
     }
     if (!localStream) throw new Error("Local camera is not ready.");
     const queued = pendingSignals.get(remoteUid) || [];
-    const pc = openPeer(remoteUid, profile, offerer, { holdOffer: queued.some(message => message.type === "offer") });
+    const pc = openPeer(remoteUid, profile, offerer);
+    await attachLocalTracks(pc);
     for (const message of queued) await applySignal(message);
     pendingSignals.delete(remoteUid);
-    if (peerConnections.get(remoteUid) === pc) await releaseOfferHold(pc);
-    if (peerConnections.get(remoteUid) === pc && pc.signalingState === "stable" && !pc.currentRemoteDescription) {
+    pc._suppressOffer = false;
+    if (peerConnections.get(remoteUid) === pc && offerer && pc.signalingState === "stable" && !pc.currentRemoteDescription) {
         await sendOffer(pc, send);
     }
 }
@@ -2477,9 +2512,10 @@ async function applySignal(message) {
             pc.close();
             peerConnections.delete(message.from);
             if (!localStream) throw new Error("Local camera is not ready.");
-            const restarted = openPeer(message.from, peerProfiles.get(message.from), false, { holdOffer: true });
+            const restarted = openPeer(message.from, peerProfiles.get(message.from), false);
+            await attachLocalTracks(restarted);
             await applySignal(message);
-            if (peerConnections.get(message.from) === restarted) await releaseOfferHold(restarted);
+            if (peerConnections.get(message.from) === restarted) restarted._suppressOffer = false;
             return;
         }
         if (message.type === "offer" || message.type === "answer") await flushPendingIce(message.from, peerConnections.get(message.from) || pc);
@@ -2565,6 +2601,7 @@ function remoteAudioElement(card) {
         audio = document.createElement("audio");
         audio.className = "remote-audio";
         audio.autoplay = true;
+        audio.muted = false;
         card.appendChild(audio);
     }
     return audio;
@@ -3175,20 +3212,42 @@ function setToolLabel(id, label, pressed, title) {
     const text = button.querySelector(".tool-label");
     if (text) text.textContent = label;
 }
+function tracksInCall(kind) {
+    const tracks = [];
+    const add = track => {
+        if (track?.kind === kind && track.readyState === "live" && !tracks.includes(track)) tracks.push(track);
+    };
+    for (const track of localStream?.getTracks?.() || []) add(track);
+    for (const pc of peerConnections.values()) {
+        for (const sender of pc.getSenders?.() || []) add(sender.track);
+    }
+    return tracks;
+}
+
+function playRemoteMedia() {
+    document.querySelectorAll("#callView audio.remote-audio, #callView video").forEach(element => {
+        if (element.classList?.contains("remote-audio")) element.muted = false;
+        element.play?.().catch(() => {});
+    });
+}
+
 function toggleMute() {
-    const t = localStream?.getAudioTracks()[0];
-    if (!t) return;
-    t.enabled = !t.enabled;
-    setToolLabel("muteButton", t.enabled ? "Mute" : "Unmute", !t.enabled, t.enabled ? "Mute microphone" : "Unmute microphone");
+    const tracks = tracksInCall("audio");
+    if (!tracks.length) return;
+    const enabled = !tracks[0].enabled;
+    for (const track of tracks) track.enabled = enabled;
+    setToolLabel("muteButton", enabled ? "Mute" : "Unmute", !enabled, enabled ? "Mute microphone" : "Unmute microphone");
+    if (enabled) playRemoteMedia();
     callExperience?.persistPresence()?.catch(error => console.warn(error));
 }
 async function toggleCamera() {
     if (callExperience?.isAvatar?.()) { await callExperience.activateCamera(); return; }
-    const t = localStream?.getVideoTracks()[0];
-    if (!t) return;
-    t.enabled = !t.enabled;
-    setToolLabel("cameraButton", t.enabled ? "Camera" : "Camera off", !t.enabled, t.enabled ? "Turn camera off" : "Turn camera on");
-    callExperience?.markCamera?.(t.enabled);
+    const tracks = tracksInCall("video");
+    if (!tracks.length) return;
+    const enabled = !tracks[0].enabled;
+    for (const track of tracks) track.enabled = enabled;
+    setToolLabel("cameraButton", enabled ? "Camera" : "Camera off", !enabled, enabled ? "Turn camera off" : "Turn camera on");
+    callExperience?.markCamera?.(enabled);
     callExperience?.persistPresence()?.catch(error => console.warn(error));
 }
 async function endCall() {
@@ -3207,7 +3266,7 @@ function cleanupCall(stopMedia = true) {
         for (const uid of peerConnections.keys()) try { sendSignal("hangup", uid, {}); } catch (_) { /* best effort */ }
     }
     if (signalingSocket) { signalingSocket.onclose = null; signalingSocket.close(); signalingSocket = null; }
-    signalingReady = null; signalingCursor = 0; pendingSignals.clear(); pendingIceCandidates.clear();
+    signalingReady = null; signalingCursor = 0; pendingSignals.clear(); pendingIceCandidates.clear(); peerJobs.clear();
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
     peerProfiles.clear();
     peerDebug.clear();

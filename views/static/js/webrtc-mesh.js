@@ -35,6 +35,15 @@ export function offerResponse(signalingState, { offerer = false, makingOffer = f
     return "restart";
 }
 
+// The lower id offers immediately. The other side only offers after the wait,
+// and only while it is still stable, so the two offers are not sent together.
+export function shouldSendOffer({ offerer = false, signalingState = "", hasRemote = false, waitedMs = 0, connected = false } = {}) {
+    if (connected || hasRemote) return "wait";
+    if (signalingState === "have-local-offer") return offerer ? "resend" : "wait";
+    if (signalingState === "stable" && (offerer || waitedMs >= 4000)) return "offer";
+    return "wait";
+}
+
 function enqueue(pc, task) {
     const previous = pc._signalQueue || Promise.resolve();
     const next = previous.then(task, task);
@@ -45,7 +54,10 @@ function enqueue(pc, task) {
 export function attachMeshHandlers(pc, { offerer, send, onTrack, onError }) {
     pc._offerer = Boolean(offerer);
     pc._makingOffer = false;
+    pc._suppressOffer = true;
+    pc._waitStarted = Date.now();
     pc.onnegotiationneeded = () => {
+        if (!pc._offerer || pc._suppressOffer) return;
         sendOffer(pc, send).catch(error => onError?.(error));
     };
     pc.onicecandidate = event => {
@@ -57,13 +69,14 @@ export function attachMeshHandlers(pc, { offerer, send, onTrack, onError }) {
 }
 
 async function sendOfferNow(pc, send, { iceRestart = false } = {}) {
-    if (!pc || pc._makingOffer || pc._holdOffer || pc.signalingState !== "stable") return false;
+    if (!pc || pc._makingOffer || pc._suppressOffer || pc.signalingState !== "stable") return false;
     pc._makingOffer = true;
     try {
         const offer = await pc.createOffer(iceRestart ? { iceRestart: true } : undefined);
         if (pc.signalingState !== "stable") return false;
         await pc.setLocalDescription(offer);
         await send("offer", { type: pc.localDescription.type, sdp: pc.localDescription.sdp });
+        pc._offerStarted = Date.now();
         return true;
     } finally {
         pc._makingOffer = false;
@@ -72,11 +85,6 @@ async function sendOfferNow(pc, send, { iceRestart = false } = {}) {
 
 export function sendOffer(pc, send, options) {
     return enqueue(pc, () => sendOfferNow(pc, send, options));
-}
-
-export function releaseOfferHold(pc) {
-    if (!pc) return Promise.resolve();
-    return enqueue(pc, () => { pc._holdOffer = false; });
 }
 
 export function resendLocalOffer(pc, send) {

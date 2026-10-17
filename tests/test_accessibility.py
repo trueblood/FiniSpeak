@@ -87,22 +87,30 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("callerId", app[app.index("function peopleInCall"):app.index("function peopleInCall") + 700])
         self.assertIn("have-local-offer", peers)
         self.assertIn("isOfferer", peers)
-        self.assertIn("holdOffer", peers)
-        self.assertNotIn("offerer && existing.signalingState", peers)
+        self.assertIn("shouldSendOffer", peers)
+        self.assertIn("_suppressOffer", peers)
         self.assertIn("onnegotiationneeded", mesh)
-        self.assertIn("_holdOffer", mesh)
+        self.assertIn("function shouldSendOffer", mesh)
+        self.assertIn("if (!pc._offerer || pc._suppressOffer) return;", mesh)
         self.assertNotIn("pc._offerer === false", mesh)
         self.assertIn("rollback", mesh)
         self.assertIn("function isOfferer", mesh)
         self.assertIn("function offerResponse", mesh)
         negotiated = subprocess.run(
             ["node", "--input-type=module", "-e", """
-                import { isOfferer, offerResponse } from './views/static/js/webrtc-mesh.js';
+                import { isOfferer, offerResponse, shouldSendOffer } from './views/static/js/webrtc-mesh.js';
                 if (!isOfferer('a', 'b') || isOfferer('b', 'a')) throw new Error('offerer');
                 if (offerResponse('have-local-offer', { offerer: true }) !== 'ignore') throw new Error('offerer waits');
                 if (offerResponse('have-local-offer', { offerer: false }) !== 'rollback') throw new Error('answerer yields');
                 if (offerResponse('stable', { offerer: false }) !== 'answer') throw new Error('stable answers');
                 if (offerResponse('closed', { offerer: false }) !== 'restart') throw new Error('bad state restarts');
+                if (shouldSendOffer({ offerer: true, signalingState: 'stable', waitedMs: 0 }) !== 'offer') throw new Error('offerer starts');
+                if (shouldSendOffer({ offerer: false, signalingState: 'stable', waitedMs: 0 }) !== 'wait') throw new Error('answerer waits');
+                if (shouldSendOffer({ offerer: false, signalingState: 'stable', waitedMs: 4000 }) !== 'offer') throw new Error('answerer fallback');
+                if (shouldSendOffer({ offerer: true, signalingState: 'have-local-offer' }) !== 'resend') throw new Error('offerer resends');
+                if (shouldSendOffer({ offerer: false, signalingState: 'have-local-offer' }) !== 'wait') throw new Error('answerer does not glare');
+                if (shouldSendOffer({ offerer: true, signalingState: 'stable', hasRemote: true }) !== 'wait') throw new Error('settled waits');
+                if (shouldSendOffer({ offerer: true, signalingState: 'stable', connected: true }) !== 'wait') throw new Error('connected waits');
             """],
             cwd=Path(__file__).parents[1],
             capture_output=True,

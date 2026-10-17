@@ -324,8 +324,8 @@ export function createCallExperience(deps) {
     }
 
     async function persistPresence(extra = {}) {
-        const audio = deps.getLocalStream()?.getAudioTracks?.()[0];
-        const camera = deps.getLocalStream()?.getVideoTracks?.()[0];
+        const audio = deps.getLocalStream()?.getAudioTracks?.().find(track => track.readyState === "live");
+        const camera = deps.getLocalStream()?.getVideoTracks?.().find(track => track.readyState === "live");
         await postExperience("set-media", {
             mediaMode: state.mediaMode,
             avatarId: state.avatarId,
