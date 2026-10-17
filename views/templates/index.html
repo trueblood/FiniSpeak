@@ -387,6 +387,10 @@
                         <span id="callDuration" class="call-pill">00:00</span>
                         <span id="callConnection" class="call-pill">Connecting</span>
                         <span id="translationIndicator" class="call-pill">Translation ready</span>
+                        <div class="call-nav-modes is-collapsed">
+                            <button id="toggleCallProcessingModes" class="secondary processing-mode-toggle hidden" type="button" aria-expanded="false" aria-controls="callProcessingModes">Translation mode</button>
+                            <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle" aria-hidden="true"><div><span class="eyebrow">Tester controls</span><h3 id="processingModeTitle">Transcription logging method</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="baseline" aria-pressed="false">Baseline</button><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Streaming</button></div><p>Active method: <strong data-active-processing-label>Real-Time Streaming</strong>.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
+                        </div>
                         <p>Call ID: <code id="callIdLabel"></code></p>
                         <button id="copyCallId" class="secondary" type="button">Copy Call ID</button>
                     </div>
@@ -428,7 +432,6 @@
                             <p class="transcript-note">Only finalized text is saved to FiniSpeak. Raw microphone audio is not stored. Partial captions stay on this device.</p>
                         </section>
                         <div class="translator-request-row"><button id="requestTranslatorButton" type="button">Request Translator</button></div>
-                        <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle"><div><span class="eyebrow">Tester controls</span><h3 id="processingModeTitle">Transcription logging method</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="baseline" aria-pressed="false">Baseline</button><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Streaming</button></div><p>Active method: <strong data-active-processing-label>Real-Time Streaming</strong>.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
                         <section id="interpreterMatches" class="interpreter-matches hidden" aria-live="polite">
                             <div class="interpreter-matches-heading"><div><span class="eyebrow">Available now</span><h3>Interpreter matches</h3></div><span id="interpreterMatchSummary"></span></div>
                             <div id="interpreterMatchList" class="interpreter-match-list"></div>

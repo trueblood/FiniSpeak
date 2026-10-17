@@ -181,6 +181,18 @@ function bindUI() {
     $("muteButton").onclick = toggleMute;
     $("cameraButton").onclick = toggleCamera;
     document.querySelectorAll("[data-processing-mode]").forEach(button => button.onclick = () => selectProcessingMode(button.dataset.processingMode));
+    $("toggleCallProcessingModes").onclick = (event) => {
+        event.stopPropagation();
+        setCallProcessingModesOpen($("toggleCallProcessingModes").closest(".call-nav-modes").classList.contains("is-collapsed"));
+    };
+    document.addEventListener("click", (event) => {
+        const modes = document.querySelector(".call-nav-modes");
+        if (!modes || modes.classList.contains("is-collapsed") || modes.contains(event.target)) return;
+        setCallProcessingModesOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") setCallProcessingModesOpen(false);
+    });
     $("requestTranslatorButton").onclick = openTranslatorRequest;
     $("closeTranslatorRequestModal").onclick = () => closeModal("translatorRequestModal");
     $("cancelTranslatorRequest").onclick = () => closeModal("translatorRequestModal");
@@ -544,9 +556,23 @@ async function apiFetch(path, options = {}) {
     return payload;
 }
 
+function setCallProcessingModesOpen(open) {
+    const modes = document.querySelector(".call-nav-modes");
+    const toggle = $("toggleCallProcessingModes");
+    const panel = $("callProcessingModes");
+    if (!modes || !toggle || !panel) return;
+    modes.classList.toggle("is-collapsed", !open);
+    toggle.setAttribute("aria-expanded", String(open));
+    panel.setAttribute("aria-hidden", String(!open));
+    panel.style.left = "";
+    if (!open) return;
+    const overflow = panel.getBoundingClientRect().right - (window.innerWidth - 12);
+    if (overflow > 0) panel.style.left = `${-Math.ceil(overflow)}px`;
+}
 async function loadProcessingCapabilities() {
     const result = await apiFetch("/api/calls/processing-capabilities"); processingModesEnabled = result.experimental === true;
-    document.querySelectorAll(".processing-mode-panel").forEach(panel => panel.classList.toggle("hidden", !processingModesEnabled));
+    document.querySelectorAll(".processing-mode-panel, .processing-mode-toggle").forEach(panel => panel.classList.toggle("hidden", !processingModesEnabled));
+    if (!processingModesEnabled) setCallProcessingModesOpen(false);
     selectedProcessingMode = result.default || "streaming"; renderProcessingMode();
 }
 function renderProcessingMode() {
