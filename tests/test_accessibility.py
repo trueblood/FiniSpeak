@@ -1,3 +1,4 @@
+import subprocess
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -70,10 +71,10 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("grid-template-rows:repeat(var(--camera-rows, 1), minmax(0, 1fr))", styles)
         self.assertIn('id="toggleCallControls"', self.html)
         self.assertIn('id="callControls" class="call-controls floating-controls"', self.html)
-        self.assertIn("is-self-pip", layout)
+        self.assertIn("is-mobile-pair", layout)
         self.assertIn("is-zoom-speaker", layout)
         self.assertIn("is-controls-collapsed", styles)
-        self.assertIn(".is-self-pip", styles)
+        self.assertIn(".is-mobile-pair", styles)
         self.assertIn('id="callRoster"', self.html)
         self.assertIn('id="callRosterList"', self.html)
         app = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
@@ -85,8 +86,27 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("function peopleInCall", app)
         self.assertIn("callerId", app[app.index("function peopleInCall"):app.index("function peopleInCall") + 700])
         self.assertIn("have-local-offer", peers)
+        self.assertIn("isOfferer", peers)
         self.assertIn("onnegotiationneeded", mesh)
         self.assertIn("rollback", mesh)
+        self.assertIn("function isOfferer", mesh)
+        self.assertIn("function offerResponse", mesh)
+        negotiated = subprocess.run(
+            ["node", "--input-type=module", "-e", """
+                import { isOfferer, offerResponse } from './views/static/js/webrtc-mesh.js';
+                if (!isOfferer('a', 'b') || isOfferer('b', 'a')) throw new Error('offerer');
+                if (offerResponse('have-local-offer', { offerer: true }) !== 'ignore') throw new Error('offerer waits');
+                if (offerResponse('have-local-offer', { offerer: false }) !== 'rollback') throw new Error('answerer yields');
+                if (offerResponse('stable', { offerer: false }) !== 'answer') throw new Error('stable answers');
+                if (offerResponse('closed', { offerer: false }) !== 'restart') throw new Error('bad state restarts');
+            """],
+            cwd=Path(__file__).parents[1],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        self.assertEqual(negotiated.returncode, 0, negotiated.stderr)
         self.assertIn("event.track", mesh)
         self.assertNotIn("e.streams[0]", mesh)
         self.assertIn("track.muted", presence)

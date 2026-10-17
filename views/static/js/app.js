@@ -1,5 +1,5 @@
-import { createCallExperience } from "./call-experience.js?v=20261017-gallery";
-import { applyMeshSignal, attachMeshHandlers, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer } from "./webrtc-mesh.js?v=20261017-cameras";
+import { createCallExperience } from "./call-experience.js?v=20261017-handshake";
+import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer } from "./webrtc-mesh.js?v=20261017-handshake";
 
 const $ = (id) => document.getElementById(id);
 let callExperience;
@@ -11,7 +11,7 @@ const show = (id) => {
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let authActionToken = null;
-let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerDebug = new Map(), rosterParticipants = [], rosterTranscripts = [];
+let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerProfiles = new Map(), peerDebug = new Map(), rosterParticipants = [], rosterTranscripts = [];
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let rtcConfiguration = normalizeIceConfiguration(null);
@@ -2320,8 +2320,50 @@ function ensureParticipantTile(participant) {
     card.classList.toggle("is-camera-on", remoteVideoVisible(video));
 }
 
+function peerSender(remoteUid) {
+    return async (type, payload) => {
+        await signalingReady;
+        sendSignal(type, remoteUid, payload);
+    };
+}
+
+function openPeer(remoteUid, profile, offerer) {
+    const send = peerSender(remoteUid);
+    const pc = new RTCPeerConnection({ iceServers: rtcConfiguration.iceServers });
+    pc._iceKey = iceKey();
+    pc._offerer = offerer;
+    peerConnections.set(remoteUid, pc);
+    peerProfiles.set(remoteUid, profile || null);
+    const publishState = () => {
+        const failed = pc.connectionState === "failed" || pc.iceConnectionState === "failed";
+        recordPeer(remoteUid, {
+            error: failed ? (peerDebug.get(remoteUid)?.error || "") : "",
+            note: relayNote(pc),
+            ...peerSnapshot(pc)
+        });
+        const states = [...peerConnections.values()].map(peer => peer.connectionState);
+        const summary = states.includes("connected") ? "connected" : states.includes("failed") ? "failed" : "connecting";
+        callExperience?.noteConnection(summary);
+    };
+    pc.onconnectionstatechange = publishState;
+    pc.oniceconnectionstatechange = publishState;
+    attachMeshHandlers(pc, {
+        offerer,
+        send,
+        onTrack: (track, stream) => attachRemoteTrack(remoteUid, profile, track, stream),
+        onError: error => recordPeer(remoteUid, { error: error.message, connection: "error" })
+    });
+    const audioTrack = localStream?.getAudioTracks()[0];
+    const videoTrack = callExperience?.outgoingVideoTrack() || localStream?.getVideoTracks()[0];
+    if (audioTrack) pc.addTrack(audioTrack, localStream);
+    if (videoTrack) pc.addTrack(videoTrack, localStream);
+    publishState();
+    return pc;
+}
+
 async function ensurePeer(callId, remoteUid, profile) {
-    const politeOfferer = currentUser.uid.localeCompare(remoteUid) < 0;
+    peerProfiles.set(remoteUid, profile || null);
+    const offerer = isOfferer(currentUser.uid, remoteUid);
     let existing = peerConnections.get(remoteUid);
     const stale = existing && (existing.connectionState === "failed" || existing.connectionState === "closed" || existing.iceConnectionState === "failed");
     const wrongNetwork = existing && existing._iceKey !== iceKey() && existing.connectionState !== "connected";
@@ -2330,66 +2372,62 @@ async function ensurePeer(callId, remoteUid, profile) {
         peerConnections.delete(remoteUid);
         existing = null;
     }
-    const send = async (type, payload) => {
-        await signalingReady;
-        sendSignal(type, remoteUid, payload);
-    };
+    const send = peerSender(remoteUid);
     if (existing) {
+        existing._offerer = offerer;
         recordPeer(remoteUid, { note: relayNote(existing), ...peerSnapshot(existing) });
         try {
-            if (existing.signalingState === "have-local-offer" && existing.localDescription) await resendLocalOffer(existing, send);
-            else if (existing.signalingState === "stable" && !existing.currentRemoteDescription) await sendOffer(existing, send);
+            if (offerer && existing.signalingState === "have-local-offer" && existing.localDescription) await resendLocalOffer(existing, send);
+            else if (offerer && existing.signalingState === "stable" && !existing.currentRemoteDescription) await sendOffer(existing, send);
         } catch (error) {
             recordPeer(remoteUid, { error: error.message, connection: "error" });
         }
         return;
     }
     if (!localStream) throw new Error("Local camera is not ready.");
-    const pc = new RTCPeerConnection({ iceServers: rtcConfiguration.iceServers });
-    pc._iceKey = iceKey();
-    peerConnections.set(remoteUid, pc);
-    recordPeer(remoteUid, { note: relayNote(pc), ...peerSnapshot(pc) });
-    const publishState = () => {
-        recordPeer(remoteUid, { note: relayNote(pc), ...peerSnapshot(pc) });
-        const states = [...peerConnections.values()].map(peer => peer.connectionState);
-        const summary = states.includes("connected") ? "connected" : states.includes("failed") ? "failed" : "connecting";
-        callExperience?.noteConnection(summary);
-    };
-    pc.onconnectionstatechange = publishState;
-    pc.oniceconnectionstatechange = publishState;
-    attachMeshHandlers(pc, {
-        polite: politeOfferer,
-        send,
-        onTrack: (track, stream) => attachRemoteTrack(remoteUid, profile, track, stream),
-        onError: error => recordPeer(remoteUid, { error: error.message, connection: "error" })
-    });
-    const audioTrack = localStream.getAudioTracks()[0];
-    const videoTrack = callExperience?.outgoingVideoTrack() || localStream.getVideoTracks()[0];
-    if (audioTrack) pc.addTrack(audioTrack, localStream);
-    if (videoTrack) pc.addTrack(videoTrack, localStream);
+    const pc = openPeer(remoteUid, profile, offerer);
     for (const message of pendingSignals.get(remoteUid) || []) await applySignal(message);
     pendingSignals.delete(remoteUid);
-    publishState();
+    if (peerConnections.get(remoteUid) === pc && offerer && pc.signalingState === "stable" && !pc.currentRemoteDescription) {
+        await sendOffer(pc, send);
+    }
 }
 
 function connectSignaling(callId) {
-    if (signalingSocket) signalingSocket.close();
+    if (signalingSocket) {
+        signalingSocket.onclose = null;
+        signalingSocket.onmessage = null;
+        signalingSocket.onerror = null;
+        signalingSocket.close();
+    }
     const scheme = location.protocol === "https:" ? "wss" : "ws";
-    signalingReady = new Promise((resolve, reject) => {
+        signalingReady = new Promise((resolve, reject) => {
+        let settled = false;
+        const fail = error => {
+            if (settled) return;
+            settled = true;
+            reject(error);
+        };
         signalingSocket = new WebSocket(`${scheme}://${location.host}/ws/signaling`);
         signalingSocket.onopen = () => signalingSocket.send(JSON.stringify({ type: "join", callId, after: signalingCursor }));
         signalingSocket.onmessage = async event => {
             const message = JSON.parse(event.data);
-            if (message.type === "ready") { resolve(); return; }
-            if (message.type === "error") { reject(new Error(message.message)); return; }
+            if (message.type === "ready") { settled = true; resolve(); return; }
+            if (message.type === "error") { fail(new Error(message.message || "Signaling failed.")); return; }
+            if (message.type === "signal-error") {
+                const uid = message.from || [...peerConnections.keys()][0];
+                if (uid) recordPeer(uid, { error: message.message || "Signaling rejected the camera offer." });
+                return;
+            }
             if (message.eventId) signalingCursor = Math.max(signalingCursor, Number(message.eventId));
             if (["offer", "answer", "ice", "hangup", "reconnect"].includes(message.type)) {
                 if (peerConnections.has(message.from)) await applySignal(message);
                 else pendingSignals.set(message.from, [...(pendingSignals.get(message.from) || []), message]);
             }
         };
-        signalingSocket.onerror = () => reject(new Error("Signaling connection failed."));
+        signalingSocket.onerror = () => fail(new Error("Signaling connection failed."));
         signalingSocket.onclose = () => {
+            fail(new Error("Signaling connection closed."));
             if (activeCallId === callId) window.setTimeout(() => connectSignaling(callId), 1000);
         };
     });
@@ -2415,8 +2453,22 @@ async function applySignal(message) {
             pendingIceCandidates.set(message.from, [...(pendingIceCandidates.get(message.from) || []), message.payload]);
             return;
         }
-        if (message.type === "offer" || message.type === "answer") await flushPendingIce(message.from, pc);
-        recordPeer(message.from, { note: relayNote(pc), ...peerSnapshot(pc) });
+        if (queued === "restart") {
+            if (message.restarted) {
+                recordPeer(message.from, { error: "Could not accept the other camera." });
+                return;
+            }
+            message.restarted = true;
+            pc.close();
+            peerConnections.delete(message.from);
+            if (!localStream) throw new Error("Local camera is not ready.");
+            openPeer(message.from, peerProfiles.get(message.from), false);
+            await applySignal(message);
+            return;
+        }
+        if (message.type === "offer" || message.type === "answer") await flushPendingIce(message.from, peerConnections.get(message.from) || pc);
+        const current = peerConnections.get(message.from) || pc;
+        recordPeer(message.from, { error: "", note: relayNote(current), ...peerSnapshot(current) });
     } catch (error) {
         recordPeer(message.from, { error: error.message, connection: "error" });
     }
@@ -3124,6 +3176,7 @@ function cleanupCall(stopMedia = true) {
     if (signalingSocket) { signalingSocket.onclose = null; signalingSocket.close(); signalingSocket = null; }
     signalingReady = null; signalingCursor = 0; pendingSignals.clear(); pendingIceCandidates.clear();
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
+    peerProfiles.clear();
     peerDebug.clear();
     rosterParticipants = [];
     rosterTranscripts = [];

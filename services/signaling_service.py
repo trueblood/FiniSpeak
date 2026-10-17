@@ -82,10 +82,15 @@ def handle_signaling_socket(ws):
         while getattr(ws, "connected", True):
             message = ws.receive(timeout=.35)
             if isinstance(message, str):
-                parsed = json.loads(message)
-                event_id, duplicate = _store_event(call_id, identity["uid"], participants, parsed)
-                _send(ws, {"type": "ack", "clientEventId": parsed.get("clientEventId"),
-                    "eventId": event_id, "duplicate": duplicate})
+                try:
+                    parsed = json.loads(message)
+                    event_id, duplicate = _store_event(call_id, identity["uid"], participants, parsed)
+                    _send(ws, {"type": "ack", "clientEventId": parsed.get("clientEventId"),
+                        "eventId": event_id, "duplicate": duplicate})
+                except Exception as exc:
+                    db.session.rollback()
+                    _send(ws, {"type": "signal-error", "message": str(exc)})
+                    continue
             rows = db.session.scalars(select(SqlSignalingEvent).where(
                 SqlSignalingEvent.call_id == call_id,
                 SqlSignalingEvent.recipient_id == identity["uid"],

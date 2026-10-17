@@ -760,20 +760,32 @@ export function createCallExperience(deps) {
         if (!stage || !cards.length) return;
         for (const card of cards) {
             card.classList.add("is-stage");
-            card.classList.remove("is-self-pip", "is-main", "is-thumb");
+            card.classList.remove("is-self-pip", "is-main", "is-thumb", "is-pair-remote", "is-pair-self");
             card.style.gridColumn = "";
             card.style.gridRow = "";
             // Moving a live video element restarts it and flashes the camera.
             if (card.parentElement !== stage) stage.appendChild(card);
         }
-        stage.classList.remove("is-zoom-pip", "is-zoom-speaker");
+        stage.classList.remove("is-zoom-pip", "is-zoom-speaker", "is-mobile-pair");
         const mobile = callLayoutIsMobile();
         let counted = cards;
         if (mobile && cards.length === 2) {
             const local = cards.find(card => card.dataset.role === "local") || cards[0];
-            local.classList.add("is-self-pip");
-            stage.classList.add("is-zoom-pip");
-            counted = cards.filter(card => card !== local);
+            const remote = cards.find(card => card !== local);
+            stage.classList.add("is-mobile-pair");
+            remote.classList.add("is-pair-remote");
+            local.classList.add("is-pair-self");
+            stage.style.setProperty("--camera-columns", "1");
+            stage.style.setProperty("--camera-rows", "2");
+            remote.style.gridColumn = "1";
+            remote.style.gridRow = "1";
+            local.style.gridColumn = "1";
+            local.style.gridRow = "2";
+            stage.dataset.count = "2";
+            if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
+            if (deps.$("videoFilmstrip")) deps.$("videoFilmstrip").hidden = true;
+            if (deps.$("participantCount")) deps.$("participantCount").textContent = "2";
+            return;
         } else if (mobile && cards.length > 2) {
             const speaker = cards.find(card => card.classList.contains("is-speaking") && card.dataset.role !== "local")
                 || cards.find(card => card.dataset.role !== "local")

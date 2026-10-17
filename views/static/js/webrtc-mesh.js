@@ -17,8 +17,19 @@ export function normalizeIceConfiguration(payload) {
 export function liveReceiver(pc, kind) {
     return (pc?.getReceivers?.() || []).some(receiver => {
         const track = receiver.track;
-        return track?.kind === kind && track.readyState === "live" && track.muted === false;
+        return track?.kind === kind && track.readyState === "live" && track.muted === false && track.enabled !== false;
     });
+}
+
+export function isOfferer(localId, remoteId) {
+    return String(localId) < String(remoteId);
+}
+
+export function offerResponse(signalingState, { offerer = false, makingOffer = false } = {}) {
+    if (offerer && (makingOffer || signalingState === "have-local-offer")) return "ignore";
+    if (signalingState === "stable" || signalingState === "have-remote-offer") return "answer";
+    if (signalingState === "have-local-offer" || signalingState === "have-local-pranswer") return "rollback";
+    return "restart";
 }
 
 function enqueue(pc, task) {
@@ -28,10 +39,11 @@ function enqueue(pc, task) {
     return next;
 }
 
-export function attachMeshHandlers(pc, { polite, send, onTrack, onError }) {
-    pc._polite = Boolean(polite);
+export function attachMeshHandlers(pc, { offerer, send, onTrack, onError }) {
+    pc._offerer = Boolean(offerer);
     pc._makingOffer = false;
     pc.onnegotiationneeded = () => {
+        if (!pc._offerer) return;
         sendOffer(pc, send).catch(error => onError?.(error));
     };
     pc.onicecandidate = event => {
@@ -42,11 +54,11 @@ export function attachMeshHandlers(pc, { polite, send, onTrack, onError }) {
     return pc;
 }
 
-async function sendOfferNow(pc, send) {
-    if (!pc || pc._makingOffer || pc.signalingState !== "stable") return false;
+async function sendOfferNow(pc, send, { iceRestart = false } = {}) {
+    if (!pc || pc._makingOffer || pc._offerer === false || pc.signalingState !== "stable") return false;
     pc._makingOffer = true;
     try {
-        const offer = await pc.createOffer();
+        const offer = await pc.createOffer(iceRestart ? { iceRestart: true } : undefined);
         if (pc.signalingState !== "stable") return false;
         await pc.setLocalDescription(offer);
         await send("offer", { type: pc.localDescription.type, sdp: pc.localDescription.sdp });
@@ -56,13 +68,13 @@ async function sendOfferNow(pc, send) {
     }
 }
 
-export function sendOffer(pc, send) {
-    return enqueue(pc, () => sendOfferNow(pc, send));
+export function sendOffer(pc, send, options) {
+    return enqueue(pc, () => sendOfferNow(pc, send, options));
 }
 
 export function resendLocalOffer(pc, send) {
     return enqueue(pc, async () => {
-        if (pc?.signalingState !== "have-local-offer" || !pc.localDescription) return false;
+        if (pc?._offerer === false || pc?.signalingState !== "have-local-offer" || !pc.localDescription) return false;
         await send("offer", { type: pc.localDescription.type, sdp: pc.localDescription.sdp });
         return true;
     });
@@ -81,10 +93,17 @@ async function applyMeshSignalNow(pc, message, send) {
             }
             return;
         }
-        const collision = Boolean(pc._makingOffer) || pc.signalingState !== "stable";
-        if (collision && !pc._polite) return;
-        if (collision && pc.signalingState === "have-local-offer") {
-            await pc.setLocalDescription({ type: "rollback" });
+        const action = offerResponse(pc.signalingState, { offerer: pc._offerer, makingOffer: pc._makingOffer });
+        if (action === "ignore") return;
+        if (action === "rollback") {
+            try {
+                await pc.setLocalDescription({ type: "rollback" });
+            } catch (_) {
+                return "restart";
+            }
+            if (pc.signalingState !== "stable") return "restart";
+        } else if (action === "restart") {
+            return "restart";
         }
         await pc.setRemoteDescription(new RTCSessionDescription(payload));
         const answer = await pc.createAnswer();
