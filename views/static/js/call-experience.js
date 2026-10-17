@@ -89,6 +89,8 @@ export function createCallExperience(deps) {
         deps.$("documentsButton").onclick = () => state.documentsOpen ? closeDocuments() : openDocuments();
         deps.$("closeDocuments").onclick = closeDocuments;
         deps.$("subtitleButton").onclick = cycleSubtitles;
+        deps.$("signAccessButton").onclick = () => deps.openModal("signAccessModal");
+        deps.$("closeSignAccess").onclick = () => deps.closeModal("signAccessModal");
         deps.$("subtitleMode").onchange = () => applySubtitleMode(deps.$("subtitleMode").value);
         deps.$("viewerLanguage").onchange = () => {
             state.viewerLanguage = deps.$("viewerLanguage").value;

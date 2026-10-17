@@ -499,6 +499,7 @@
                     <button id="inviteParticipantButton" class="secondary" type="button" title="Invite participant" aria-label="Invite participant">Invite</button>
                     <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
                     <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
+                    <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
                     <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
                     <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>
                 </div>
@@ -576,6 +577,30 @@
                 <button id="submitReview" type="submit">Submit review</button>
                 <p id="reviewStatus" class="status" role="status" aria-live="polite"></p>
             </form>
+        </div>
+    </div>
+
+    <div id="signAccessModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="signAccessTitle" aria-describedby="signAccessDescription">
+        <div class="modal-card sign-access-card">
+            <div class="transcript-header">
+                <div><span class="eyebrow">Accessibility</span><h2 id="signAccessTitle">FiniSpeak — AI Sign Language Accessibility Engine</h2></div>
+                <button id="closeSignAccess" class="secondary" type="button">Close</button>
+            </div>
+            <p id="signAccessDescription">This is a placeholder on the live call. Sign recognition and avatar signing are not running, and this window does not read the camera or microphone.</p>
+            <div class="sign-access-lanes">
+                <article>
+                    <span class="eyebrow">Sign to speech</span>
+                    <h3>Camera signs become captions</h3>
+                    <p>A later version will read signs from the call video and show the words with the live subtitles.</p>
+                    <span class="sign-access-badge">Placeholder</span>
+                </article>
+                <article>
+                    <span class="eyebrow">Speech to sign</span>
+                    <h3>Spoken words become avatar signs</h3>
+                    <p>A later version will drive the call avatar from the transcript so signing appears in the video tile.</p>
+                    <span class="sign-access-badge">Placeholder</span>
+                </article>
+            </div>
         </div>
     </div>
 
