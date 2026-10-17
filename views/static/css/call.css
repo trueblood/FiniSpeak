@@ -45,6 +45,16 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 .call-view .language-detection strong,.call-view .language-detection span { color:#d7e0ea; }
 .call-view .processing-mode-panel { background:rgba(18,60,105,.35); border-color:rgba(126,182,255,.25); color:#d7e0ea; }
 .call-view .processing-mode-panel p,.call-view .processing-mode-panel small { color:#a7b3c4; }
+.call-view .dev-logging { display:grid; gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,.1); }
+.call-view .dev-logging .language-detection { min-width:0; background:rgba(255,255,255,.06); border-color:rgba(240,195,108,.7); }
+.call-view .dev-logging .language-detection.pending { border-color:rgba(255,255,255,.14); background:rgba(255,255,255,.04); }
+.call-view .dev-logging .language-detection.low { border-color:#f0c36c; background:#fff8e8; }
+.call-view .dev-logging .language-detection.low strong,.call-view .dev-logging .language-detection.low span,.call-view .dev-logging .language-detection.low .language-detection-label { color:#3d3424; }
+.call-view .dev-logging .transcription-status { color:#d7e0ea; }
+.call-view .dev-logging .language-confirmation { margin:0; }
+.call-view .dev-logging .language-confirmation label { color:#3d3424; }
+.call-view .dev-logging .language-confirmation > div { flex-wrap:wrap; }
+.call-view .dev-logging .language-confirmation select { max-width:none; flex:1; }
 
 .translator-request-row { display:flex; }
 .translator-request-row button { width:auto; }
