@@ -62,6 +62,7 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 .call-view .interpreter-matches-heading > span,.call-view .interpreter-match small { color:#c5d0dc; }
 .call-view .interpreter-match-list { grid-template-columns:1fr; }
 .call-view .interpreter-match { background:#10151d; border-color:rgba(255,255,255,.1); color:#e8eef6; }
+.call-view button.interpreter-match:hover,.call-view button.interpreter-match.is-invited { background:#172033; }
 .call-view .match-confidence { background:rgba(22,101,52,.45); color:#bbf7d0; }
 .call-view .interpreter-match-tags span { background:rgba(18,60,105,.72); color:#dbeafe; }
 .interpreter-actions,.summary-actions,.document-tools,.document-languages { display:flex; flex-wrap:wrap; gap:8px; align-items:end; }

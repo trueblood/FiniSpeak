@@ -585,9 +585,10 @@ class MySqlCallRepository:
         _touch(row, changes, CALL_FIELDS); _commit(self.session)
         return _document(row, CALL_FIELDS)
 
-    def request_translator(self, call_id, language=None, languages=None, language_confidence=None, dialect=None, specialty=None, recommended_ids=None):
+    def request_translator(self, call_id, language=None, languages=None, language_confidence=None, dialect=None, specialty=None, recommended_ids=None, translator_id=None, translator_name=None, decline_translator_id=None):
         row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
         if not row: return None
+        current = _document(row, CALL_FIELDS)
         changes = {"translationStatus": "requested", "updatedAt": _now()}
         if language: changes["detectedLanguage"] = language
         if languages:
@@ -599,17 +600,42 @@ class MySqlCallRepository:
         if recommended_ids is not None:
             changes["recommendedTranslatorIds"] = recommended_ids
             changes["routingStatus"] = "matched" if recommended_ids else "unmatched"
+        declined = [str(item) for item in (current.get("declinedTranslatorIds") or []) if str(item).strip()]
+        chosen = str(translator_id or "").strip()
+        if chosen:
+            changes["invitedTranslatorId"] = chosen
+            changes["invitedTranslatorName"] = str(translator_name or "").strip() or None
+            declined = [item for item in declined if item != chosen]
+            changes["declinedTranslatorIds"] = declined
+        declining = str(decline_translator_id or "").strip()
+        if declining:
+            if declining not in declined:
+                declined.append(declining)
+            changes["declinedTranslatorIds"] = declined
+            invited_now = changes.get("invitedTranslatorId", current.get("invitedTranslatorId"))
+            if str(invited_now or "").strip() == declining:
+                changes["invitedTranslatorId"] = None
+                changes["invitedTranslatorName"] = None
+                changes["translationStatus"] = "not_requested"
         _touch(row, changes, CALL_FIELDS); _commit(self.session)
         return _document(row, CALL_FIELDS)
 
     def claim_translator(self, call_id, translator):
         row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
         if not row: return None
+        call = _document(row, CALL_FIELDS)
         if row.translation_status not in {"requested", "connected"}:
             self.session.rollback(); raise ValueError("This call is not requesting an interpreter.")
+        invited = str(call.get("invitedTranslatorId") or "").strip()
+        if invited and invited != translator["uid"]:
+            self.session.rollback(); raise PermissionError("This interpretation request was sent to another interpreter.")
         if row.translator_id and row.translator_id != translator["uid"]:
             self.session.rollback(); raise PermissionError("Another interpreter has already accepted this call.")
-        _touch(row, {"translatorId": translator["uid"], "translatorName": translator.get("displayName") or translator.get("email") or "FiniSpeak interpreter", "translationStatus": "connected", "updatedAt": _now()}, CALL_FIELDS)
+        changes = {"translatorId": translator["uid"], "translatorName": translator.get("displayName") or translator.get("email") or "FiniSpeak interpreter", "translationStatus": "connected", "updatedAt": _now()}
+        if invited:
+            changes["invitedTranslatorId"] = None
+            changes["invitedTranslatorName"] = None
+        _touch(row, changes, CALL_FIELDS)
         _commit(self.session)
         return _document(row, CALL_FIELDS)
 
