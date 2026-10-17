@@ -3,10 +3,15 @@ from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
+from services.call_access import is_call_participant
+from services.call_experience_service import build_experience_changes
 from services.processing_mode_service import allowed_processing_modes, authorize_processing_mode
+from services.summary_service import summarize_lines
+from services.translation_service import canonical_language, explain_term, translate_text
 
 AccountModel = repository_proxy("accounts")
 CallModel = repository_proxy("calls")
+ParticipantModel = repository_proxy("participants")
 TranslatorModel = repository_proxy("translators")
 TranscriptModel = repository_proxy("transcripts")
 
@@ -167,6 +172,99 @@ def transcripts(call_id):
     data.update({"speakerId": identity["uid"], "speakerRole": identity.get("role"), "speakerName": identity.get("displayName"), "text": text, "isFinal": bool(data.get("isFinal", True)), "createdAt": datetime.now(timezone.utc)})
     transcript = TranscriptModel.add(call_id, transcript_id, data)
     return jsonify({"transcript": transcript}), 201
+
+
+def _call_for_participant(call_id):
+    identity, error = identity_or_response()
+    if error:
+        return None, None, error
+    call = CallModel.get(call_id)
+    if not call or (identity.get("role") != "admin" and not is_call_participant(call, identity["uid"])):
+        return None, None, (jsonify({"error": "Call not found or access denied."}), 404)
+    return identity, call, None
+
+
+def invitations():
+    identity, error = identity_or_response()
+    if error:
+        return error
+    return jsonify({"calls": CallModel.pending_invitations(identity["uid"])})
+
+
+def update_experience(call_id):
+    identity, error = identity_or_response()
+    if error:
+        return error
+    call = CallModel.get(call_id)
+    if not call:
+        return jsonify({"error": "Call not found."}), 404
+    data = json_body()
+    action = data.get("action")
+    try:
+        changes = build_experience_changes(call, identity, action, data, AccountModel.find_by_email)
+        updated = CallModel.patch_experience(
+            call_id,
+            identity["uid"],
+            changes,
+            allow_pending_invitee=action in {"accept-invite", "decline-invite"},
+        )
+        if action == "set-media":
+            ParticipantModel.update_presence(
+                call_id,
+                identity["uid"],
+                identity.get("role") or "guest",
+                identity.get("displayName"),
+                data,
+            )
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not updated:
+        return jsonify({"error": "Call not found."}), 404
+    return jsonify({"call": updated})
+
+
+def translate(call_id):
+    identity, call, error = _call_for_participant(call_id)
+    if error:
+        return error
+    data = json_body()
+    result = translate_text(data.get("text"), data.get("source"), data.get("target"), online=True)
+    return jsonify(result)
+
+
+def terminology(call_id):
+    _identity, _call, error = _call_for_participant(call_id)
+    if error:
+        return error
+    data = json_body()
+    try:
+        return jsonify(explain_term(data.get("term"), data.get("source"), data.get("target"), online=True))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+def summary(call_id):
+    _identity, _call, error = _call_for_participant(call_id)
+    if error:
+        return error
+    return jsonify({"summary": summarize_lines(json_body().get("lines"))})
+
+
+def translate_transcript(call_id, transcript_id):
+    _identity, _call, error = _call_for_participant(call_id)
+    if error:
+        return error
+    data = json_body()
+    target = canonical_language(data.get("targetLanguage") or data.get("target"))
+    rows = TranscriptModel.for_call(call_id)
+    row = next((item for item in rows if item.get("id") == transcript_id), None)
+    if not row:
+        return jsonify({"error": "Transcript line not found."}), 404
+    result = translate_text(row.get("text") or "", data.get("sourceLanguage") or row.get("language") or "en", target, online=True)
+    saved = TranscriptModel.annotate_translation(call_id, transcript_id, target, result["text"], result["status"])
+    return jsonify({"translation": result, "transcript": saved})
 
 
 def pending_requests():

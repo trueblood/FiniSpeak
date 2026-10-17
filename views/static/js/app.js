@@ -1,8 +1,12 @@
+import { createCallExperience } from "./call-experience.js";
+
 const $ = (id) => document.getElementById(id);
+let callExperience;
 const views = ["heroView", "authView", "dashboardView", "profileView", "callView"];
 const show = (id) => {
     views.forEach(v => $(v).classList.toggle("hidden", v !== id));
     document.body.classList.toggle("dashboard-mode", id === "dashboardView");
+    document.body.classList.toggle("in-call", id === "callView");
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let authActionToken = null;
@@ -121,7 +125,31 @@ async function boot() {
     }
 }
 
+function replaceOutgoingVideo(track) {
+    if (!track) return;
+    for (const pc of peerConnections.values()) {
+        const sender = pc.getSenders().find(item => item.track?.kind === "video");
+        if (sender) sender.replaceTrack(track).catch(console.error);
+        else pc.addTrack(track, localStream);
+    }
+}
+
 function bindUI() {
+    callExperience = createCallExperience({
+        $,
+        apiFetch: (path, options) => apiFetch(path, options),
+        languageLabel: detectedLanguageLabel,
+        replaceOutgoingVideo,
+        getLocalStream: () => localStream,
+        getCallId: () => activeCallId,
+        getUser: () => currentUser,
+        getProfile: () => currentProfile,
+        openModal,
+        closeModal,
+        setCallStatus: (text) => { if ($("callStatus")) $("callStatus").textContent = text; },
+        renderTranscript: (rows) => renderTranscript(rows)
+    });
+    callExperience.bind();
     const workflowTabs = [...document.querySelectorAll(".workflow-tab")];
     workflowTabs.forEach((tab, index) => {
         tab.addEventListener("click", () => activateWorkflowTab(tab));
@@ -520,7 +548,8 @@ async function loadProcessingCapabilities() {
 }
 function renderProcessingMode() {
     document.querySelectorAll("[data-processing-mode]").forEach(button => { button.setAttribute("aria-pressed", String(button.dataset.processingMode === selectedProcessingMode)); button.disabled = transcriptionSwitching; });
-    document.querySelectorAll("[data-active-processing-label]").forEach(label => label.textContent = selectedProcessingMode[0].toUpperCase()+selectedProcessingMode.slice(1));
+    const processingLabels = { baseline: "Baseline", concurrent: "Concurrent Audio Processing", streaming: "Real-Time Streaming" };
+    document.querySelectorAll("[data-active-processing-label]").forEach(label => label.textContent = processingLabels[selectedProcessingMode] || selectedProcessingMode);
 }
 async function selectProcessingMode(mode) {
     if (!processingModesEnabled || transcriptionSwitching) return; const next = selectedProcessingMode === mode ? "baseline" : mode;
@@ -1934,7 +1963,8 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
         const call = result.call;
         if (!call) throw new Error("Call not found.");
         const role = currentProfile.role;
-        const allowedCustomer = [call.callerId, call.receiverId].includes(currentUser.uid);
+        const guest = Array.isArray(call.guestIds) && call.guestIds.includes(currentUser.uid);
+        const allowedCustomer = [call.callerId, call.receiverId].includes(currentUser.uid) || guest;
         stage = "participant-validation";
         callLog(attemptId, stage, {
             callId,
@@ -1943,7 +1973,7 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
             translatorAssigned: Boolean(call.translatorId)
         });
         if (role !== "translator" && !allowedCustomer) throw new Error("You are not a participant in this call.");
-        if (role === "translator") {
+        if (role === "translator" && !guest) {
             if (call.translatorId && call.translatorId !== currentUser.uid) throw new Error("Another translator has already joined.");
             stage = "translator-connect-update";
             await apiFetch(`/api/calls/${encodeURIComponent(callId)}/translator-claim`, { method: "POST", body: "{}" });
@@ -1961,7 +1991,8 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
             audioTracks: localStream?.getAudioTracks().length || 0,
             videoTracks: localStream?.getVideoTracks().length || 0
         });
-        currentCallRole = role === "translator" ? "translator" : (currentUser.uid === call.callerId ? "caller" : "receiver");
+        currentCallRole = role === "translator" && !guest ? "translator" : (currentUser.uid === call.callerId ? "caller" : currentUser.uid === call.receiverId ? "receiver" : "guest");
+        callExperience?.onJoined(call);
         if (processingModesEnabled && !storedMode && selectedProcessingMode !== "baseline") await apiFetch(`/api/calls/${encodeURIComponent(callId)}/processing-mode`, {method:"PATCH", body:JSON.stringify({processingMode:selectedProcessingMode})});
         stage = "participant-document-write";
         await apiFetch(`/api/sessions/${encodeURIComponent(callId)}/participants`, {
@@ -1986,6 +2017,8 @@ async function startMedia() {
     requireMediaCapture();
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     $("localVideo").srcObject = localStream;
+    document.querySelector('.video-card[data-role="local"]')?.classList.add("is-camera-on");
+    callExperience?.attachLocalStream(localStream);
 }
 
 function watchCall(callId) {
@@ -2024,6 +2057,10 @@ function watchCall(callId) {
             return aMs - bMs;
         });
         renderTranscript(rows);
+        callExperience?.sync(call, participantPayload.participants || []);
+        callExperience?.updateSubtitles(rows);
+        callExperience?.maybeSpeak(rows);
+        callExperience?.layout();
       } catch (error) { handleDashboardListenerError("active-call", error); }
     };
     refresh();
@@ -2037,7 +2074,11 @@ async function ensurePeer(callId, remoteUid, profile) {
     if (!rtcConfiguration.iceServers.length) throw new Error("WebRTC relay configuration is unavailable.");
     const pc = new RTCPeerConnection(rtcConfiguration);
     peerConnections.set(remoteUid, pc);
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    const audioTrack = localStream.getAudioTracks()[0];
+    const videoTrack = callExperience?.outgoingVideoTrack() || localStream.getVideoTracks()[0];
+    if (audioTrack) pc.addTrack(audioTrack, localStream);
+    if (videoTrack) pc.addTrack(videoTrack, localStream);
+    pc.onconnectionstatechange = () => callExperience?.noteConnection(pc.connectionState);
     pc.ontrack = e => attachRemoteVideo(remoteUid, profile, e.streams[0]);
     pc.onicecandidate = event => {
         if (event.candidate) signalingReady?.then(() => sendSignal("ice", remoteUid, event.candidate.toJSON())).catch(console.error);
@@ -2114,17 +2155,20 @@ function attachRemoteVideo(uid, profile, stream) {
     let card = document.querySelector(`[data-peer="${uid}"]`);
     if (!card) {
         card = document.createElement("article"); card.className = "video-card"; card.dataset.peer = uid;
-        card.innerHTML = '<video autoplay playsinline></video><div class="video-label"><span class="video-role"></span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name"></span></div>';
+        card.innerHTML = '<video autoplay playsinline></video><canvas class="avatar-canvas is-hidden" aria-hidden="true"></canvas><div class="video-slate"><strong></strong><span>Camera</span></div><span class="speaking-indicator" aria-hidden="true"></span><div class="video-label"><span class="video-role"></span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name"></span></div><p class="tile-subtitle" hidden></p>';
         $("videoGrid").appendChild(card);
     }
     const role = ["translator", "caller", "receiver"].includes(profile?.role) ? profile.role : "guest";
     card.dataset.role = role;
     card.dataset.speaker = uid;
+    card.classList.add("is-camera-on");
     card.querySelector("video").srcObject = stream;
     card.querySelector(".video-role").textContent = participantRoleLabel(role);
     card.querySelector(".video-name").textContent = profile?.displayName || "FiniSpeak guest";
+    card.querySelector(".video-slate strong").textContent = profile?.displayName || "FiniSpeak guest";
+    callExperience?.layout();
 }
-function removeRemoteVideo(uid) { document.querySelector(`[data-peer="${uid}"]`)?.remove(); }
+function removeRemoteVideo(uid) { document.querySelector(`[data-peer="${uid}"]`)?.remove(); callExperience?.layout(); }
 
 async function startTranscription(callId) {
     if (!localStream?.getAudioTracks().length) return;
@@ -2168,14 +2212,14 @@ async function openTranscriptionPipeline(callId,mode){
 }
 async function saveFinalTranscript(callId,m,mode,generation){
     const evidence=m.languageEvidence||null, stable=evidence?.primaryLanguage||m.language, confidence=normalizeLanguageConfidence(evidence?.primaryConfidence??m.languageConfidence);if(stable)updateDetectedLanguage(stable,confidence,evidence?.confirmed===true);
-    const id=`${currentUser.uid}-${generation}-${m.sequence??0}`;await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`,{method:"POST",headers:{"Idempotency-Key":id},body:JSON.stringify({id,language:m.language||null,languageConfidence:normalizeLanguageConfidence(m.languageConfidence),primaryLanguage:stable||null,primaryLanguageConfidence:confidence,languageSampleCount:Number(evidence?.sampleCount||1),languageConfirmationRequired:evidence?.requiresConfirmation===true,text:m.text.trim(),isFinal:true,processingMode:mode,processingGeneration:generation,performance:m.metrics||null,clientCreatedAt:Date.now()})});showProcessingDiagnostics(m.metrics);$("partialTranscript").classList.add("hidden");$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;
+    const id=`${currentUser.uid}-${generation}-${m.sequence??0}`;await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`,{method:"POST",headers:{"Idempotency-Key":id},body:JSON.stringify({id,language:m.language||null,languageConfidence:normalizeLanguageConfidence(m.languageConfidence),primaryLanguage:stable||null,primaryLanguageConfidence:confidence,languageSampleCount:Number(evidence?.sampleCount||1),languageConfirmationRequired:evidence?.requiresConfirmation===true,text:m.text.trim(),isFinal:true,processingMode:mode,processingGeneration:generation,performance:m.metrics||null,clientCreatedAt:Date.now()})});callExperience?.requestTranslations(callId, id, m.language || stable);showProcessingDiagnostics(m.metrics);$("partialTranscript").classList.add("hidden");callExperience?.onPartial("");$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;
     const routeKey=languageRouteKey(callId,stable);if(stable&&evidence?.requiresConfirmation!==true&&!routedLanguageCalls.has(routeKey)){routedLanguageCalls.add(routeKey);routeDetectedLanguage(callId,stable,confidence).catch(error=>{routedLanguageCalls.delete(routeKey);console.warn("Automatic language routing unavailable:",error);});}
 }
 async function requestPipelineStop(){const socket=transcriptionSocket;if(!socket||socket.readyState!==WebSocket.OPEN){socket?.close();return;}await new Promise(resolve=>{let done=false;const finish=()=>{if(!done){done=true;transcriptionStopResolver=null;resolve();}};transcriptionStopResolver=finish;socket.send(JSON.stringify({type:"stop"}));setTimeout(finish,60000);});socket.close();}
 async function switchProcessingMode(next){if(!activeCallId||next===selectedProcessingMode)return;const previous=selectedProcessingMode;transcriptionSwitching=true;stopBrowserStreamingPartials();renderProcessingMode();$("processingModeStatus").textContent=`Finishing buffered ${previous} audio…`;try{await requestPipelineStop();await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:next})});selectedProcessingMode=next;renderProcessingMode();await openTranscriptionPipeline(activeCallId,next);}catch(error){selectedProcessingMode="baseline";renderProcessingMode();$("processingModeStatus").textContent=`${next} failed. Returning to baseline.`;try{await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:"baseline"})});await openTranscriptionPipeline(activeCallId,"baseline");}catch(fallbackError){transcriptionSwitching=false;renderProcessingMode();$("processingModeStatus").textContent=`Transcription logging unavailable: ${fallbackError.message||error.message}`;$("transcriptionStatus").textContent="Call audio is still connected; logging is unavailable.";}}}
 async function handleProcessingFailure(error){if(transcriptionSwitching||!activeCallId)return;$("processingModeStatus").textContent=error.message;if(selectedProcessingMode!=="baseline")await switchProcessingMode("baseline");}
-function startBrowserStreamingPartials(mode){stopBrowserStreamingPartials();if(mode!=="streaming")return;const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition)return;const recognition=new Recognition();recognition.continuous=true;recognition.interimResults=true;if("processLocally" in recognition)recognition.processLocally=true;recognition.onresult=event=>{let partial="";for(let i=event.resultIndex;i<event.results.length;i++)if(!event.results[i].isFinal)partial+=event.results[i][0]?.transcript||"";$("partialTranscript").textContent=partial?`Partial: ${partial.trim()}`:"";$("partialTranscript").classList.toggle("hidden",!partial.trim());};browserSpeechRecognition=recognition;try{recognition.start();}catch(_){}}
-function stopBrowserStreamingPartials(){const recognition=browserSpeechRecognition;browserSpeechRecognition=null;try{recognition?.stop();}catch(_){}$("partialTranscript")?.classList.add("hidden");}
+function startBrowserStreamingPartials(mode){stopBrowserStreamingPartials();if(mode!=="streaming")return;const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition)return;const recognition=new Recognition();recognition.continuous=true;recognition.interimResults=true;if("processLocally" in recognition)recognition.processLocally=true;recognition.onresult=event=>{let partial="";for(let i=event.resultIndex;i<event.results.length;i++)if(!event.results[i].isFinal)partial+=event.results[i][0]?.transcript||"";partial=partial.trim();$("partialTranscript").textContent=partial?`Partial · ${partial}`:"";$("partialTranscript").classList.toggle("hidden",!partial);callExperience?.onPartial(partial);};browserSpeechRecognition=recognition;try{recognition.start();}catch(_){}}
+function stopBrowserStreamingPartials(){const recognition=browserSpeechRecognition;browserSpeechRecognition=null;try{recognition?.stop();}catch(_){}$("partialTranscript")?.classList.add("hidden");callExperience?.onPartial("");}
 function showProcessingDiagnostics(metrics){if(!metrics||!processingModesEnabled)return;const panel=$("processingDiagnostics");panel.classList.toggle("hidden",!(location.hostname==="localhost"||location.hostname==="127.0.0.1"));panel.textContent=`method=${metrics.method}\ncapture continuity=${Math.round((metrics.audioCaptureContinuity||0)*100)}%\nrecognition=${metrics.speechRecognitionLatencyMs}ms\ntranslation=n/a (logging only)\nend-to-end=${metrics.endToEndLatencyMs}ms\naccuracy=${metrics.transcriptionAccuracy??"n/a (no reference transcript)"}\ncpu=${metrics.cpuSeconds}s\nmax rss=${metrics.memoryMaxRss} ${metrics.memoryMaxRssUnit}\napi calls=${metrics.apiCalls}\nestimated cost=${metrics.estimatedCostUsd??"n/a (rate not configured)"}`;console.debug("[FiniSpeak processing diagnostics]",metrics);}
 
 function languageRouteKey(callId, language) {
@@ -2395,8 +2439,18 @@ function renderTranscript(rows) {
         const language = document.createElement("span"); language.className = "transcript-language";
         const confidence = normalizeLanguageConfidence(row.languageConfidence);
         language.textContent = row.language ? `${detectedLanguageLabel(row.language)}${confidence === null ? "" : ` · ${Math.round(confidence * 100)}%`}` : "Language pending";
+        const state = document.createElement("span"); state.className = "transcript-state"; state.textContent = row.isFinal === false ? "Partial" : "Final";
         const text = document.createElement("p"); text.className = "transcript-text"; text.textContent = row.text || "";
-        speaker.append(name, role, language); item.append(speaker, text); list.appendChild(item);
+        const viewerLanguage = callExperience?.viewerLanguage?.() || "en";
+        const translated = row.translations?.[viewerLanguage]?.text || "";
+        const source = String(row.language || "").toLowerCase();
+        const status = document.createElement("span"); status.className = "transcript-status";
+        if (translated && translated !== row.text) { status.textContent = "Translated"; }
+        else if (source && source !== viewerLanguage) { status.className += " is-pending"; status.textContent = "Translating…"; callExperience?.ensureTranslation(row); }
+        else status.textContent = "Original";
+        speaker.append(name, role, language, state, status); item.append(speaker, text);
+        if (translated && translated !== row.text) { const translation = document.createElement("p"); translation.className = "transcript-translation"; translation.textContent = translated; item.append(translation); }
+        list.appendChild(item);
     }
     list.scrollTop = list.scrollHeight;
 }
@@ -2439,6 +2493,8 @@ function formatTranscriptRole(role) {
     if (role === "caller") return "Customer 1";
     if (role === "receiver") return "Customer 2";
     if (role === "translator") return "Translator";
+    if (role === "guest") return "Guest";
+    if (role === "ai") return "AI interpreter";
     return role || "Participant";
 }
 
@@ -2475,8 +2531,31 @@ async function requestTranslator(event) {
         submit.disabled = selectedRequestLanguages.size === 0;
     }
 }
-function toggleMute() { const t = localStream?.getAudioTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("muteButton").textContent = t.enabled ? "Mute" : "Unmute"; $("muteButton").setAttribute("aria-pressed", String(!t.enabled)); }
-function toggleCamera() { const t = localStream?.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("cameraButton").textContent = t.enabled ? "Camera Off" : "Camera On"; $("cameraButton").setAttribute("aria-pressed", String(!t.enabled)); }
+function setToolLabel(id, label, pressed, title) {
+    const button = $(id);
+    if (!button) return;
+    button.setAttribute("aria-pressed", String(pressed));
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    const text = button.querySelector(".tool-label");
+    if (text) text.textContent = label;
+}
+function toggleMute() {
+    const t = localStream?.getAudioTracks()[0];
+    if (!t) return;
+    t.enabled = !t.enabled;
+    setToolLabel("muteButton", t.enabled ? "Mute" : "Unmute", !t.enabled, t.enabled ? "Mute microphone" : "Unmute microphone");
+    callExperience?.persistPresence()?.catch(error => console.warn(error));
+}
+async function toggleCamera() {
+    if (callExperience?.isAvatar?.()) { await callExperience.activateCamera(); return; }
+    const t = localStream?.getVideoTracks()[0];
+    if (!t) return;
+    t.enabled = !t.enabled;
+    setToolLabel("cameraButton", t.enabled ? "Camera" : "Camera off", !t.enabled, t.enabled ? "Turn camera off" : "Turn camera on");
+    callExperience?.markCamera?.(t.enabled);
+    callExperience?.persistPresence()?.catch(error => console.warn(error));
+}
 async function endCall() {
     if (activeCallId) {
         await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/state`, {
@@ -2497,6 +2576,7 @@ function cleanupCall(stopMedia = true) {
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
     document.querySelectorAll("[data-peer]").forEach(e => e.remove());
     if (stopMedia && localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; $("localVideo").srcObject = null; }
+    callExperience?.cleanup();
     activeCallId = null; currentCallRole = null;
     activeTranslatorConnected = false;
     if (endingCallId) for (const key of [...routedLanguageCalls]) if (key.startsWith(`${endingCallId}:`)) routedLanguageCalls.delete(key);
@@ -2549,6 +2629,20 @@ function startDashboardListeners() {
           ? rows[0]
           : rows.filter(call => call.receiverId === currentUser.uid && call.status === "ringing").sort((a,b) => callMillis(b) - callMillis(a))[0];
         if (!pending || activeCallId) {
+                if (!activeCallId) {
+                    try {
+                        const invite = ((await apiFetch("/api/calls/invitations")).calls || [])[0];
+                        if (invite) {
+                            pendingIncomingCall = { ...invite, kind: "invite" };
+                            $("incomingCallEyebrow").textContent = "Call invitation";
+                            $("incomingCallTitle").textContent = `${invite.callerName || "Someone"} invited you`;
+                            $("incomingCallDetails").textContent = "Accept to join this FiniSpeak call. Everyone already connected stays on the call.";
+                            $("acceptIncomingCall").textContent = "Join call";
+                            openModal("incomingCallModal");
+                            return;
+                        }
+                    } catch (error) { console.warn("Call invitations unavailable", error); }
+                }
                 clearPendingIncomingCall();
                 return;
             }
@@ -2581,7 +2675,11 @@ async function acceptIncomingCall() {
     pendingIncomingCall = null;
     closeModal("incomingCallModal");
     try {
-        if (pending.kind === "customer") {
+        if (pending.kind === "invite") {
+            await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/experience`, {
+                method: "POST", body: JSON.stringify({ action: "accept-invite" })
+            });
+        } else if (pending.kind === "customer") {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
                 method: "PATCH", body: JSON.stringify({ state: "connected" })
             });
@@ -2598,7 +2696,11 @@ async function declineIncomingCall() {
     pendingIncomingCall = null;
     closeModal("incomingCallModal");
     try {
-        if (pending.kind === "customer") {
+        if (pending.kind === "invite") {
+            await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/experience`, {
+                method: "POST", body: JSON.stringify({ action: "decline-invite" })
+            });
+        } else if (pending.kind === "customer") {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
                 method: "PATCH", body: JSON.stringify({ state: "declined" })
             });

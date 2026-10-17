@@ -12,6 +12,7 @@ from extensions import db
 from models.sql_models import SqlSignalingEvent
 from repositories.provider import get_repository
 from services.auth_service import authenticate_request
+from services.call_access import participant_ids
 
 
 ALLOWED_EVENTS = {"offer", "answer", "ice", "hangup", "reconnect"}
@@ -21,7 +22,7 @@ def _now(): return datetime.now(timezone.utc)
 
 
 def _participants(call):
-    return {value for value in (call.get("callerId"), call.get("receiverId"), call.get("translatorId")) if value}
+    return participant_ids(call)
 
 
 def _send(ws, payload):
@@ -45,6 +46,9 @@ def _store_event(call_id, sender_id, participants, message):
     client_id = str(message.get("clientEventId") or uuid.uuid4().hex).strip()
     payload = message.get("payload") or {}
     if event_type not in ALLOWED_EVENTS: raise ValueError("Unsupported signaling event.")
+    if recipient not in participants:
+        refreshed = get_repository("calls").get(call_id)
+        participants = _participants(refreshed)
     if recipient not in participants or recipient == sender_id: raise PermissionError("Invalid signaling recipient.")
     if not isinstance(payload, dict) or len(json.dumps(payload)) > 65536: raise ValueError("Invalid signaling payload.")
     if not client_id or len(client_id) > 64: raise ValueError("Invalid client event ID.")

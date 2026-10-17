@@ -2,6 +2,7 @@ from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
+from services.call_access import is_call_participant
 
 SessionModel = repository_proxy("sessions")
 
@@ -35,7 +36,7 @@ def update_state(session_id):
     session = SessionModel.get(session_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
-    if identity.get("role") != "admin" and identity["uid"] not in {session.get("callerId"), session.get("receiverId"), session.get("translatorId")}:
+    if identity.get("role") != "admin" and not is_call_participant(session, identity["uid"]):
         return jsonify({"error": "You are not a participant in this session."}), 403
     try:
         updated = SessionModel.update_state(session_id, json_body().get("state"))
@@ -51,7 +52,7 @@ def participants(session_id):
     session = SessionModel.get(session_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
-    if identity.get("role") != "admin" and identity["uid"] not in {session.get("callerId"), session.get("receiverId"), session.get("translatorId")}:
+    if identity.get("role") != "admin" and not is_call_participant(session, identity["uid"]):
         return jsonify({"error": "You are not a participant in this session."}), 403
     if request.method == "GET":
         return jsonify({"participants": SessionModel.participants(session_id)})

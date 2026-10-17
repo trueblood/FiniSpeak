@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}">
 </head>
 <body>
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -360,45 +361,148 @@
     </section>
 
     <section id="callView" class="call-view hidden">
-        <div class="call-topbar">
-            <div><span class="eyebrow">FiniSpeak live call</span><h2 id="callTitle">Connecting…</h2><p>Call ID: <code id="callIdLabel"></code></p></div>
-            <button id="copyCallId" class="secondary" type="button">Copy Call ID</button>
-        </div>
-        <div id="videoGrid" class="video-grid">
-            <article class="video-card local" data-role="local"><video id="localVideo" autoplay muted playsinline aria-label="Your camera preview"></video><div class="video-label video-label-local"><span class="video-role">You</span></div></article>
-        </div>
-        <div class="call-controls">
-            <button id="muteButton" class="secondary" type="button" aria-pressed="false">Mute</button>
-            <button id="cameraButton" class="secondary" type="button" aria-pressed="false">Camera Off</button>
-            <button id="requestTranslatorButton" type="button">Request Translator</button>
-            <button id="endCallButton" class="danger" type="button">End Call</button>
-        </div>
-        <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle"><div><span class="eyebrow">Tester controls</span><h3 id="processingModeTitle">Transcription logging method</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Streaming</button></div><p>Active method: <strong data-active-processing-label>Baseline</strong></p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
-        <p id="callStatus" class="status centered" role="status" aria-live="polite"></p>
-        <section id="interpreterMatches" class="interpreter-matches hidden" aria-live="polite">
-            <div class="interpreter-matches-heading"><div><span class="eyebrow">Available now</span><h3>Interpreter matches</h3></div><span id="interpreterMatchSummary"></span></div>
-            <div id="interpreterMatchList" class="interpreter-match-list"></div>
-        </section>
-        <section class="transcript-card" aria-live="polite">
-            <div class="transcript-header">
-                <div><span class="eyebrow">Live captions</span><h3>Call transcript</h3></div>
-                <div class="transcript-indicators">
-                    <div id="detectedLanguageCard" class="language-detection pending" role="status">
-                        <span class="language-detection-label">Detected language</span>
-                        <strong id="detectedLanguageValue">Listening…</strong>
-                        <span id="detectedLanguageConfidence">Waiting for enough speech</span>
+        <div id="callShell" class="call-shell subs-both" data-pane="video">
+            <div class="call-frame">
+                <header class="call-nav">
+                    <div class="call-nav-brand"><span class="brand-mark" aria-hidden="true">F</span><div><span class="eyebrow">FiniSpeak live call</span><h2 id="callTitle">Connecting…</h2></div></div>
+                    <div class="call-nav-meta">
+                        <span id="callDuration" class="call-pill">00:00</span>
+                        <span id="callConnection" class="call-pill">Connecting</span>
+                        <span id="translationIndicator" class="call-pill">Translation ready</span>
+                        <p>Call ID: <code id="callIdLabel"></code></p>
+                        <button id="copyCallId" class="secondary" type="button">Copy Call ID</button>
                     </div>
-                    <span id="transcriptionStatus" class="transcription-status">Starting…</span>
+                    <div class="call-nav-options">
+                        <label>Subtitles
+                            <select id="subtitleMode" aria-label="Subtitle display">
+                                <option value="both">Both</option>
+                                <option value="floating">Floating Subtitles</option>
+                                <option value="transcript">Transcript Panel</option>
+                                <option value="hidden">Hidden</option>
+                            </select>
+                        </label>
+                        <label>My subtitles
+                            <select id="viewerLanguage" aria-label="Subtitle language"></select>
+                        </label>
+                    </div>
+                </header>
+                <div class="call-stage">
+                    <aside id="aiPanel" class="ai-panel" aria-label="AI communication">
+                        <section class="transcript-card" aria-live="polite">
+                            <div class="transcript-header">
+                                <div><span class="eyebrow">Live transcript</span><h3>Conversation</h3></div>
+                                <div class="transcript-indicators">
+                                    <div id="detectedLanguageCard" class="language-detection pending" role="status">
+                                        <span class="language-detection-label">Detected language</span>
+                                        <strong id="detectedLanguageValue">Listening…</strong>
+                                        <span id="detectedLanguageConfidence">Waiting for enough speech</span>
+                                    </div>
+                                    <span id="transcriptionStatus" class="transcription-status">Starting…</span>
+                                    <button id="collapseTranscript" class="secondary" type="button" aria-expanded="true" title="Collapse transcript panel">Collapse</button>
+                                </div>
+                            </div>
+                            <div id="languageConfirmation" class="language-confirmation hidden">
+                                <label for="confirmedLanguage">Is this the right language? Confirm it or choose the correct one. Your conversation and interpreter matching will continue while you decide.</label>
+                                <div><select id="confirmedLanguage"><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="ar">Arabic</option><option value="zh">Mandarin Chinese</option><option value="vi">Vietnamese</option><option value="so">Somali</option><option value="pt">Portuguese</option><option value="hi">Hindi</option></select><button id="confirmDetectedLanguage" type="button">Confirm language</button></div>
+                            </div>
+                            <div id="transcriptList" class="transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live call transcript"><p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p></div>
+                            <p id="partialTranscript" class="partial-transcript hidden" role="status" aria-live="polite"></p>
+                            <p class="transcript-note">Only finalized text is saved to FiniSpeak. Raw microphone audio is not stored. Partial captions stay on this device.</p>
+                        </section>
+                        <section class="interpreter-card" aria-label="Smart AI interpreter">
+                            <div class="interpreter-heading"><div><span class="eyebrow">Smart AI interpreter</span><h3 id="interpreterStateTitle">Not in the call</h3></div><span id="interpreterStatus" class="call-pill">Idle</span></div>
+                            <div class="interpreter-body">
+                                <canvas id="interpreterAvatar" width="180" height="180" aria-hidden="true"></canvas>
+                                <div class="interpreter-copy">
+                                    <p id="interpreterLanguages">Invite an AI interpreter to speak translations in the call. The participant is labeled AI for everyone.</p>
+                                    <canvas id="interpreterWave" class="interpreter-wave" width="360" height="72" aria-hidden="true"></canvas>
+                                    <div class="interpreter-actions">
+                                        <button id="interpreterPause" class="secondary" type="button" disabled aria-pressed="false">Pause interpreter</button>
+                                        <button id="removeAiInterpreter" class="secondary" type="button" disabled>Remove interpreter</button>
+                                        <button id="requestTranslatorButton" type="button">Request Translator</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle"><div><span class="eyebrow">Translation mode</span><h3 id="processingModeTitle">Translation mode</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent Audio Processing</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Real-Time Streaming</button></div><p>Active method: <strong data-active-processing-label>Baseline</strong>. Select a mode again to return to baseline.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
+                        </section>
+                        <section id="interpreterMatches" class="interpreter-matches hidden" aria-live="polite">
+                            <div class="interpreter-matches-heading"><div><span class="eyebrow">Available now</span><h3>Interpreter matches</h3></div><span id="interpreterMatchSummary"></span></div>
+                            <div id="interpreterMatchList" class="interpreter-match-list"></div>
+                        </section>
+                        <section class="summary-card" aria-label="AI summary">
+                            <div class="summary-heading"><div><span class="eyebrow">AI summary</span><h3>Key points and actions</h3></div><div class="summary-actions"><button id="summarizeButton" class="secondary" type="button">Summarize</button><button id="copySummary" class="secondary" type="button">Copy</button><button id="saveSummary" type="button">Save</button></div></div>
+                            <label class="summary-consent"><input id="summaryConsent" type="checkbox"> Save this summary with the call when I click Save</label>
+                            <p id="summaryText" class="summary-empty">Summarize the finalized conversation to see key points. Nothing is stored until you confirm Save.</p>
+                            <ul id="summaryPoints" class="summary-list"></ul>
+                            <ul id="summaryActions" class="summary-list"></ul>
+                            <p id="summaryStatus" class="summary-status" role="status"></p>
+                        </section>
+                    </aside>
+                    <section class="video-stage" aria-label="Active video">
+                        <div id="videoGrid" class="video-grid">
+                            <article class="video-card local is-stage" data-role="local">
+                                <video id="localVideo" autoplay muted playsinline aria-label="Your camera preview"></video>
+                                <canvas id="localAvatarCanvas" class="avatar-canvas is-hidden" aria-hidden="true"></canvas>
+                                <div class="video-slate" id="localVideoSlate"><strong id="localParticipantName">You</strong><span id="localMediaLabel">Camera</span></div>
+                                <span class="speaking-indicator" id="localSpeaking" aria-hidden="true"></span>
+                                <div class="video-label video-label-local"><span class="video-role">You</span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name" id="localVideoName">You</span><span class="connection-pill" id="localConnection">Connecting</span></div>
+                                <p class="tile-subtitle" id="localSubtitle" hidden></p>
+                            </article>
+                        </div>
+                        <div id="videoFilmstrip" class="video-filmstrip" hidden></div>
+                    </section>
+                    <aside id="documentsPanel" class="documents-panel" hidden aria-label="Collaborative documents">
+                        <div class="documents-heading"><div><span class="eyebrow">Documents</span><h3>Collaborative translation</h3></div><button id="closeDocuments" class="secondary" type="button">Close</button></div>
+                        <div class="documents-layout">
+                            <div class="documents-list">
+                                <button id="uploadDocument" type="button">Upload document</button>
+                                <input id="documentFile" type="file" accept=".txt,.md,.csv,.text,.json,text/plain" hidden>
+                                <ul id="documentList"></ul>
+                            </div>
+                            <div class="documents-editor">
+                                <label>Title<input id="documentTitle" maxlength="160"></label>
+                                <div class="document-languages">
+                                    <label>Original<select id="documentSourceLang"></select></label>
+                                    <label>Translation<select id="documentTargetLang"></select></label>
+                                    <button id="translateDocument" class="secondary" type="button">Translate</button>
+                                </div>
+                                <div class="document-panes">
+                                    <label>Original<textarea id="documentOriginal" rows="8"></textarea></label>
+                                    <label>Translated<textarea id="documentTranslated" rows="8"></textarea></label>
+                                </div>
+                                <div class="document-tools">
+                                    <button id="explainSelection" class="secondary" type="button">Explain selection</button>
+                                    <label>Permission<select id="documentPermission"><option value="edit">Participants can edit</option><option value="view">View only</option></select></label>
+                                </div>
+                                <p id="termExplanation" class="term-explanation" role="status"></p>
+                                <form id="collaboratorForm"><label>Invite collaborator<input id="collaboratorEmail" type="email" autocomplete="email" placeholder="name@example.com"></label><button class="secondary" type="submit">Invite</button></form>
+                                <ul id="collaboratorList"></ul>
+                                <div class="document-history"><h4>Version history</h4><ul id="documentVersions"></ul></div>
+                                <p id="documentStatus" class="summary-status" role="status"></p>
+                            </div>
+                        </div>
+                    </aside>
                 </div>
+                <p id="callStatus" class="status call-status-line" role="status" aria-live="polite"></p>
+                <div class="call-controls floating-controls" role="toolbar" aria-label="Call controls">
+                    <button id="muteButton" class="secondary" type="button" aria-pressed="false" title="Mute microphone" aria-label="Mute microphone"><span class="tool-label">Mute</span></button>
+                    <button id="cameraButton" class="secondary" type="button" aria-pressed="false" title="Turn camera off" aria-label="Turn camera off"><span class="tool-label">Camera</span></button>
+                    <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
+                    <button id="inviteAiButton" class="secondary" type="button" title="Invite AI interpreter" aria-label="Invite AI interpreter">AI interpreter</button>
+                    <button id="inviteParticipantButton" class="secondary" type="button" title="Invite participant" aria-label="Invite participant">Invite</button>
+                    <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
+                    <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
+                    <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
+                    <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>
+                </div>
+                <button id="expandTranscript" class="secondary expand-transcript" type="button" hidden>Show transcript</button>
+                <nav class="call-mobile-switch" aria-label="Call sections">
+                    <button type="button" data-call-pane="video" aria-pressed="true">Video</button>
+                    <button type="button" data-call-pane="interpreter" aria-pressed="false">Interpreter</button>
+                    <button type="button" data-call-pane="documents" aria-pressed="false">Documents</button>
+                </nav>
             </div>
-            <div id="languageConfirmation" class="language-confirmation hidden">
-                <label for="confirmedLanguage">Is this the right language? Confirm it or choose the correct one. Your conversation and interpreter matching will continue while you decide.</label>
-                <div><select id="confirmedLanguage"><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="ar">Arabic</option><option value="zh">Mandarin Chinese</option><option value="vi">Vietnamese</option><option value="so">Somali</option><option value="pt">Portuguese</option><option value="hi">Hindi</option></select><button id="confirmDetectedLanguage" type="button">Confirm language</button></div>
-            </div>
-            <div id="transcriptList" class="transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live call transcript"><p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p></div>
-            <p id="partialTranscript" class="partial-transcript hidden" role="status" aria-live="polite"></p>
-            <p class="transcript-note">Only finalized text is saved to FiniSpeak. Raw microphone audio is not stored.</p>
-        </section>
+        </div>
     </section>
 </main>
     <div id="incomingCallModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="incomingCallTitle" aria-describedby="incomingCallDetails">
@@ -464,6 +568,39 @@
                 <label for="reviewText">Comments<textarea id="reviewText" rows="4" maxlength="1000" placeholder="Share useful, respectful feedback about the interpretation."></textarea></label>
                 <button id="submitReview" type="submit">Submit review</button>
                 <p id="reviewStatus" class="status" role="status" aria-live="polite"></p>
+            </form>
+        </div>
+    </div>
+
+    <div id="avatarStudioModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="avatarStudioTitle">
+        <div class="modal-card avatar-studio-card">
+            <div class="transcript-header"><div><span class="eyebrow">Avatar Studio</span><h2 id="avatarStudioTitle">Choose how you appear</h2></div><button id="closeAvatarStudio" class="secondary" type="button">Close</button></div>
+            <p>Live Camera sends your video. My Avatar stops the camera and sends an animated avatar in the same video tile. Mouth movement follows your microphone.</p>
+            <button id="useLiveCamera" type="button">Live Camera</button>
+            <div id="avatarStudioGrid" class="avatar-grid"></div>
+        </div>
+    </div>
+
+    <div id="aiInterpreterModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="aiInterpreterTitle">
+        <div class="modal-card avatar-studio-card">
+            <div class="transcript-header"><div><span class="eyebrow">AI participant</span><h2 id="aiInterpreterTitle">Invite AI interpreter</h2></div><button id="closeAiInterpreter" class="secondary" type="button">Close</button></div>
+            <p>The interpreter joins this call as an AI participant, with its own avatar tile and translated captions.</p>
+            <div id="aiAvatarGrid" class="avatar-grid"></div>
+            <label>Source language<select id="aiSourceLang"></select></label>
+            <label>Target language<select id="aiTargetLang"></select></label>
+            <label>AI voice<select id="aiVoice"></select></label>
+            <div class="actions"><button id="cancelAiInterpreter" class="secondary" type="button">Cancel</button><button id="confirmAiInterpreter" type="button">Add to call</button></div>
+            <p id="aiInterpreterStatus" class="status" role="status"></p>
+        </div>
+    </div>
+
+    <div id="inviteParticipantModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="inviteParticipantTitle">
+        <div class="modal-card">
+            <div class="transcript-header"><div><span class="eyebrow">People</span><h2 id="inviteParticipantTitle">Invite a participant</h2></div><button id="closeInviteParticipant" class="secondary" type="button">Close</button></div>
+            <form id="inviteParticipantForm">
+                <label>FiniSpeak email<input id="inviteEmail" type="email" autocomplete="email" required placeholder="name@example.com"></label>
+                <p id="inviteStatus" class="status" role="status"></p>
+                <div class="actions"><button id="cancelInviteParticipant" class="secondary" type="button">Cancel</button><button type="submit">Send invite</button></div>
             </form>
         </div>
     </div>

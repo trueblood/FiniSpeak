@@ -17,6 +17,7 @@ from models.sql_models import (
     SqlReferenceSpecialty, SqlReview, SqlTranscript, SqlTranslator, SqlTransactionalOutbox, SqlUser,
 )
 from repositories.normalization import canonicalize_phone, normalize_email, normalize_phone
+from services.call_access import is_call_participant
 from services.geo_service import haversine_miles, validate_coordinates
 
 
@@ -441,7 +442,7 @@ class MySqlCallRepository:
     def __init__(self, session): self.session = session
 
     @staticmethod
-    def is_participant(call, uid): return uid in {call.get("callerId"), call.get("receiverId"), call.get("translatorId")}
+    def is_participant(call, uid): return is_call_participant(call, uid)
 
     def all(self):
         return [_document(row, CALL_FIELDS)
@@ -480,7 +481,38 @@ class MySqlCallRepository:
 
     def for_user(self, uid):
         rows = self.session.scalars(select(SqlCall).where(or_(SqlCall.caller_id == uid, SqlCall.receiver_id == uid, SqlCall.translator_id == uid)).order_by(SqlCall.created_at.desc())).all()
-        return [_document(row, CALL_FIELDS) for row in rows]
+        calls = [_document(row, CALL_FIELDS) for row in rows]
+        known = {call.get("id") for call in calls}
+        for row in self.session.scalars(select(SqlCall).order_by(SqlCall.created_at.desc()).limit(300)).all():
+            call = _document(row, CALL_FIELDS)
+            if call.get("id") in known or uid not in (call.get("guestIds") or []):
+                continue
+            calls.append(call)
+            known.add(call.get("id"))
+        return calls
+
+    def pending_invitations(self, uid):
+        rows = self.session.scalars(select(SqlCall).where(SqlCall.status.in_(["ringing", "connected", "active"]))).all()
+        invited = []
+        for row in rows:
+            call = _document(row, CALL_FIELDS)
+            invitations = call.get("invitations") or []
+            if any(isinstance(item, dict) and item.get("inviteeId") == uid and item.get("status") == "pending" for item in invitations):
+                invited.append(call)
+        return invited
+
+    def patch_experience(self, call_id, uid, changes, allow_pending_invitee=False):
+        row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
+        if not row:
+            return None
+        call = _document(row, CALL_FIELDS)
+        pending = any(isinstance(item, dict) and item.get("inviteeId") == uid and item.get("status") == "pending" for item in (call.get("invitations") or []))
+        if not self.is_participant(call, uid) and not (allow_pending_invitee and pending):
+            self.session.rollback()
+            raise PermissionError("You are not a participant in this call.")
+        _touch(row, {**changes, "updatedAt": _now()}, CALL_FIELDS)
+        _commit(self.session)
+        return _document(row, CALL_FIELDS)
 
     def transition(self, call_id, next_state):
         row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
@@ -554,6 +586,28 @@ class MySqlParticipantRepository:
                                  uid=uid, role=role, display_name=display_name, joined_at=now); self.session.add(row)
         _commit(self.session); return {"id": uid, **data}
 
+    def update_presence(self, call_id, uid, role, display_name, changes):
+        allowed = {}
+        if changes.get("mediaMode") in {"camera", "avatar"}:
+            allowed["mediaMode"] = changes["mediaMode"]
+        if changes.get("avatarId"):
+            allowed["avatarId"] = str(changes["avatarId"])[:40]
+        if "microphoneEnabled" in changes:
+            allowed["microphoneEnabled"] = bool(changes["microphoneEnabled"])
+        if "cameraEnabled" in changes:
+            allowed["cameraEnabled"] = bool(changes["cameraEnabled"])
+        if not allowed:
+            raise ValueError("No presence changes were provided.")
+        row = self.session.get(SqlParticipant, (call_id, uid))
+        if not row:
+            self.add(call_id, uid, role or "guest", display_name)
+            row = self.session.get(SqlParticipant, (call_id, uid))
+        if not row:
+            return None
+        _touch(row, allowed, PARTICIPANT_FIELDS)
+        _commit(self.session)
+        return _document(row, PARTICIPANT_FIELDS)
+
 
 class MySqlSessionRepository:
     """Compatibility facade for the existing /api/sessions contract."""
@@ -626,6 +680,17 @@ class MySqlTranscriptRepository:
                 raise
             return _document(winner, TRANSCRIPT_FIELDS)
         return {"id": transcript_id, **values}
+
+    def annotate_translation(self, call_id, transcript_id, target, text, status):
+        row = self.session.get(SqlTranscript, (call_id, transcript_id))
+        if not row:
+            return None
+        current = _document(row, TRANSCRIPT_FIELDS)
+        translations = dict(current.get("translations") or {})
+        translations[str(target)] = {"text": text, "status": status}
+        _touch(row, {"translations": translations}, TRANSCRIPT_FIELDS)
+        _commit(self.session)
+        return _document(row, TRANSCRIPT_FIELDS)
 
 
 class MySqlReviewRepository:

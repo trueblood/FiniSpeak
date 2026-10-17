@@ -2,6 +2,7 @@ from flask import jsonify
 
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
+from services.call_access import is_call_participant
 
 CallModel = repository_proxy("calls")
 SessionModel = repository_proxy("sessions")
@@ -48,7 +49,7 @@ def recommend():
     call_id = data.get("callId")
     if call_id:
         session = SessionModel.get(call_id)
-        if not session or (identity.get("role") != "admin" and identity["uid"] not in {session.get("callerId"), session.get("receiverId"), session.get("translatorId")}):
+        if not session or (identity.get("role") != "admin" and not is_call_participant(session, identity["uid"])):
             return jsonify({"error": "Session not found or access denied"}), 403
     search_args = {"language": languages[0]} if len(languages) == 1 else {"languages": languages}
     profiles = TranslatorModel.search(**search_args, specialty=data.get("specialty"), available_now=True)
