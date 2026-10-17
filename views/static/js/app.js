@@ -2474,6 +2474,7 @@ function updateDetectedLanguage(language, confidence, confirmed = false) {
     $("languageConfirmation").className = `language-confirmation${lowConfidence ? " low" : ""}${languageConfirmationPending ? "" : " hidden"}`;
     const code = String(language || "").toLowerCase();
     if (detectedLanguageNames[code]) $("confirmedLanguage").value = code;
+    callExperience?.noteLanguages?.();
     $("requestTranslatorButton").disabled = activeTranslatorConnected;
     if (!activeTranslatorConnected) $("requestTranslatorButton").title = "";
 }

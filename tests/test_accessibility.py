@@ -54,6 +54,11 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="muteButton" class="secondary" type="button" aria-pressed="false"', self.html)
         self.assertIn('id="cameraButton" class="secondary" type="button" aria-pressed="false"', self.html)
 
+    def test_call_stage_keeps_interpreter_and_participant_grid(self):
+        self.assertIn('id="smartInterpreter" class="smart-interpreter" aria-label="Smart Interpreter"', self.html)
+        self.assertIn('id="participantGrid" class="participant-grid" hidden', self.html)
+        self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
+
     def test_transcripts_are_named_logs(self):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
         self.assertIn('id="historyTranscriptList" class="transcript-list history-transcript-list" role="log"', self.html)

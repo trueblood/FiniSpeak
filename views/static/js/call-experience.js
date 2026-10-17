@@ -96,6 +96,7 @@ export function createCallExperience(deps) {
             state.translationRequests.clear();
             updateSubtitles(state.rows);
             deps.renderTranscript?.(state.rows);
+            refreshInterpreterLanguages();
         };
         deps.$("collapseTranscript").onclick = () => setTranscriptCollapsed(true);
         deps.$("expandTranscript").onclick = () => setTranscriptCollapsed(false);
@@ -116,6 +117,7 @@ export function createCallExperience(deps) {
             button.onclick = () => setPane(button.dataset.callPane);
         });
         window.addEventListener("resize", resizeCanvases);
+        refreshInterpreterLanguages();
         startLoop();
     }
 
@@ -136,6 +138,8 @@ export function createCallExperience(deps) {
         const interpreter = call?.aiInterpreter;
         document.querySelector('.video-card[data-role="ai"]')?.remove();
         deps.$("translationIndicator").textContent = "Translation ready";
+        setInterpreterActivity("ready");
+        refreshInterpreterLanguages();
         if (interpreter) state.call = { ...call, aiInterpreter: null };
         applyParticipantPresence(participants || []);
         renderDocuments(call?.documents || []);
@@ -190,6 +194,7 @@ export function createCallExperience(deps) {
             partial.classList.toggle("hidden", !state.partial);
         }
         updateSubtitles(state.rows);
+        setInterpreterActivity(state.partial ? "hearing" : "listening");
     }
 
     function viewerLanguage() { return state.viewerLanguage; }
@@ -509,6 +514,7 @@ export function createCallExperience(deps) {
         const cards = [...document.querySelectorAll("#callView .video-card")];
         const stage = deps.$("videoGrid");
         const film = deps.$("videoFilmstrip");
+        const grid = deps.$("participantGrid");
         if (!stage || !film || !cards.length) return;
         const speaking = cards.find(card => card.classList.contains("is-speaking") && card.dataset.role !== "local");
         const active = speaking || cards.find(card => card.dataset.role !== "local") || cards[0];
@@ -516,7 +522,31 @@ export function createCallExperience(deps) {
             card.classList.toggle("is-stage", card === active);
             (card === active ? stage : film).appendChild(card);
         }
-        film.hidden = cards.length < 2;
+        if (grid) grid.hidden = cards.length < 2;
+        else film.hidden = cards.length < 2;
+        if (deps.$("participantCount")) deps.$("participantCount").textContent = String(cards.length);
+    }
+
+    function setInterpreterActivity(mode) {
+        const panel = deps.$("smartInterpreter");
+        const status = deps.$("smartInterpreterStatus");
+        const labels = {
+            listening: "Listening for speech",
+            hearing: "Hearing speech",
+            translating: "Translating the latest line",
+            ready: "Translation ready"
+        };
+        if (status) status.textContent = labels[mode] || labels.listening;
+        panel?.classList.toggle("is-working", mode === "hearing" || mode === "translating");
+        const pill = mode === "translating" ? "Translating" : mode === "hearing" ? "Hearing speech" : "Translation ready";
+        if (deps.$("translationIndicator")) deps.$("translationIndicator").textContent = pill;
+    }
+
+    function refreshInterpreterLanguages() {
+        const source = deps.$("detectedLanguageValue")?.textContent?.trim() || "Detecting";
+        const target = deps.$("viewerLanguage")?.selectedOptions?.[0]?.textContent?.trim() || "Your subtitles";
+        if (deps.$("smartSourceLanguage")) deps.$("smartSourceLanguage").textContent = source === "Listening…" ? "Detecting" : source;
+        if (deps.$("smartTargetLanguage")) deps.$("smartTargetLanguage").textContent = target;
     }
 
     function maybeSpeak() {}
@@ -528,13 +558,17 @@ export function createCallExperience(deps) {
             const key = `${transcriptId}:${target}`;
             if (state.translationRequests.has(key)) continue;
             state.translationRequests.add(key);
+            setInterpreterActivity("translating");
+            refreshInterpreterLanguages();
             try {
                 await deps.apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts/${encodeURIComponent(transcriptId)}/translation`, {
                     method: "POST",
                     body: JSON.stringify({ targetLanguage: target, sourceLanguage: source })
                 });
+                setInterpreterActivity("ready");
             } catch (error) {
                 state.translationRequests.delete(key);
+                setInterpreterActivity("listening");
                 console.warn("Translation unavailable", error);
             }
         }
@@ -846,6 +880,13 @@ export function createCallExperience(deps) {
             const local = document.querySelector('.video-card[data-role="local"]');
             local?.classList.toggle("is-speaking", state.speaking);
             if (wasSpeaking !== state.speaking) layout();
+            const bars = deps.$("smartInterpreterWave")?.children || [];
+            for (let index = 0; index < bars.length; index += 1) {
+                const idle = state.reducedMotion ? 0.35 : 0.18 + Math.abs(Math.sin(time / 170 + index * 0.85)) * 0.82;
+                const live = state.speaking ? Math.min(1, state.level * 5) : 0;
+                const amount = state.speaking ? Math.max(0.2, live * (0.35 + ((index * 17) % 10) / 14)) : idle;
+                bars[index].style.height = `${Math.round(6 + amount * 28)}px`;
+            }
             const pose = {
                 mouth: state.speaking ? Math.min(1, state.level * 2.4) : 0.08,
                 blink: state.reducedMotion ? 1 : (Math.sin(time / 1800) > 0.97 ? 0.1 : 1),
@@ -876,13 +917,15 @@ export function createCallExperience(deps) {
         const local = document.querySelector('.video-card[data-role="local"]');
         if (local && deps.$("videoGrid")) deps.$("videoGrid").appendChild(local);
         deps.$("documentsPanel").hidden = true;
-        deps.$("videoFilmstrip").hidden = true;
+        if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
+        deps.$("videoFilmstrip").hidden = false;
         setTranscriptCollapsed(false);
     }
 
     return {
         bind, onJoined, sync, updateSubtitles, onPartial, viewerLanguage, outgoingVideoTrack,
         noteConnection, attachLocalStream, requestTranslations, ensureTranslation, maybeSpeak, layout, cleanup, persistPresence,
+        noteLanguages: refreshInterpreterLanguages,
         isAvatar: () => state.mediaMode === "avatar" && !state.screenTrack,
         activateCamera: useCamera,
         markCamera: markCameraMode
