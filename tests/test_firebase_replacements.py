@@ -376,6 +376,17 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(":", response.get_json()["iceServers"][1]["username"])
         self.assertTrue(response.get_json()["iceServers"][1]["credential"])
+        self.assertTrue(response.get_json()["relay"])
+
+    def test_webrtc_config_uses_public_stun_without_a_relay(self):
+        self.register_and_verify(); login = self.login()
+        environment = {"FINISPEAK_STUN_URLS": "", "FINISPEAK_TURN_URLS": "", "FINISPEAK_TURN_SECRET": ""}
+        with patch.dict("os.environ", environment):
+            response = self.client.get("/api/webrtc-config", headers=self.bearer(login["accessToken"]))
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertFalse(payload["relay"])
+        self.assertIn("stun:stun.l.google.com:19302", payload["iceServers"][0]["urls"])
 
     def test_storage_migration_dry_run_apply_and_replay(self):
         now = datetime.now(timezone.utc)

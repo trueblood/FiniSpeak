@@ -146,6 +146,8 @@ def create_app(repository_overrides=None):
         if request.is_secure:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         response.headers.setdefault("X-Request-ID", str(uuid.uuid4()))
+        if request.path.startswith("/static/") or response.mimetype == "text/html":
+            response.headers["Cache-Control"] = "no-cache"
         if getattr(g, "api_quota", None):
             response.headers["X-RateLimit-Remaining"] = str(g.api_quota.get("minuteRemaining", 0))
             response.headers["X-DailyQuota-Remaining"] = str(g.api_quota.get("dailyRemaining", 0))

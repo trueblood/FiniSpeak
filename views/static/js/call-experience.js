@@ -720,7 +720,9 @@ export function createCallExperience(deps) {
             const card = document.querySelector(`[data-peer="${participant.id}"]`);
             if (!card) continue;
             card.classList.toggle("is-avatar", participant.mediaMode === "avatar");
-            card.classList.toggle("is-camera-on", participant.mediaMode !== "avatar" && participant.cameraEnabled !== false);
+            const video = card.querySelector("video");
+            const frames = video?.srcObject instanceof MediaStream && video.srcObject.getVideoTracks().some(track => track.readyState === "live" && track.muted === false && track.enabled);
+            card.classList.toggle("is-camera-on", participant.mediaMode !== "avatar" && participant.cameraEnabled !== false && Boolean(frames));
             let muted = card.querySelector(".muted-pill");
             if (participant.microphoneEnabled === false) {
                 if (!muted) {

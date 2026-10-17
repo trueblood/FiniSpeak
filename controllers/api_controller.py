@@ -43,21 +43,25 @@ def health():
     return jsonify({"service": "FiniSpeak API", "status": "ok"})
 
 
+PUBLIC_STUN_URLS = ("stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478")
+
+
 def webrtc_config():
     identity, error = identity_or_response()
     if error: return error
     stun_urls = [value.strip() for value in os.getenv("FINISPEAK_STUN_URLS", "").split(",") if value.strip()]
     turn_urls = [value.strip() for value in os.getenv("FINISPEAK_TURN_URLS", "").split(",") if value.strip()]
     secret = os.getenv("FINISPEAK_TURN_SECRET", "")
-    if not turn_urls or len(secret) < 32:
-        return jsonify({"error": "WebRTC relay configuration is unavailable."}), 503
-    subject = hmac.new(secret.encode(), identity["uid"].encode(), hashlib.sha256).hexdigest()[:16]
-    username = f"{int(time.time()) + 3600}:{subject}"
-    credential = base64.b64encode(hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
-    servers = []
-    if stun_urls: servers.append({"urls": stun_urls})
-    servers.append({"urls": turn_urls, "username": username, "credential": credential})
-    return jsonify({"iceServers": servers})
+    if not stun_urls:
+        stun_urls = list(PUBLIC_STUN_URLS)
+    servers = [{"urls": stun_urls}]
+    relay = bool(turn_urls) and len(secret) >= 32
+    if relay:
+        subject = hmac.new(secret.encode(), identity["uid"].encode(), hashlib.sha256).hexdigest()[:16]
+        username = f"{int(time.time()) + 3600}:{subject}"
+        credential = base64.b64encode(hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
+        servers.append({"urls": turn_urls, "username": username, "credential": credential})
+    return jsonify({"iceServers": servers, "relay": relay})
 
 
 def readiness():

@@ -77,12 +77,19 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="callRoster"', self.html)
         self.assertIn('id="callRosterList"', self.html)
         app = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        mesh = (Path(__file__).parents[1] / "views/static/js/webrtc-mesh.js").read_text()
         peers = app[app.index("async function ensurePeer"):app.index("function connectSignaling")]
+        presence = script[script.index("function applyParticipantPresence"):script.index("function cameraGridShape")]
         self.assertIn("function ensureParticipantTile", app)
         self.assertIn("function attachRemoteTrack", app)
-        self.assertIn("event.track", peers)
+        self.assertIn("function peopleInCall", app)
+        self.assertIn("callerId", app[app.index("function peopleInCall"):app.index("function peopleInCall") + 700])
         self.assertIn("have-local-offer", peers)
-        self.assertNotIn("e.streams[0]", peers)
+        self.assertIn("onnegotiationneeded", mesh)
+        self.assertIn("rollback", mesh)
+        self.assertIn("event.track", mesh)
+        self.assertNotIn("e.streams[0]", mesh)
+        self.assertIn("track.muted", presence)
 
     def test_transcripts_are_named_logs(self):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
