@@ -46,8 +46,6 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 .call-view .processing-mode-panel { background:rgba(18,60,105,.35); border-color:rgba(126,182,255,.25); color:#d7e0ea; }
 .call-view .processing-mode-panel p,.call-view .processing-mode-panel small { color:#a7b3c4; }
 
-.translator-request-row { display:flex; }
-.translator-request-row button { width:auto; }
 .documents-hint { margin:0; color:#a7b3c4; font-size:.78rem; }
 .call-view .interpreter-matches { margin:0; max-width:none; padding:16px; border:1px solid rgba(255,255,255,.08); border-radius:22px; background:#1b212c; color:#f4f7fb; }
 .call-view .interpreter-matches-heading h3,.call-view .interpreter-match strong { color:#fff; }
