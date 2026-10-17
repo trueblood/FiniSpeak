@@ -4,7 +4,7 @@ const $ = (id) => document.getElementById(id);
 let callExperience;
 const views = ["heroView", "authView", "dashboardView", "profileView", "callView"];
 const show = (id) => {
-    views.forEach(v => $(v).classList.toggle("hidden", v !== id));
+    views.forEach(v => $(v)?.classList.toggle("hidden", v !== id));
     document.body.classList.toggle("dashboard-mode", id === "dashboardView");
     document.body.classList.toggle("in-call", id === "callView");
 };
@@ -497,10 +497,10 @@ async function handleAuthState(user) {
             role: "customer"
         };
         hydrateDashboardProfile();
-        $("interpreterProfileNav").classList.add("hidden");
-        $("translatorTools").classList.add("hidden");
-        $("customerTools").classList.remove("hidden");
-        $("openStartCall").classList.remove("hidden");
+        $("interpreterProfileNav")?.classList.add("hidden");
+        $("translatorTools")?.classList.add("hidden");
+        $("customerTools")?.classList.remove("hidden");
+        $("openStartCall")?.classList.remove("hidden");
         openDashboardPanel("home");
         show("dashboardView");
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;
@@ -529,7 +529,7 @@ function hydrateDashboardProfile() {
 
 function openDashboardPanel(panel) {
     const ids = { home: "dashboardHome", directory: "dashboardDirectory", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings" };
-    Object.entries(ids).forEach(([key, id]) => $(id).classList.toggle("hidden", key !== panel));
+    Object.entries(ids).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== panel));
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => {
         const active = button.dataset.dashboardPanel === panel;
         button.classList.toggle("active", active);

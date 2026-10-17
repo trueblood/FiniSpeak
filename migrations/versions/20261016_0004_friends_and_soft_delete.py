@@ -21,23 +21,33 @@ MYSQL_TABLE_OPTIONS = {
 
 
 def upgrade():
-    op.add_column("users", sa.Column("deleted_at", sa.DateTime(timezone=True)))
-    op.add_column("users", sa.Column("deleted_by", sa.String(128)))
-    op.create_foreign_key(
-        "fk_users_deleted_by_users", "users", "users", ["deleted_by"], ["id"], ondelete="SET NULL"
-    )
-    op.create_index("ix_users_deleted_at", "users", ["deleted_at"])
-    op.create_table(
-        "friends",
-        sa.Column("owner_id", sa.String(128), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("friend_id", sa.String(128), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("nickname", sa.String(160)),
-        sa.Column("saved_phone", sa.String(64)),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        **MYSQL_TABLE_OPTIONS,
-    )
-    op.create_index("ix_friends_friend_id", "friends", ["friend_id"])
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {column["name"] for column in inspector.get_columns("users")}
+    if "deleted_at" not in columns:
+        op.add_column("users", sa.Column("deleted_at", sa.DateTime(timezone=True)))
+    if "deleted_by" not in columns:
+        op.add_column("users", sa.Column("deleted_by", sa.String(128)))
+    foreign_keys = {item.get("name") for item in inspector.get_foreign_keys("users")}
+    if "fk_users_deleted_by_users" not in foreign_keys:
+        op.create_foreign_key(
+            "fk_users_deleted_by_users", "users", "users", ["deleted_by"], ["id"], ondelete="SET NULL"
+        )
+    indexes = {item["name"] for item in inspector.get_indexes("users")}
+    if "ix_users_deleted_at" not in indexes:
+        op.create_index("ix_users_deleted_at", "users", ["deleted_at"])
+    if "friends" not in inspector.get_table_names():
+        op.create_table(
+            "friends",
+            sa.Column("owner_id", sa.String(128), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+            sa.Column("friend_id", sa.String(128), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+            sa.Column("nickname", sa.String(160)),
+            sa.Column("saved_phone", sa.String(64)),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+            **MYSQL_TABLE_OPTIONS,
+        )
+        op.create_index("ix_friends_friend_id", "friends", ["friend_id"])
 
 
 def downgrade():
