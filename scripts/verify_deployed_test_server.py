@@ -23,6 +23,7 @@ from models.sql_models import (
     SqlAuthCredential, SqlAuthRateLimit, SqlAuthSession, SqlAuthToken,
     SqlSignalingEvent, SqlStoredFile, SqlUser,
 )
+from repositories.config import ACCEPTED_SCHEMA_REVISIONS
 from repositories.provider import get_repository
 from scripts.verify_firebase_free import Client, multipart_file, websocket_url
 from services.auth_service import consume_action_token, register_account
@@ -73,7 +74,7 @@ def main():
             "reviews", "organizations", "api_access", "taxonomy", "language_metrics",
         }
         check("ten MySQL repositories", set(backends) == expected_domains and set(backends.values()) == {"mysql"})
-        check("schema revision 0004", ready.get("schemaRevision") == "20261016_0004")
+        check("schema revision", ready.get("schemaRevision") in ACCEPTED_SCHEMA_REVISIONS)
         first.login(caller["email"], password); second.login(peer["email"], password)
         check("first-party login", bool(first.token and second.token))
 

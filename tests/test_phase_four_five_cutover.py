@@ -41,6 +41,12 @@ class CutoverConfigurationTests(unittest.TestCase):
         self.assertEqual(result["revision"], "20261016_0004")
         self.assertEqual(result["digest"], "a" * 64)
 
+    def test_mysql_primary_still_accepts_the_installed_server_revision(self):
+        environment = self.valid_environment()
+        environment["FINISPEAK_MYSQL_EXPECTED_REVISION"] = "20261014_0003"
+        result = cutover_safety(environment, datetime(2026, 10, 13, 20, 1, tzinfo=timezone.utc))
+        self.assertEqual(result["revision"], "20261014_0003")
+
 
 class ShadowComparisonTests(unittest.TestCase):
     def test_read_returns_firestore_and_records_mismatch_without_payload_logging(self):

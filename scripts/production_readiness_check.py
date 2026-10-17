@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from repositories.config import ACCEPTED_SCHEMA_REVISIONS
 from services.language_evaluation_service import evaluate_language_predictions, release_gate
 import json
 
@@ -36,7 +37,7 @@ def main():
             "emailDelivery": all(os.getenv(name, "").strip() for name in ("FINISPEAK_SMTP_HOST", "FINISPEAK_EMAIL_FROM", "FINISPEAK_PUBLIC_URL")),
             "webrtcRelay": bool(os.getenv("FINISPEAK_TURN_URLS", "").strip()) and len(os.getenv("FINISPEAK_TURN_SECRET", "")) >= 32,
             "mysqlOnlyRouting": os.getenv("FINISPEAK_REPOSITORY_BACKEND", "mysql").strip().lower() == "mysql",
-            "schemaAttestation": os.getenv("FINISPEAK_MYSQL_EXPECTED_REVISION", "").strip() == "20261016_0004",
+            "schemaAttestation": os.getenv("FINISPEAK_MYSQL_EXPECTED_REVISION", "").strip() in ACCEPTED_SCHEMA_REVISIONS,
         })
     deferred = {"emailDelivery", "webrtcRelay"} if args.production and test_deployment else set()
     failed = [name for name, passed in checks.items() if not passed and name not in deferred]

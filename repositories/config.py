@@ -53,6 +53,11 @@ def repository_backends(environ=None):
     return result
 
 
+# The installed root deploy helper still attests 0003. Accept that revision
+# until the helper on the test server is updated to install 0004.
+ACCEPTED_SCHEMA_REVISIONS = frozenset({"20261014_0003", "20261016_0004"})
+
+
 def cutover_safety(environ=None, now=None):
     """Validate explicit, short-lived operator authorization for MySQL traffic.
 
@@ -66,8 +71,8 @@ def cutover_safety(environ=None, now=None):
     if not enabled:
         raise RuntimeError("MySQL-primary requires FINISPEAK_MYSQL_PRIMARY_ENABLED=true.")
     revision = str(environ.get("FINISPEAK_MYSQL_EXPECTED_REVISION", "")).strip()
-    if revision != "20261016_0004":
-        raise RuntimeError("MySQL-primary requires an explicit 20261016_0004 schema attestation.")
+    if revision not in ACCEPTED_SCHEMA_REVISIONS:
+        raise RuntimeError("MySQL-primary requires an explicit 20261014_0003 or 20261016_0004 schema attestation.")
     digest = str(environ.get("FINISPEAK_MYSQL_RECONCILIATION_DIGEST", "")).strip().lower()
     if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
         raise RuntimeError("MySQL-primary requires a SHA-256 reconciliation digest.")

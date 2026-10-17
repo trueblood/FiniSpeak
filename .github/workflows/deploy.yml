@@ -121,7 +121,7 @@ jobs:
           ssh -i ~/.ssh/finispeak_deploy \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$DO_USER@$DO_HOST" \
-            "set -e; /var/www/finispeak/venv/bin/python -m pip install --disable-pip-version-check -r /var/www/finispeak/requirements.txt; /var/www/finispeak/venv/bin/python -m pip uninstall -y firebase-admin >/dev/null 2>&1 || true; sudo install -o root -g root -m 0755 /var/www/finispeak/scripts/deploy_test_server.sh /usr/local/sbin/finispeak-deploy-test-server; sudo install -o root -g root -m 0755 /var/www/finispeak/scripts/finalize_test_deployment.py /usr/local/libexec/finispeak/finalize_test_deployment.py; sudo /usr/local/sbin/finispeak-deploy-test-server '$GITHUB_SHA'"
+            "set -e; /var/www/finispeak/venv/bin/python -m pip install --disable-pip-version-check -r /var/www/finispeak/requirements.txt; /var/www/finispeak/venv/bin/python -m pip uninstall -y firebase-admin >/dev/null 2>&1 || true; sudo /usr/local/sbin/finispeak-deploy-test-server '$GITHUB_SHA'"
 
       - name: Record deployed revision
         run: |

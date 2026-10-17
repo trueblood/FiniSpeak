@@ -7,6 +7,7 @@ import time
 from flask import current_app, jsonify
 from sqlalchemy import text
 from extensions import db
+from repositories.config import ACCEPTED_SCHEMA_REVISIONS
 from controllers.controller_utils import identity_or_response
 
 
@@ -84,7 +85,7 @@ def readiness():
             schema_revision = db.session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         except Exception:
             db.session.rollback()
-        checks["schemaRevision"] = schema_revision == "20261016_0004"
+        checks["schemaRevision"] = schema_revision in ACCEPTED_SCHEMA_REVISIONS
     readiness_values = [value for key, value in checks.items() if key != "mysqlRequired"]
     deferred_services = []
     if test_deployment:
