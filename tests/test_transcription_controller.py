@@ -39,7 +39,7 @@ class TranscriptionControllerTests(unittest.TestCase):
         handle_socket(socket)
 
         verify_participant.assert_called_once_with(None, "call")
-        transcribe_pcm.assert_called_once_with(b"\x00" * 3200, 16000, "es", 1.0)
+        transcribe_pcm.assert_called_once_with(b"\x00" * 3200, 16000, "es", 1.0, detect_language=False)
         final = next(message for message in socket.sent if message.get("type") == "final")
         self.assertEqual(final["language"], "es")
         self.assertEqual(final["languageConfidence"], 1.0)
@@ -85,7 +85,7 @@ class TranscriptionControllerTests(unittest.TestCase):
             "uid": "tester-1", "role": "customer", "email": "timtrueblood@outlook.com",
         }
         release_worker = threading.Event()
-        def delayed_transcription(*_args):
+        def delayed_transcription(*_args, **_kwargs):
             release_worker.wait(2)
             return {
                 "text": "Buffered words",

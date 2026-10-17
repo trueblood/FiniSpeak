@@ -14,7 +14,7 @@ let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = 
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let rtcConfiguration = { iceServers: [] };
-let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, transcriptionGain = null, currentCallRole = null;
+let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, transcriptionGain = null, transcriptionCaptureRate = 16000, currentCallRole = null;
 let selectedProcessingMode = "streaming", processingModesEnabled = false, transcriptionGeneration = Date.now();
 let transcriptionSwitching = false, transcriptionBufferedAudio = [], transcriptionBufferedBytes = 0, transcriptionStopResolver = null, browserSpeechRecognition = null;
 let dashboardUnsubs = [], pendingIncomingCall = null, historyCalls = new Map();
@@ -2286,9 +2286,27 @@ async function startTranscription(callId) {
     }
 }
 
+function downsampleTo16k(floats, sampleRate) {
+    if (!sampleRate || sampleRate <= 16100) return floats;
+    const ratio = sampleRate / 16000;
+    const length = Math.floor(floats.length / ratio);
+    const output = new Float32Array(length);
+    for (let i = 0; i < length; i++) {
+        const start = Math.floor(i * ratio);
+        const end = Math.min(floats.length, Math.floor((i + 1) * ratio));
+        let sum = 0;
+        const count = Math.max(1, end - start);
+        for (let j = start; j < start + count; j++) sum += floats[j] || 0;
+        output[i] = sum / count;
+    }
+    return output;
+}
 async function ensureTranscriptionCapture() {
     if (transcriptionNode) return;
-    transcriptionAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    try { transcriptionAudioContext = new AudioCtx({ latencyHint: "interactive" }); }
+    catch (_) { transcriptionAudioContext = new AudioCtx(); }
+    transcriptionCaptureRate = transcriptionAudioContext.sampleRate > 16100 ? 16000 : transcriptionAudioContext.sampleRate;
     await transcriptionAudioContext.audioWorklet.addModule("/static/js/pcm-worklet.js");
     transcriptionSource=transcriptionAudioContext.createMediaStreamSource(new MediaStream(localStream.getAudioTracks())); transcriptionNode=new AudioWorkletNode(transcriptionAudioContext,"finispeak-pcm");
     transcriptionGain=transcriptionAudioContext.createGain(); transcriptionGain.gain.value=0; transcriptionSource.connect(transcriptionNode); transcriptionNode.connect(transcriptionGain).connect(transcriptionAudioContext.destination);
@@ -2298,17 +2316,17 @@ async function ensureTranscriptionCapture() {
         if (!transcriptionAudioContext || transcriptionAudioContext.state === "running" || !activeCallId) return;
         $("transcriptionStatus").textContent="Microphone processing paused. Click the page to resume.";
     };
-    transcriptionNode.port.onmessage=event=>{ const floats=event.data, pcm=new Int16Array(floats.length); for(let i=0;i<floats.length;i++){const s=Math.max(-1,Math.min(1,floats[i]));pcm[i]=s<0?s*32768:s*32767;} if(transcriptionSwitching||!transcriptionSocket||transcriptionSocket.readyState!==WebSocket.OPEN) bufferTranscriptionAudio(pcm.buffer); else transcriptionSocket.send(pcm.buffer); };
+    transcriptionNode.port.onmessage=event=>{ const floats=downsampleTo16k(event.data, transcriptionAudioContext.sampleRate), pcm=new Int16Array(floats.length); for(let i=0;i<floats.length;i++){const s=Math.max(-1,Math.min(1,floats[i]));pcm[i]=s<0?s*32768:s*32767;} if(transcriptionSwitching||!transcriptionSocket||transcriptionSocket.readyState!==WebSocket.OPEN) bufferTranscriptionAudio(pcm.buffer); else transcriptionSocket.send(pcm.buffer); };
 }
 function bufferTranscriptionAudio(buffer){
     transcriptionBufferedAudio.push(buffer); transcriptionBufferedBytes+=buffer.byteLength;
-    const maxBufferedBytes=(transcriptionAudioContext?.sampleRate||48000)*2*75;
+    const maxBufferedBytes=(transcriptionCaptureRate||16000)*2*75;
     while(!transcriptionSwitching&&transcriptionBufferedBytes>maxBufferedBytes&&transcriptionBufferedAudio.length>1){const discarded=transcriptionBufferedAudio.shift();transcriptionBufferedBytes-=discarded.byteLength;}
 }
 function flushTranscriptionAudio(){ if(!transcriptionSocket||transcriptionSocket.readyState!==WebSocket.OPEN)return; for(const buffer of transcriptionBufferedAudio)transcriptionSocket.send(buffer); transcriptionBufferedAudio=[];transcriptionBufferedBytes=0; }
 async function openTranscriptionPipeline(callId,mode){
     const generation=++transcriptionGeneration, scheme=location.protocol==="https:"?"wss":"ws", socket=new WebSocket(`${scheme}://${location.host}/ws/transcription`); transcriptionSocket=socket;socket.binaryType="arraybuffer";
-    return new Promise((resolve,reject)=>{let ready=false;socket.onopen=()=>socket.send(JSON.stringify({type:"start",callId,sampleRate:transcriptionAudioContext.sampleRate,processingMode:mode,generation,language:confirmedDetectedLanguage}));
+    return new Promise((resolve,reject)=>{let ready=false;socket.onopen=()=>socket.send(JSON.stringify({type:"start",callId,sampleRate:transcriptionCaptureRate||transcriptionAudioContext.sampleRate,processingMode:mode,generation,language:confirmedDetectedLanguage}));
       socket.onmessage=async event=>{const m=JSON.parse(event.data);if(m.generation!==undefined&&m.generation!==generation)return;if(m.type==="ready"){ready=true;transcriptionSwitching=false;renderProcessingMode();flushTranscriptionAudio();startBrowserStreamingPartials(mode);$("transcriptionStatus").textContent=`Capturing microphone · ${mode}`;$("processingModeStatus").textContent=`Running ${mode} for your microphone only.`;resolve();return;}if(m.type==="stopped"){transcriptionStopResolver?.();return;}if(m.type==="listening"){$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;return;}if(m.type==="capture"){const buffered=Number(m.bufferedSeconds||0).toFixed(1),needed=Number(m.chunkSeconds||0).toFixed(1);$("transcriptionStatus").textContent=`Capturing speech ${buffered}s / ${needed}s · ${mode}`;return;}if(m.type==="processing"){$("transcriptionStatus").textContent=`Processing speech · ${mode}`;return;}if(m.type==="error"){const e=new Error(m.message);if(!ready){socket.close();reject(e);}else handleProcessingFailure(e);return;}if(m.type==="final"&&m.text?.trim()&&activeCallId===callId&&generation===transcriptionGeneration){try{await saveFinalTranscript(callId,m,mode,generation);}catch(error){console.error("Transcript save failed",error);$("transcriptionStatus").textContent=`Speech recognized, but saving failed: ${error.message}`;}}};
       socket.onerror=()=>{const e=new Error("Transcription connection error.");if(!ready){socket.close();reject(e);}else handleProcessingFailure(e);};socket.onclose=()=>{if(transcriptionSocket===socket)transcriptionSocket=null;};});
 }
@@ -2320,7 +2338,7 @@ async function saveFinalTranscript(callId,m,mode,generation){
 async function requestPipelineStop(){const socket=transcriptionSocket;if(!socket||socket.readyState!==WebSocket.OPEN){socket?.close();return;}await new Promise(resolve=>{let done=false;const finish=()=>{if(!done){done=true;transcriptionStopResolver=null;resolve();}};transcriptionStopResolver=finish;socket.send(JSON.stringify({type:"stop"}));setTimeout(finish,60000);});socket.close();}
 async function switchProcessingMode(next){if(!activeCallId||next===selectedProcessingMode)return;const previous=selectedProcessingMode;transcriptionSwitching=true;stopBrowserStreamingPartials();renderProcessingMode();$("processingModeStatus").textContent=`Finishing buffered ${previous} audio…`;try{await requestPipelineStop();await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:next})});selectedProcessingMode=next;renderProcessingMode();await openTranscriptionPipeline(activeCallId,next);}catch(error){selectedProcessingMode="baseline";renderProcessingMode();$("processingModeStatus").textContent=`${next} failed. Returning to baseline.`;try{await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:"baseline"})});await openTranscriptionPipeline(activeCallId,"baseline");}catch(fallbackError){transcriptionSwitching=false;renderProcessingMode();$("processingModeStatus").textContent=`Transcription logging unavailable: ${fallbackError.message||error.message}`;$("transcriptionStatus").textContent="Call audio is still connected; logging is unavailable.";}}}
 async function handleProcessingFailure(error){if(transcriptionSwitching||!activeCallId)return;$("processingModeStatus").textContent=error.message;if(selectedProcessingMode!=="baseline")await switchProcessingMode("baseline");}
-function startBrowserStreamingPartials(mode){stopBrowserStreamingPartials();if(mode!=="streaming")return;const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition)return;const recognition=new Recognition();recognition.continuous=true;recognition.interimResults=true;if("processLocally" in recognition)recognition.processLocally=true;recognition.onresult=event=>{let partial="";for(let i=event.resultIndex;i<event.results.length;i++)if(!event.results[i].isFinal)partial+=event.results[i][0]?.transcript||"";partial=partial.trim();$("partialTranscript").textContent=partial?`Partial · ${partial}`:"";$("partialTranscript").classList.toggle("hidden",!partial);callExperience?.onPartial(partial);};browserSpeechRecognition=recognition;try{recognition.start();}catch(_){}}
+function startBrowserStreamingPartials(){stopBrowserStreamingPartials();const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition)return;const recognition=new Recognition();recognition.continuous=true;recognition.interimResults=true;if("processLocally" in recognition)recognition.processLocally=true;recognition.onresult=event=>{let partial="";for(let i=event.resultIndex;i<event.results.length;i++)if(!event.results[i].isFinal)partial+=event.results[i][0]?.transcript||"";partial=partial.trim();$("partialTranscript").textContent=partial?`Partial · ${partial}`:"";$("partialTranscript").classList.toggle("hidden",!partial);callExperience?.onPartial(partial);};browserSpeechRecognition=recognition;try{recognition.start();}catch(_){}}
 function stopBrowserStreamingPartials(){const recognition=browserSpeechRecognition;browserSpeechRecognition=null;try{recognition?.stop();}catch(_){}$("partialTranscript")?.classList.add("hidden");callExperience?.onPartial("");}
 function showProcessingDiagnostics(metrics){if(!metrics||!processingModesEnabled)return;const panel=$("processingDiagnostics");panel.classList.toggle("hidden",!(location.hostname==="localhost"||location.hostname==="127.0.0.1"));panel.textContent=`method=${metrics.method}\ncapture continuity=${Math.round((metrics.audioCaptureContinuity||0)*100)}%\nrecognition=${metrics.speechRecognitionLatencyMs}ms\ntranslation=n/a (logging only)\nend-to-end=${metrics.endToEndLatencyMs}ms\naccuracy=${metrics.transcriptionAccuracy??"n/a (no reference transcript)"}\ncpu=${metrics.cpuSeconds}s\nmax rss=${metrics.memoryMaxRss} ${metrics.memoryMaxRssUnit}\napi calls=${metrics.apiCalls}\nestimated cost=${metrics.estimatedCostUsd??"n/a (rate not configured)"}`;console.debug("[FiniSpeak processing diagnostics]",metrics);}
 

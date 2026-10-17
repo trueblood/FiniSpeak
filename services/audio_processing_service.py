@@ -1,9 +1,25 @@
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from services.processing_metrics_service import record_metrics
 from services.transcription_service import transcribe_pcm
+
+
+def _chunk_seconds(mode):
+    """Keep every mode on a short live chunk.
+
+    Older environments set 5s and 1.5s. Those waits happen before the first
+    speech-to-text call, so a larger setting cannot stretch the live capture.
+    """
+    if mode == "streaming":
+        requested = float(os.getenv("STREAMING_TRANSCRIPTION_CHUNK_SECONDS", "0.75"))
+        limit = 0.75
+    else:
+        requested = float(os.getenv("TRANSCRIPTION_CHUNK_SECONDS", "1.5"))
+        limit = 1.5
+    return min(limit, max(0.5, requested))
 
 
 class AudioProcessingPipeline:
@@ -13,6 +29,8 @@ class AudioProcessingPipeline:
         self.language = language
         self.generation = generation
         self.language_confidence = 1.0 if language else None
+        self._language_lock = threading.Lock()
+        self._classifying = False
         self.buffer = bytearray()
         self.pending = {}
         self.sequence = 0
@@ -20,24 +38,55 @@ class AudioProcessingPipeline:
         self.received_bytes = 0
         self.last_capture_progress = -1
         self.started_at = time.perf_counter()
-        seconds = (
-            float(os.getenv("STREAMING_TRANSCRIPTION_CHUNK_SECONDS", "1.5"))
-            if mode == "streaming"
-            else float(os.getenv("TRANSCRIPTION_CHUNK_SECONDS", "5.0"))
-        )
-        workers = 1 if mode == "streaming" else int(os.getenv("CONCURRENT_TRANSCRIPTION_WORKERS", "2"))
-        self.chunk_seconds = max(0.5, seconds)
+        workers = max(1, int(os.getenv("CONCURRENT_TRANSCRIPTION_WORKERS", "2")))
+        self.chunk_seconds = _chunk_seconds(mode)
         self.target_bytes = max(3200, int(sample_rate * self.chunk_seconds) * 2)
         self.max_pending = max(1, workers * 2)
         self.executor = (
-            ThreadPoolExecutor(max_workers=max(1, workers), thread_name_prefix=f"finispeak-{mode}")
+            ThreadPoolExecutor(max_workers=workers, thread_name_prefix=f"finispeak-{mode}")
             if mode != "baseline"
             else None
         )
 
     def set_language(self, language):
-        self.language = str(language or "").strip().casefold() or None
-        self.language_confidence = 1.0 if self.language else None
+        code = str(language or "").strip().casefold() or None
+        with self._language_lock:
+            self.language = code
+            self.language_confidence = 1.0 if code else None
+
+    def _adopt_language(self, language, confidence):
+        code = str(language or "").strip().casefold()
+        if not code or code == "und":
+            return
+        with self._language_lock:
+            if self.language:
+                return
+            self.language = code
+            self.language_confidence = float(confidence) if isinstance(confidence, (int, float)) else 0.8
+
+    def _learn_language_later(self, result):
+        """Remember a language without making the transcript wait on a second model call."""
+        if result.get("language"):
+            self._adopt_language(result.get("language"), result.get("languageConfidence"))
+            return
+        text = str(result.get("text") or "").strip()
+        if not text or self.language:
+            return
+        with self._language_lock:
+            if self.language or self._classifying:
+                return
+            self._classifying = True
+
+        def classify():
+            try:
+                from services.transcription_service import _detect_language_from_text
+                code, score = _detect_language_from_text(text)
+                self._adopt_language(code, score)
+            finally:
+                with self._language_lock:
+                    self._classifying = False
+
+        threading.Thread(target=classify, name="finispeak-language", daemon=True).start()
 
     def feed(self, raw):
         self.buffer.extend(raw)
@@ -73,7 +122,8 @@ class AudioProcessingPipeline:
     def _process(self, seq, raw, language, confidence, submitted):
         started = time.perf_counter()
         cpu_started = time.process_time()
-        result = transcribe_pcm(raw, self.sample_rate, language, confidence)
+        result = transcribe_pcm(raw, self.sample_rate, language, confidence, detect_language=False)
+        self._learn_language_later(result)
         cpu_seconds = time.process_time() - cpu_started
         completed = time.perf_counter()
         seconds = len(raw) / 2 / self.sample_rate

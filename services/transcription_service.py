@@ -5,9 +5,11 @@ chunk is wrapped as an in-memory WAV and sent to the OpenAI Transcriptions API.
 Raw microphone audio is never written to disk by FiniSpeak.
 """
 
+import array
 import io
 import json
 import os
+import sys
 import threading
 import time
 import wave
@@ -29,6 +31,42 @@ def _get_client():
                 raise RuntimeError("OPENAI_API_KEY is not configured for transcription.")
             _CLIENT = OpenAI()
     return _CLIENT
+
+
+def downsample_pcm16(raw: bytes, sample_rate: int, target_rate: int = 16000):
+    """Average PCM16 down to 16 kHz so the speech request uploads less audio."""
+    if sample_rate <= target_rate or sample_rate <= 0:
+        return raw, sample_rate
+    frame = raw[: len(raw) - (len(raw) % 2)]
+    if len(frame) < 2:
+        return frame, target_rate
+    samples = array.array("h")
+    samples.frombytes(frame)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    ratio = sample_rate / float(target_rate)
+    out_len = int(len(samples) / ratio)
+    if out_len <= 0:
+        return frame, sample_rate
+    output = array.array("h", (0,)) * out_len
+    last = len(samples)
+    for index in range(out_len):
+        start = int(index * ratio)
+        end = int((index + 1) * ratio)
+        if end <= start:
+            end = start + 1
+        if end > last:
+            end = last
+        window = samples[start:end]
+        mixed = int(sum(window) / len(window)) if window else 0
+        if mixed > 32767:
+            mixed = 32767
+        elif mixed < -32768:
+            mixed = -32768
+        output[index] = mixed
+    if sys.byteorder != "little":
+        output.byteswap()
+    return output.tobytes(), target_rate
 
 
 def pcm16_wav_file(raw: bytes, sample_rate: int):
@@ -132,9 +170,16 @@ def _detect_language_from_text(text: str):
         return None, None
 
 
-def transcribe_pcm(raw: bytes, sample_rate: int, language: str | None = None, language_confidence: float | None = None) -> dict:
+def transcribe_pcm(
+    raw: bytes,
+    sample_rate: int,
+    language: str | None = None,
+    language_confidence: float | None = None,
+    detect_language: bool = True,
+) -> dict:
     if len(raw) < 3200:
         return {"text": "", "language": language, "languageConfidence": _normalize_confidence(language_confidence)}
+    raw, sample_rate = downsample_pcm16(raw, sample_rate)
 
     model = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-transcribe").strip() or "gpt-transcribe"
     prompt = os.getenv(
@@ -161,12 +206,16 @@ def transcribe_pcm(raw: bytes, sample_rate: int, language: str | None = None, la
     transcription = _get_client().audio.transcriptions.create(**request)
     text = str(getattr(transcription, "text", "") or "").strip()
     detected_language, detected_confidence = _language_details(transcription, language, language_confidence)
-    if text and (not detected_language or detected_confidence is None):
+    if detect_language and text and not detected_language:
         classified_language, classified_confidence = _detect_language_from_text(text)
         if classified_language:
             detected_language = classified_language
         if classified_confidence is not None:
             detected_confidence = classified_confidence
+    elif detected_language and detected_confidence is None:
+        detected_confidence = _normalize_confidence(language_confidence)
+        if detected_confidence is None:
+            detected_confidence = 0.8
     print(
         f"[Transcription] OpenAI completed in {time.time() - started:.1f}s "
         f"(language={detected_language or 'unknown'}, confidence={detected_confidence}): {text!r}",
