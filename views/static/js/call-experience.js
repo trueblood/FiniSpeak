@@ -111,7 +111,6 @@ export function createCallExperience(deps) {
         deps.$("documentTitle").oninput = () => scheduleDocumentSave();
         deps.$("documentOriginal").oninput = () => scheduleDocumentSave();
         deps.$("documentTranslated").oninput = () => scheduleDocumentSave();
-        deps.$("collaboratorForm").onsubmit = inviteCollaborator;
         document.querySelectorAll("[data-call-pane]").forEach(button => {
             button.onclick = () => setPane(button.dataset.callPane);
         });
@@ -727,29 +726,6 @@ export function createCallExperience(deps) {
         deps.$("documentSourceLang").value = documentRecord.sourceLanguage || "en";
         deps.$("documentTargetLang").value = documentRecord.targetLanguage || state.viewerLanguage;
         deps.$("documentPermission").value = documentRecord.permission || "edit";
-        const collaborators = deps.$("collaboratorList");
-        collaborators.innerHTML = "";
-        for (const email of documentRecord.collaboratorEmails || []) {
-            const item = document.createElement("li");
-            item.textContent = email;
-            collaborators.appendChild(item);
-        }
-        const versions = deps.$("documentVersions");
-        versions.innerHTML = "";
-        for (const version of documentRecord.versions || []) {
-            const item = document.createElement("li");
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "secondary";
-            button.textContent = `Restore ${new Date(version.savedAt).toLocaleString()}`;
-            button.onclick = () => {
-                deps.$("documentOriginal").value = version.originalText || "";
-                deps.$("documentTranslated").value = version.translatedText || "";
-                scheduleDocumentSave();
-            };
-            item.appendChild(button);
-            versions.appendChild(item);
-        }
         const editable = documentRecord.permission !== "view" || documentRecord.ownerId === deps.getUser()?.uid;
         deps.$("documentOriginal").disabled = !editable;
         deps.$("documentTranslated").disabled = !editable;
@@ -791,25 +767,6 @@ export function createCallExperience(deps) {
         } catch (error) {
             deps.$("termExplanation").textContent = error.message;
         }
-    }
-
-    async function inviteCollaborator(event) {
-        event.preventDefault();
-        const email = deps.$("collaboratorEmail").value.trim();
-        if (!state.activeDocumentId) await createDocument();
-        try {
-            await postExperience("invite", { email });
-        } catch (error) {
-            if (!/already/i.test(error.message)) {
-                showDocumentError(error);
-                return;
-            }
-        }
-        const existing = currentDocuments().find(documentRecord => documentRecord.id === state.activeDocumentId) || {};
-        const emails = [...new Set([...(existing.collaboratorEmails || []), email.toLowerCase()])];
-        await postExperience("upsert-document", { document: { ...existing, id: state.activeDocumentId, collaboratorEmails: emails, title: deps.$("documentTitle").value, originalText: deps.$("documentOriginal").value, translatedText: deps.$("documentTranslated").value } });
-        deps.$("collaboratorEmail").value = "";
-        deps.$("documentStatus").textContent = "Collaborator invited. They can open the document after joining the call.";
     }
 
     function showCallError(error) { deps.setCallStatus?.(error.message); }

@@ -101,7 +101,7 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 .documents-panel[hidden] { display:none; }
 .documents-layout { display:grid; grid-template-columns:160px minmax(0,1fr); gap:12px; min-height:0; align-items:start; }
 .documents-list { align-content:start; }
-.documents-list,.document-history ul,#collaboratorList,#documentList { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+.documents-list,#documentList { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
 .document-panes { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .term-explanation { color:#d7e0ea; }
 .avatar-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:12px; }
