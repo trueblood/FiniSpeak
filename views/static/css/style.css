@@ -318,7 +318,7 @@ button:disabled { cursor:wait; opacity:.72; }
   .call-start-card #callForm button { min-height:50px; }
   .conversation-item { border-color:#e2e8f0; background:#f8fafc; color:var(--dark); }
   .conversation-review-button { background:#0b6cff; }
-  .dashboard-sidebar { position:fixed; z-index:60; left:10px; right:10px; bottom:calc(8px + env(safe-area-inset-bottom)); width:auto; padding:7px 8px; border:1px solid rgba(203,213,225,.9); border-radius:20px; background:rgba(255,255,255,.96); box-shadow:0 12px 38px rgba(15,23,42,.18); backdrop-filter:blur(18px); }
+  .dashboard-sidebar { position:fixed; z-index:60; top:auto; left:10px; right:10px; bottom:calc(8px + env(safe-area-inset-bottom)); width:auto; padding:7px 8px; border:1px solid rgba(203,213,225,.9); border-radius:20px; background:rgba(255,255,255,.96); box-shadow:0 12px 38px rgba(15,23,42,.18); backdrop-filter:blur(18px); }
   .sidebar-user { display:none; }
   .dashboard-nav { display:flex; align-items:stretch; gap:3px; margin:0; overflow-x:auto; scrollbar-width:none; }
   .dashboard-nav::-webkit-scrollbar { display:none; }
@@ -417,7 +417,7 @@ button:disabled { cursor:wait; opacity:.72; }
 .reviews-heading { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }.review-summary { text-align:right; }.review-list { display:grid; gap:12px; margin-top:18px; }.review-card { padding:18px; border:1px solid var(--border); border-radius:16px; background:#f8fafc; }.review-card-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }.review-card strong,.review-card small { display:block; }.review-card small { color:var(--muted); margin-top:3px; }.review-card p { margin:12px 0 0; color:var(--dark); }
 @media (max-width:1000px) { .directory-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }.interpreter-directory,.featured-interpreter-grid { grid-template-columns:1fr; }.profile-detail-grid { grid-template-columns:1fr; }.profile-facts { position:static; }.directory-results-layout.split-view { grid-template-columns:1fr; }.directory-location-bar { grid-template-columns:1fr 1fr; }.directory-location-bar>span { grid-column:1/-1; } }
 @media (max-width:650px) { .directory-filters { grid-template-columns:1fr; }.profile-detail-hero { grid-template-columns:1fr; justify-items:start; padding:24px; }.profile-detail-grid { padding:24px; }.reviews-heading { flex-direction:column; }.review-summary { text-align:left; } }
-@media (max-width:650px) { .directory-location-bar { grid-template-columns:1fr; }.directory-location-bar>span { grid-column:auto; }.directory-view-switch #directorySplitView { display:none; } #interpreterMap { min-height:55vh; height:55vh; border-radius:16px; }.location-entry button { padding-inline:12px; } }
+@media (max-width:650px) { .directory-location-bar { grid-template-columns:1fr; }.directory-location-bar>span { grid-column:auto; } #interpreterMap { min-height:55vh; height:55vh; border-radius:16px; }.location-entry button { padding-inline:12px; } #dashboardDirectory>.dashboard-heading { flex-direction:column; align-items:stretch; gap:12px; } .directory-view-switch { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; } .directory-view-switch button,.directory-view-switch #directorySplitView { display:block; width:100%; text-align:center; } }
 
 /* Database-backed interpreter taxonomy tags */
 .tag-field { margin:16px 0 22px; }

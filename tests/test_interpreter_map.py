@@ -67,7 +67,10 @@ class MapUiContractTests(unittest.TestCase):
 
     def test_mobile_map_layout_is_responsive(self):
         self.assertIn("#interpreterMap { min-height:55vh", self.css)
-        self.assertIn("#directorySplitView { display:none", self.css)
+        self.assertIn(".dashboard-sidebar { position:fixed; z-index:60; top:auto;", self.css)
+        self.assertIn(".directory-view-switch { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; }", self.css)
+        self.assertNotIn("#directorySplitView { display:none", self.css)
+        self.assertNotIn('view === "split" && window.matchMedia("(max-width: 900px)")', self.javascript)
 
     def test_map_has_local_leaflet_layout_fallback(self):
         self.assertIn("#interpreterMap .leaflet-pane", self.css)

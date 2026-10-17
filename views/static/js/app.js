@@ -1132,7 +1132,6 @@ function selectDirectoryProfile(profile, openProfile = false) {
 }
 
 function setDirectoryView(view) {
-    if (view === "split" && window.matchMedia("(max-width: 900px)").matches) view = "map";
     directoryView = view;
     const layout = $("directoryResultsLayout");
     layout.className = `directory-results-layout ${view}-view`;
