@@ -72,6 +72,9 @@ export function createCallExperience(deps) {
         participants: [],
         rows: [],
         documentsOpen: false,
+        notesOpen: false,
+        notesDirty: false,
+        notesTimer: 0,
         activeDocumentId: null,
         documentFieldId: "documentOriginal",
         documentDirty: false,
@@ -145,6 +148,9 @@ export function createCallExperience(deps) {
         deps.$("cancelInviteParticipant").onclick = () => deps.closeModal("inviteParticipantModal");
         deps.$("inviteParticipantForm").onsubmit = inviteParticipant;
         deps.$("documentsButton").onclick = () => state.documentsOpen ? closeDocuments() : openDocuments();
+        deps.$("notesButton").onclick = toggleNotes;
+        deps.$("closeCallNotes").onclick = () => setNotesOpen(false);
+        deps.$("callNotes").oninput = scheduleNotesSave;
         deps.$("closeDocuments").onclick = closeDocuments;
         deps.$("subtitleButton").onclick = cycleSubtitles;
         deps.$("subtitleMode").onchange = () => applySubtitleMode(deps.$("subtitleMode").value);
@@ -199,6 +205,7 @@ export function createCallExperience(deps) {
         if (interpreter) state.call = { ...call, aiInterpreter: null };
         applyParticipantPresence(participants || []);
         renderDocuments(call?.documents || []);
+        syncNotes(call);
         if (!state.summary && call?.savedSummaries?.length) showSummary(call.savedSummaries[call.savedSummaries.length - 1], "Saved with this call.");
         updateClock(call);
     }
@@ -447,6 +454,45 @@ export function createCallExperience(deps) {
         if (window.matchMedia("(max-width: 900px)").matches) {
             deps.$("callShell").dataset.pane = "documents";
             document.querySelectorAll("[data-call-pane]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.callPane === "documents")));
+        }
+    }
+
+    function setNotesOpen(open) {
+        state.notesOpen = open;
+        deps.$("callNotesPanel").hidden = !open;
+        deps.$("notesButton").setAttribute("aria-pressed", String(open));
+        if (open) deps.$("callNotes").focus();
+    }
+
+    function toggleNotes() {
+        setNotesOpen(!state.notesOpen);
+    }
+
+    function syncNotes(call) {
+        const notes = call?.callNotes || "";
+        const field = deps.$("callNotes");
+        if (!field || state.notesDirty || document.activeElement === field) return;
+        if (field.value !== notes) field.value = notes;
+    }
+
+    function scheduleNotesSave() {
+        state.notesDirty = true;
+        window.clearTimeout(state.notesTimer);
+        state.notesTimer = window.setTimeout(saveNotes, 700);
+    }
+
+    async function saveNotes() {
+        const text = deps.$("callNotes").value;
+        if (!deps.getCallId()) {
+            deps.$("callNotesStatus").textContent = "Join a call before saving notes.";
+            return;
+        }
+        try {
+            await postExperience("save-notes", { text });
+            state.notesDirty = false;
+            deps.$("callNotesStatus").textContent = text.trim() ? "Notes saved for everyone on the call." : "Notes cleared for everyone on the call.";
+        } catch (error) {
+            deps.$("callNotesStatus").textContent = error.message;
         }
     }
 
@@ -1029,6 +1075,9 @@ export function createCallExperience(deps) {
         const local = document.querySelector('.video-card[data-role="local"]');
         if (local && deps.$("videoGrid")) deps.$("videoGrid").appendChild(local);
         deps.$("documentsPanel").hidden = true;
+        setNotesOpen(false);
+        state.notesDirty = false;
+        window.clearTimeout(state.notesTimer);
         deps.$("videoFilmstrip").hidden = true;
         setTranscriptCollapsed(false);
     }

@@ -116,6 +116,15 @@ class CallExperienceTests(unittest.TestCase):
             build_experience_changes(call, actor, "set-media", {"mediaMode": "avatar", "avatarId": "made-up"})
         with self.assertRaisesRegex(ValueError, "Avatar Studio"):
             build_experience_changes(call, actor, "set-interpreter", {"interpreter": {"avatarId": "custom", "active": True}})
+        notes = build_experience_changes(call, actor, "save-notes", {"text": "  Follow up on the meeting.\nBring the document.  "})
+        self.assertEqual(notes["callNotes"], "Follow up on the meeting.\nBring the document.")
+        self.assertEqual(notes["callNotesAuthorId"], "customer-1")
+        cleared = build_experience_changes(call, actor, "save-notes", {"text": ""})
+        self.assertEqual(cleared["callNotes"], "")
+        with self.assertRaises(PermissionError):
+            build_experience_changes(call, {"uid": "stranger"}, "save-notes", {"text": "no"})
+        with self.assertRaises(ValueError):
+            build_experience_changes(call, actor, "save-notes", {"text": "x" * 4001})
 
     def test_repository_patches_experience_without_new_columns(self):
         row = call_row()

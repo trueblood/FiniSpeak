@@ -489,12 +489,18 @@
                     </aside>
                 </div>
                 <p id="callStatus" class="status call-status-line" role="status" aria-live="polite"></p>
+                <aside id="callNotesPanel" class="call-notes-panel" hidden aria-label="Call notes">
+                    <div class="documents-heading"><div><span class="eyebrow">Notes</span><h3>Call notes</h3></div><button id="closeCallNotes" class="secondary" type="button">Close</button></div>
+                    <textarea id="callNotes" rows="6" maxlength="4000" placeholder="Write a note from this call" aria-label="Call notes"></textarea>
+                    <p id="callNotesStatus" class="summary-status" role="status"></p>
+                </aside>
                 <div class="call-controls floating-controls" role="toolbar" aria-label="Call controls">
                     <button id="muteButton" class="secondary" type="button" aria-pressed="false" title="Mute microphone" aria-label="Mute microphone"><span class="tool-label">Mute</span></button>
                     <button id="cameraButton" class="secondary" type="button" aria-pressed="false" title="Turn camera off" aria-label="Turn camera off"><span class="tool-label">Camera</span></button>
                     <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
                     <button id="inviteParticipantButton" class="secondary" type="button" title="Invite participant" aria-label="Invite participant">Invite</button>
                     <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
+                    <button id="notesButton" class="secondary" type="button" aria-pressed="false" title="Open call notes" aria-label="Open call notes">Notes</button>
                     <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
                     <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
                     <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>

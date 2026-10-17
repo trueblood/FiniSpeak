@@ -218,6 +218,12 @@ def build_experience_changes(call, identity, action, data, lookup_account=None):
         saved = [item for item in (call.get("savedSummaries") or []) if isinstance(item, dict)]
         saved.append({"id": f"summary-{actor_id}-{len(saved) + 1}", "authorId": actor_id, "consent": True, "createdAt": _now(), **summary})
         return {"savedSummaries": saved[-20:]}
+    if action == "save-notes":
+        return {
+            "callNotes": _clean_text(data.get("text"), 4000).strip(),
+            "callNotesUpdatedAt": _now(),
+            "callNotesAuthorId": actor_id,
+        }
     if action == "upsert-document":
         return upsert_document(call, actor_id, data.get("document") or {})
     if action == "delete-document":
