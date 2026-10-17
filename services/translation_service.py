@@ -190,26 +190,48 @@ def translate_text(text, source, target, online=False, transport=None):
         cleaned = cleaned[:20000]
     base = {"source": source_code, "target": target_code}
     if not cleaned:
-        return {**base, "text": "", "status": "empty", "provider": "identity"}
+        return {**base, "text": "", "status": "empty", "provider": "identity", "message": "Enter text to translate."}
     if source_code == target_code:
-        return {**base, "text": cleaned, "status": "unchanged", "provider": "identity"}
+        return {
+            **base,
+            "text": cleaned,
+            "status": "unchanged",
+            "provider": "identity",
+            "message": "Choose a different translation language. The text was not translated.",
+        }
 
+    provider_failed = False
     if online or transport:
         try:
             sender = transport or _mymemory_transport
             translated = " ".join(sender(part, source_code, target_code) for part in _chunks(cleaned)).strip()
             if translated:
-                return {**base, "text": translated, "status": "translated", "provider": "provider" if transport else "mymemory"}
+                return {
+                    **base,
+                    "text": translated,
+                    "status": "translated",
+                    "provider": "provider" if transport else "mymemory",
+                    "message": "Translation updated.",
+                }
         except Exception:
-            pass
+            provider_failed = True
 
     fallback = glossary_translate(cleaned, source_code, target_code)
     changed = fallback.casefold() != cleaned.casefold()
+    if changed and provider_failed:
+        message = "The translation provider was unavailable. Glossary matches were applied."
+    elif changed:
+        message = "Translation updated."
+    elif provider_failed:
+        message = "The translation provider was unavailable, and no glossary match was found."
+    else:
+        message = "No glossary translation was available for that text."
     return {
         **base,
         "text": fallback,
         "status": "translated" if changed else "unavailable",
         "provider": "glossary" if changed else "identity",
+        "message": message,
     }
 
 

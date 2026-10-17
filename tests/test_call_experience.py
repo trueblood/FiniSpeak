@@ -59,8 +59,38 @@ class CallExperienceTests(unittest.TestCase):
         online = translate_text("Hello", "English", "French", online=True, transport=lambda text, source, target: "Bonjour")
         self.assertEqual(online["text"], "Bonjour")
         self.assertEqual(online["provider"], "provider")
+        self.assertEqual(online["message"], "Translation updated.")
         same = translate_text("Hello", "en", "en")
         self.assertEqual(same["status"], "unchanged")
+        self.assertIn("different translation language", same["message"])
+        sentence = translate_text(
+            "The patient needs an appointment tomorrow morning.",
+            "en",
+            "es",
+            online=True,
+            transport=lambda text, source, target: "El paciente necesita una cita mañana por la mañana.",
+        )
+        self.assertEqual(sentence["text"], "El paciente necesita una cita mañana por la mañana.")
+        self.assertEqual(sentence["provider"], "provider")
+
+        def provider_down(text, source, target):
+            raise RuntimeError("provider down")
+
+        glossary = translate_text("Thank you", "en", "es", online=True, transport=provider_down)
+        self.assertEqual(glossary["status"], "translated")
+        self.assertEqual(glossary["provider"], "glossary")
+        self.assertIn("gracias", glossary["text"].casefold())
+        self.assertIn("Glossary", glossary["message"])
+        missed = translate_text(
+            "The patient needs an appointment tomorrow morning.",
+            "en",
+            "es",
+            online=True,
+            transport=provider_down,
+        )
+        self.assertEqual(missed["status"], "unavailable")
+        self.assertIn("patient", missed["text"].casefold())
+        self.assertIn("no glossary match", missed["message"].casefold())
 
     def test_terminology_explains_a_selected_word(self):
         explained = explain_term("interpreter", "en", "es")

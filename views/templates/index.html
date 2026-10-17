@@ -480,7 +480,13 @@
                                 <div class="document-tools">
                                     <button id="explainSelection" class="secondary" type="button">Explain selection</button>
                                     <label>Permission<select id="documentPermission"><option value="edit">Participants can edit</option><option value="view">View only</option></select></label>
-                                    <div id="termExplanation" class="term-explanation" role="status" hidden></div>
+                                    <section id="termExplanation" class="term-explanation" hidden>
+                                        <button id="toggleTermExplanation" class="term-explanation-toggle" type="button" aria-expanded="false" aria-controls="termExplanationBody">
+                                            <span id="termExplanationLabel">Explanation</span>
+                                            <span id="termExplanationToggleHint">Show</span>
+                                        </button>
+                                        <div id="termExplanationBody" class="term-explanation-body" role="status" hidden></div>
+                                    </section>
                                 </div>
                                 <p id="documentStatus" class="summary-status" role="status"></p>
                             </div>

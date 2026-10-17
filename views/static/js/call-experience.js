@@ -78,6 +78,9 @@ export function createCallExperience(deps) {
         activeDocumentId: null,
         documentFieldId: "documentOriginal",
         documentDirty: false,
+        documentRevision: 0,
+        preserveDocumentStatus: false,
+        saveChain: Promise.resolve(),
         summary: null,
         spoken: new Set(),
         translationRequests: new Set(),
@@ -172,12 +175,18 @@ export function createCallExperience(deps) {
         deps.$("translateDocument").onclick = translateDocument;
         deps.$("explainSelection").addEventListener("mousedown", event => event.preventDefault());
         deps.$("explainSelection").onclick = explainSelection;
+        deps.$("toggleTermExplanation").onclick = () => {
+            const open = deps.$("toggleTermExplanation").getAttribute("aria-expanded") !== "true";
+            setTermExplanationOpen(open);
+        };
         deps.$("documentOriginal").addEventListener("focus", rememberDocumentField);
         deps.$("documentTranslated").addEventListener("focus", rememberDocumentField);
-        deps.$("documentPermission").onchange = () => scheduleDocumentSave();
-        deps.$("documentTitle").oninput = () => scheduleDocumentSave();
-        deps.$("documentOriginal").oninput = () => scheduleDocumentSave();
-        deps.$("documentTranslated").oninput = () => scheduleDocumentSave();
+        deps.$("documentPermission").onchange = noteDocumentEdit;
+        deps.$("documentSourceLang").onchange = noteDocumentEdit;
+        deps.$("documentTargetLang").onchange = noteDocumentEdit;
+        deps.$("documentTitle").oninput = noteDocumentEdit;
+        deps.$("documentOriginal").oninput = noteDocumentEdit;
+        deps.$("documentTranslated").oninput = noteDocumentEdit;
         document.querySelectorAll("[data-call-pane]").forEach(button => {
             button.onclick = () => setPane(button.dataset.callPane);
         });
@@ -792,6 +801,8 @@ export function createCallExperience(deps) {
         const documentId = `doc-${crypto.randomUUID()}`;
         state.activeDocumentId = documentId;
         state.documentDirty = true;
+        state.documentRevision += 1;
+        const revision = state.documentRevision;
         const documentRecord = {
             id: documentId,
             title: "Untitled document",
@@ -806,7 +817,18 @@ export function createCallExperience(deps) {
         deps.$("documentTitle").value = documentRecord.title;
         deps.$("documentOriginal").value = text;
         deps.$("documentTranslated").value = "";
-        return postExperience("upsert-document", { document: documentRecord }).catch(showDocumentError);
+        window.clearTimeout(state.saveTimer);
+        state.saveChain = state.saveChain.catch(() => {}).then(async () => {
+            if (revision !== state.documentRevision) return;
+            try {
+                await postExperience("upsert-document", { document: documentRecord });
+                if (revision !== state.documentRevision) return;
+                state.documentDirty = false;
+            } catch (error) {
+                showDocumentError(error);
+            }
+        });
+        return state.saveChain;
     }
 
     async function uploadDocument(event) {
@@ -840,14 +862,26 @@ export function createCallExperience(deps) {
         scheduleDocumentSave();
     }
 
-    function scheduleDocumentSave() {
-        state.documentDirty = true;
-        window.clearTimeout(state.saveTimer);
-        state.saveTimer = window.setTimeout(saveActiveDocument, 700);
+    function noteDocumentEdit() {
+        state.preserveDocumentStatus = false;
+        scheduleDocumentSave();
     }
 
-    async function saveActiveDocument() {
-        if (!state.activeDocumentId) return;
+    function scheduleDocumentSave() {
+        state.documentDirty = true;
+        state.documentRevision += 1;
+        const revision = state.documentRevision;
+        window.clearTimeout(state.saveTimer);
+        state.saveTimer = window.setTimeout(() => queueDocumentSave(revision), 700);
+    }
+
+    function queueDocumentSave(revision) {
+        state.saveChain = state.saveChain.catch(() => {}).then(() => saveActiveDocument(revision));
+        return state.saveChain;
+    }
+
+    async function saveActiveDocument(revision) {
+        if (!state.activeDocumentId || revision !== state.documentRevision) return;
         const existing = currentDocuments().find(document => document.id === state.activeDocumentId) || {};
         const documentRecord = {
             ...existing,
@@ -861,10 +895,13 @@ export function createCallExperience(deps) {
         };
         try {
             await postExperience("upsert-document", { document: documentRecord });
+            if (revision !== state.documentRevision) return;
             state.documentDirty = false;
-            deps.$("documentStatus").textContent = "Document saved for everyone on the call.";
+            if (!state.preserveDocumentStatus) {
+                deps.$("documentStatus").textContent = "Document saved for everyone on the call.";
+            }
         } catch (error) {
-            showDocumentError(error);
+            if (revision === state.documentRevision) showDocumentError(error);
         }
     }
 
@@ -909,22 +946,70 @@ export function createCallExperience(deps) {
         deps.$("documentTranslated").disabled = !editable;
     }
 
+    function translationStatusMessage(result) {
+        if (result?.message) return result.message;
+        if (result?.status === "empty") return "Enter text to translate.";
+        if (result?.status === "unchanged") return "Choose a different translation language. The text was not translated.";
+        if (result?.status === "translated" && result.provider === "glossary") return "The translation provider was unavailable. Glossary matches were applied.";
+        if (result?.status === "translated") return "Translation updated.";
+        return "The translation provider was unavailable, and no glossary match was found.";
+    }
+
+    function protectDocumentFromRefresh() {
+        state.documentDirty = true;
+        state.documentRevision += 1;
+        window.clearTimeout(state.saveTimer);
+    }
+
     async function translateDocument() {
+        if (!deps.getCallId()) {
+            deps.$("documentStatus").textContent = "Join a call before translating a document.";
+            return;
+        }
         if (!state.activeDocumentId) await createDocument(deps.$("documentOriginal").value);
+        const text = deps.$("documentOriginal").value;
+        const source = deps.$("documentSourceLang").value;
+        const target = deps.$("documentTargetLang").value;
+        if (!text.trim()) {
+            deps.$("documentTranslated").value = "";
+            state.preserveDocumentStatus = true;
+            deps.$("documentStatus").textContent = "Enter text to translate.";
+            scheduleDocumentSave();
+            return;
+        }
+        if (!source || !target) {
+            deps.$("documentStatus").textContent = "Choose the original and translation languages.";
+            return;
+        }
+        if (source === target) {
+            deps.$("documentTranslated").value = text;
+            state.preserveDocumentStatus = true;
+            deps.$("documentStatus").textContent = "Choose a different translation language. The text was not translated.";
+            scheduleDocumentSave();
+            return;
+        }
+        protectDocumentFromRefresh();
         deps.$("documentStatus").textContent = "Translating document…";
         try {
             const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(deps.getCallId())}/translate`, {
                 method: "POST",
-                body: JSON.stringify({
-                    text: deps.$("documentOriginal").value,
-                    source: deps.$("documentSourceLang").value,
-                    target: deps.$("documentTargetLang").value
-                })
+                body: JSON.stringify({ text, source, target })
             });
-            deps.$("documentTranslated").value = result.text || "";
-            deps.$("documentStatus").textContent = result.status === "translated" ? "Translation updated." : "No glossary or provider translation was available for that text.";
+            const unchangedFields = deps.$("documentOriginal").value !== text
+                || deps.$("documentSourceLang").value !== source
+                || deps.$("documentTargetLang").value !== target;
+            if (unchangedFields) {
+                state.preserveDocumentStatus = false;
+                deps.$("documentStatus").textContent = "The document changed while translating. Click Translate again.";
+                scheduleDocumentSave();
+                return;
+            }
+            deps.$("documentTranslated").value = typeof result.text === "string" ? result.text : "";
+            state.preserveDocumentStatus = true;
+            deps.$("documentStatus").textContent = translationStatusMessage(result);
             scheduleDocumentSave();
         } catch (error) {
+            state.preserveDocumentStatus = false;
             showDocumentError(error);
         }
     }
@@ -956,10 +1041,23 @@ export function createCallExperience(deps) {
         return allowCaret ? wordAround(value, start) : "";
     }
 
+    function setTermExplanationOpen(open) {
+        const section = deps.$("termExplanation");
+        const body = deps.$("termExplanationBody");
+        const toggle = deps.$("toggleTermExplanation");
+        if (!section || !body || !toggle) return;
+        section.hidden = false;
+        body.hidden = !open;
+        toggle.setAttribute("aria-expanded", String(open));
+        const hint = deps.$("termExplanationToggleHint");
+        if (hint) hint.textContent = open ? "Hide" : "Show";
+    }
+
     function showTermExplanation(text, detail) {
-        const box = deps.$("termExplanation");
-        box.hidden = false;
-        box.replaceChildren();
+        const body = deps.$("termExplanationBody");
+        const label = deps.$("termExplanationLabel");
+        body.replaceChildren();
+        label.textContent = detail?.term ? `Explanation · ${detail.term}` : "Explanation";
         if (detail) {
             const term = document.createElement("strong");
             term.textContent = detail.term || "";
@@ -969,13 +1067,14 @@ export function createCallExperience(deps) {
             meaning.textContent = same ? "No different translation was found." : `${languageName(detail.target)}: ${translation}`;
             const note = document.createElement("p");
             note.textContent = detail.definition || "";
-            box.append(term, meaning, note);
+            body.append(term, meaning, note);
         } else {
             const note = document.createElement("p");
             note.textContent = text;
-            box.append(note);
+            body.append(note);
         }
-        box.scrollIntoView({ block: "nearest" });
+        setTermExplanationOpen(true);
+        deps.$("termExplanation").scrollIntoView({ block: "nearest" });
     }
 
     async function explainSelection() {

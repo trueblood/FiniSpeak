@@ -106,8 +106,13 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 #documentList li { min-width:0; }
 #documentList button { display:block; width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; padding:10px 12px; }
 .document-panes { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.term-explanation { flex:1 0 100%; display:grid; gap:4px; margin:0; padding:12px 14px; border-radius:14px; background:#10151d; border:1px solid rgba(245,166,91,.45); color:#f4f7fb; }
+.term-explanation { flex:1 0 100%; display:grid; gap:8px; margin:0; padding:10px 12px; border-radius:14px; background:#10151d; border:1px solid rgba(245,166,91,.45); color:#f4f7fb; }
 .term-explanation[hidden] { display:none; }
+.term-explanation-toggle { display:flex; width:100%; justify-content:space-between; align-items:center; gap:12px; background:transparent; color:#f5a65b; border:0; border-radius:10px; padding:4px 2px; font-weight:650; text-align:left; }
+.term-explanation-toggle:hover { background:rgba(245,166,91,.1); }
+.term-explanation-toggle span:last-child { color:#d7e0ea; font-size:.75rem; font-weight:600; }
+.term-explanation-body { display:grid; gap:4px; }
+.term-explanation-body[hidden] { display:none; }
 .term-explanation strong { color:#f5a65b; }
 .term-explanation p { margin:0; color:#d7e0ea; }
 .avatar-studio-card { max-height:min(86dvh, 760px); overflow:auto; }
