@@ -66,8 +66,22 @@ class CallExperienceTests(unittest.TestCase):
         explained = explain_term("interpreter", "en", "es")
         self.assertIn("intérprete", explained["translation"])
         self.assertIn("language", explained["definition"].casefold())
+        punctuated = explain_term("meeting,", "en", "es")
+        self.assertEqual(punctuated["term"], "meeting")
+        self.assertIn("reunión", punctuated["translation"])
+        preferred = explain_term(
+            "meeting", "en", "es", online=True,
+            transport=lambda text, source, target: "Miembros del Equipo",
+        )
+        self.assertIn("reunión", preferred["translation"])
+        custom = explain_term("hospital", "en", "es", online=True, transport=lambda text, source, target: "hospital")
+        self.assertEqual(custom["translation"], "hospital")
+        phrase = explain_term(("hello " * 16).strip(), "en", "es")
+        self.assertIn("hola", phrase["translation"].casefold())
         with self.assertRaises(ValueError):
             explain_term("", "en", "es")
+        with self.assertRaises(ValueError):
+            explain_term("...", "en", "es")
 
     def test_summary_extracts_points_and_action_items(self):
         summary = summarize_lines([

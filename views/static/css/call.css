@@ -103,7 +103,10 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 .documents-list { align-content:start; }
 .documents-list,#documentList { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
 .document-panes { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.term-explanation { color:#d7e0ea; }
+.term-explanation { flex:1 0 100%; display:grid; gap:4px; margin:0; padding:12px 14px; border-radius:14px; background:#10151d; border:1px solid rgba(245,166,91,.45); color:#f4f7fb; }
+.term-explanation[hidden] { display:none; }
+.term-explanation strong { color:#f5a65b; }
+.term-explanation p { margin:0; color:#d7e0ea; }
 .avatar-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:12px; }
 .avatar-choice { display:grid; justify-items:center; gap:6px; padding:10px; border-radius:16px; background:#10151d; color:#fff; border:1px solid rgba(255,255,255,.08); }
 .avatar-choice[aria-pressed="true"] { border-color:#f5a65b; }

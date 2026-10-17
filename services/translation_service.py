@@ -213,14 +213,25 @@ def translate_text(text, source, target, online=False, transport=None):
     }
 
 
-def explain_term(term, source, target, online=False):
+def explain_term(term, source, target, online=False, transport=None):
     cleaned = re.sub(r"\s+", " ", str(term or "")).strip()
-    if not cleaned or len(cleaned) > 80:
+    cleaned = cleaned.strip(".,;:!?\"'“”«»()[]{}¿¡…").strip()
+    if len(cleaned) > 240:
+        cleaned = re.split(r"(?<=[.!?])\s+", cleaned)[0][:240].strip(".,;:!?\"'“”«»()[]{}¿¡… ").strip()
+    if not cleaned:
         raise ValueError("Select a word or short phrase to explain.")
-    translated = translate_text(cleaned, source, target, online=online)
-    definition = DEFINITIONS.get(cleaned.casefold()) or (
-        f"“{cleaned}” is used in this conversation. The same translation engine used for live captions produced the wording beside it."
+    glossary = translate_text(cleaned, source, target, online=False)
+    translated = glossary if glossary["status"] == "translated" else translate_text(
+        cleaned, source, target, online=online, transport=transport
     )
+    definition = DEFINITIONS.get(cleaned.casefold())
+    if not definition:
+        changed = translated["status"] == "translated" and translated["text"].casefold() != cleaned.casefold()
+        definition = (
+            "This wording uses the same translation as the live captions."
+            if changed
+            else "No saved translation was found. Try one word from the document."
+        )
     return {
         "term": cleaned,
         "definition": definition,

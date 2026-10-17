@@ -33,6 +33,7 @@ export function createCallExperience(deps) {
         rows: [],
         documentsOpen: false,
         activeDocumentId: null,
+        documentFieldId: "documentOriginal",
         documentDirty: false,
         summary: null,
         spoken: new Set(),
@@ -106,7 +107,10 @@ export function createCallExperience(deps) {
         deps.$("uploadDocument").onclick = () => deps.$("documentFile").click();
         deps.$("documentFile").onchange = uploadDocument;
         deps.$("translateDocument").onclick = translateDocument;
+        deps.$("explainSelection").addEventListener("mousedown", event => event.preventDefault());
         deps.$("explainSelection").onclick = explainSelection;
+        deps.$("documentOriginal").addEventListener("focus", rememberDocumentField);
+        deps.$("documentTranslated").addEventListener("focus", rememberDocumentField);
         deps.$("documentPermission").onchange = () => scheduleDocumentSave();
         deps.$("documentTitle").oninput = () => scheduleDocumentSave();
         deps.$("documentOriginal").oninput = () => scheduleDocumentSave();
@@ -751,21 +755,85 @@ export function createCallExperience(deps) {
         }
     }
 
+    function rememberDocumentField(event) {
+        if (event.target?.id === "documentOriginal" || event.target?.id === "documentTranslated") {
+            state.documentFieldId = event.target.id;
+        }
+    }
+
+    function wordAround(value, index) {
+        if (!value) return "";
+        const word = /[\p{L}\p{M}\p{N}'’-]/u;
+        let start = Math.max(0, Math.min(index, value.length));
+        if (start > 0 && (start === value.length || !word.test(value[start] || "")) && word.test(value[start - 1])) start -= 1;
+        while (start > 0 && word.test(value[start - 1])) start -= 1;
+        let end = start;
+        while (end < value.length && word.test(value[end])) end += 1;
+        return value.slice(start, end).trim();
+    }
+
+    function selectedDocumentText(field, allowCaret = true) {
+        if (!field) return "";
+        const value = field.value || "";
+        let start = field.selectionStart ?? 0;
+        let end = field.selectionEnd ?? start;
+        if (start > end) [start, end] = [end, start];
+        if (start !== end) return value.slice(start, end).replace(/\s+/g, " ").trim();
+        return allowCaret ? wordAround(value, start) : "";
+    }
+
+    function showTermExplanation(text, detail) {
+        const box = deps.$("termExplanation");
+        box.hidden = false;
+        box.replaceChildren();
+        if (detail) {
+            const term = document.createElement("strong");
+            term.textContent = detail.term || "";
+            const meaning = document.createElement("p");
+            const translation = (detail.translation || "").trim();
+            const same = translation.localeCompare(detail.term || "", undefined, { sensitivity: "accent" }) === 0;
+            meaning.textContent = same ? "No different translation was found." : `${languageName(detail.target)}: ${translation}`;
+            const note = document.createElement("p");
+            note.textContent = detail.definition || "";
+            box.append(term, meaning, note);
+        } else {
+            const note = document.createElement("p");
+            note.textContent = text;
+            box.append(note);
+        }
+        box.scrollIntoView({ block: "nearest" });
+    }
+
     async function explainSelection() {
-        const field = deps.$("documentOriginal");
-        const selected = field.value.slice(field.selectionStart || 0, field.selectionEnd || 0).trim();
+        const original = deps.$("documentOriginal");
+        const translated = deps.$("documentTranslated");
+        const field = state.documentFieldId === "documentTranslated" ? translated : original;
+        const other = field === translated ? original : translated;
+        const selected = selectedDocumentText(field) || selectedDocumentText(other, false);
         if (!selected) {
-            deps.$("termExplanation").textContent = "Select a word in the original document first.";
+            showTermExplanation("Select a word in the original or translated text first.");
             return;
         }
+        const fromTranslated = field === translated && Boolean(selectedDocumentText(field));
+        const source = fromTranslated ? deps.$("documentTargetLang").value : deps.$("documentSourceLang").value;
+        const target = fromTranslated ? deps.$("documentSourceLang").value : deps.$("documentTargetLang").value;
+        if (!deps.getCallId()) {
+            showTermExplanation("Join a call before explaining a selection.");
+            return;
+        }
+        const button = deps.$("explainSelection");
+        button.disabled = true;
+        showTermExplanation(`Explaining “${selected}”…`);
         try {
             const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(deps.getCallId())}/terminology`, {
                 method: "POST",
-                body: JSON.stringify({ term: selected, source: deps.$("documentSourceLang").value, target: deps.$("documentTargetLang").value })
+                body: JSON.stringify({ term: selected, source, target })
             });
-            deps.$("termExplanation").textContent = `${result.term}: ${result.translation}. ${result.definition}`;
+            showTermExplanation("", result);
         } catch (error) {
-            deps.$("termExplanation").textContent = error.message;
+            showTermExplanation(error.message);
+        } finally {
+            button.disabled = false;
         }
     }
 
