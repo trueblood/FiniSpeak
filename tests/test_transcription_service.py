@@ -43,21 +43,32 @@ class TranscriptionServiceTests(unittest.TestCase):
         get_client.assert_not_called()
 
     @patch("services.transcription_service._get_client")
-    def test_missing_metadata_confidence_uses_classifier_score(self, get_client):
+    def test_known_language_does_not_wait_for_a_second_model(self, get_client):
         from services.transcription_service import transcribe_pcm
 
         get_client.return_value.audio.transcriptions.create.return_value = SimpleNamespace(
             text="This is clearly an English sentence.",
             languages=[SimpleNamespace(code="en")],
         )
-        get_client.return_value.responses.create.return_value = SimpleNamespace(
-            output_text='{"language":"en","confidence":0.97}'
-        )
 
         result = transcribe_pcm(b"\x00\x00" * 8000, 16000)
 
+        get_client.return_value.responses.create.assert_not_called()
         self.assertEqual(result["language"], "en")
-        self.assertEqual(result["languageConfidence"], 0.97)
+        self.assertEqual(result["languageConfidence"], 0.8)
+
+    @patch("services.transcription_service._get_client")
+    def test_high_rate_microphone_audio_is_downsampled_before_upload(self, get_client):
+        from services.transcription_service import transcribe_pcm
+
+        create = get_client.return_value.audio.transcriptions.create
+        create.return_value = SimpleNamespace(text="hello", languages=[SimpleNamespace(code="en", confidence=0.9)])
+        transcribe_pcm(b"\x01\x00" * 4800, 48000)
+
+        uploaded = create.call_args.kwargs["file"]
+        with wave.open(uploaded, "rb") as wav:
+            self.assertEqual(wav.getframerate(), 16000)
+            self.assertEqual(wav.getnframes(), 1600)
 
     @patch("services.transcription_service._get_client")
     def test_language_falls_back_to_text_classifier(self, get_client):

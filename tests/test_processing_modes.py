@@ -45,7 +45,7 @@ class AudioProcessingPipelineTests(unittest.TestCase):
     def test_concurrent_capture_does_not_wait_for_transcription(self):
         release_worker = threading.Event()
 
-        def delayed_transcription(*_args):
+        def delayed_transcription(*_args, **_kwargs):
             release_worker.wait(2)
             return TRANSCRIPTION_RESULT
 
@@ -82,6 +82,31 @@ class AudioProcessingPipelineTests(unittest.TestCase):
         self.assertEqual(capture["bufferedSeconds"], 0.5)
         self.assertEqual(capture["generation"], 10)
         pipeline.close()
+
+    @patch("services.audio_processing_service.transcribe_pcm", return_value=TRANSCRIPTION_RESULT)
+    def test_detected_language_is_reused_on_the_next_chunk(self, transcribe_pcm):
+        pipeline = AudioProcessingPipeline("baseline", 16000, generation=11)
+        pipeline.feed(b"\x00" * pipeline.target_bytes)
+        pipeline.feed(b"\x00" * pipeline.target_bytes)
+        self.assertEqual(transcribe_pcm.call_args_list[1].args[2], "en")
+        self.assertEqual(transcribe_pcm.call_args_list[1].args[3], 0.95)
+        pipeline.close()
+
+    def test_slow_environment_cannot_stretch_live_chunks(self):
+        with patch.dict(
+            "os.environ",
+            {"TRANSCRIPTION_CHUNK_SECONDS": "5.0", "STREAMING_TRANSCRIPTION_CHUNK_SECONDS": "1.5"},
+            clear=False,
+        ):
+            baseline = AudioProcessingPipeline("baseline", 16000)
+            concurrent = AudioProcessingPipeline("concurrent", 16000)
+            streaming = AudioProcessingPipeline("streaming", 16000)
+        self.assertEqual(baseline.chunk_seconds, 1.5)
+        self.assertEqual(concurrent.chunk_seconds, 1.5)
+        self.assertEqual(streaming.chunk_seconds, 0.75)
+        baseline.close()
+        concurrent.close()
+        streaming.close()
 
 
 class ProcessingModeControllerTests(unittest.TestCase):

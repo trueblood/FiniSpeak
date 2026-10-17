@@ -168,13 +168,13 @@ The WebSocket verifies the first-party session and call membership. Baseline is 
 
 ```env
 OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe
-TRANSCRIPTION_CHUNK_SECONDS=5.0
+TRANSCRIPTION_CHUNK_SECONDS=1.5
 CONCURRENT_TRANSCRIPTION_WORKERS=2
-STREAMING_TRANSCRIPTION_CHUNK_SECONDS=1.5
+STREAMING_TRANSCRIPTION_CHUNK_SECONDS=0.75
 TRANSCRIPTION_ESTIMATED_USD_PER_MINUTE=0
 ```
 
-Concurrent keeps microphone capture running while background workers process complete chunks. Streaming uses shorter server chunks and shows browser speech-recognition partials where supported, while only finalized server results are saved. During a mode change, the prior pipeline drains, new microphone frames are buffered, and the next pipeline receives that buffer without replacing the WebRTC connection.
+Live chunks stay at or below those values so a longer setting cannot hold the microphone before speech-to-text starts. Concurrent and streaming keep capture running while background workers process complete chunks. Every mode shows browser speech-recognition partials where supported, while only finalized server results are saved. Microphone audio is reduced to 16 kHz before it is sent to the transcription model. During a mode change, the prior pipeline drains, new microphone frames are buffered, and the next pipeline receives that buffer without replacing the WebRTC connection.
 
 For local testing, start the app with a local MySQL database (or the development SQLite fallback), sign in, and start a call from `http://localhost:8080`. Select either experimental mode before the call, or switch while connected. Development diagnostics are shown only on localhost.
 
