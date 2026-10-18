@@ -16,6 +16,7 @@ calls_bp.add_url_rule("/<call_id>/documents/extract", view_func=calls_controller
 calls_bp.add_url_rule("/<call_id>/summary", view_func=calls_controller.summary, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/transcripts/<transcript_id>/translation", view_func=calls_controller.translate_transcript, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/state", view_func=calls_controller.update_state, methods=["PATCH"])
+calls_bp.add_url_rule("/<call_id>/leave", view_func=calls_controller.leave, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/translator-request", view_func=calls_controller.request_translator, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/translator-claim", view_func=calls_controller.claim_translator, methods=["POST"])
 calls_bp.add_url_rule("/<call_id>/transcripts", view_func=calls_controller.transcripts, methods=["GET", "POST"])

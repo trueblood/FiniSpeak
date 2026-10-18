@@ -25,7 +25,7 @@ class CallModel:
             "translatorId": translator.get("id") if translator else None,
             "translatorName": translator.get("displayName") if translator else None,
             "status": "ringing",
-            "translationStatus": "requested" if translator or language else "not_requested",
+            "translationStatus": "requested" if translator and translator.get("id") else "not_requested",
             "language": language,
             "dialect": dialect,
             "specialty": specialty,
@@ -83,7 +83,6 @@ class CallModel:
             return None
         current = snapshot.to_dict() or {}
         changes = {
-            "translationStatus": "requested",
             "updatedAt": datetime.now(timezone.utc),
         }
         if language:
@@ -103,6 +102,7 @@ class CallModel:
         declined = [str(item) for item in (current.get("declinedTranslatorIds") or []) if str(item).strip()]
         chosen = str(translator_id or "").strip()
         if chosen:
+            changes["translationStatus"] = "requested"
             changes["invitedTranslatorId"] = chosen
             changes["invitedTranslatorName"] = str(translator_name or "").strip() or None
             declined = [item for item in declined if item != chosen]
@@ -135,11 +135,13 @@ class CallModel:
             assigned = data.get("translatorId")
             if data.get("translationStatus") not in {"requested", "connected"}:
                 raise ValueError("This call is not requesting an interpreter.")
-            invited = str(data.get("invitedTranslatorId") or "").strip()
-            if invited and invited != translator["uid"]:
-                raise PermissionError("This interpretation request was sent to another interpreter.")
             if assigned and assigned != translator["uid"]:
                 raise PermissionError("Another interpreter has already accepted this call.")
+            invited = str(data.get("invitedTranslatorId") or "").strip()
+            if not invited:
+                raise PermissionError("Only an invited interpreter can join this call.")
+            if invited != translator["uid"]:
+                raise PermissionError("This interpretation request was sent to another interpreter.")
             now = datetime.now(timezone.utc)
             changes = {
                 "translatorId": translator["uid"],

@@ -56,7 +56,8 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="cameraButton" class="secondary" type="button" aria-pressed="false"', self.html)
 
     def test_call_stage_keeps_interpreter_and_participant_grid(self):
-        self.assertIn('id="smartInterpreter" class="smart-interpreter" aria-label="Smart Interpreter"', self.html)
+        self.assertNotIn('id="smartInterpreter"', self.html)
+        self.assertNotIn("Smart Interpreter", self.html)
         self.assertIn('id="participantGrid" class="participant-grid" hidden', self.html)
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
         script = (Path(__file__).parents[1] / "views/static/js/call-experience.js").read_text()

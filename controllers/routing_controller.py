@@ -4,7 +4,6 @@ from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
 from services.call_access import is_call_participant
 
-CallModel = repository_proxy("calls")
 SessionModel = repository_proxy("sessions")
 TranslatorModel = repository_proxy("translators")
 
@@ -56,13 +55,4 @@ def recommend():
     if not profiles:
         profiles = TranslatorModel.search(**search_args, specialty=data.get("specialty"), available_now=False)
     recommendations = [_recommendation(profile, language_confidence) for profile in profiles[:5]]
-    if call_id:
-        CallModel.request_translator(
-            call_id,
-            language=languages[0],
-            languages=languages,
-            language_confidence=language_confidence,
-            specialty=data.get("specialty"),
-            recommended_ids=[profile["id"] for profile in recommendations],
-        )
     return jsonify({"detectedLanguage": languages[0], "languages": languages, "languageConfidence": language_confidence, "recommendations": recommendations, "count": len(recommendations)})

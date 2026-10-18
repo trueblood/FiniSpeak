@@ -16,7 +16,7 @@ class SessionModel:
             "receiverId": receiver_id,
             "translatorId": translator_id,
             "status": "ringing" if receiver_id else "connected",
-            "translationStatus": "requested" if translator_id or language else "not_requested",
+            "translationStatus": "requested" if translator_id else "not_requested",
             "language": language,
             "dialect": dialect,
             "specialty": specialty,

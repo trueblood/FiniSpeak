@@ -518,7 +518,7 @@ class MySqlCallRepository:
         data = {"callerId": caller["uid"], "callerName": caller.get("displayName") or caller.get("email") or "FiniSpeak customer",
             "receiverId": receiver["uid"], "receiverName": receiver.get("displayName") or receiver.get("email") or "FiniSpeak customer",
             "translatorId": translator.get("id") if translator else None, "translatorName": translator.get("displayName") if translator else None,
-            "status": "ringing", "translationStatus": "requested" if translator or language else "not_requested", "language": language,
+            "status": "ringing", "translationStatus": "requested" if translator and translator.get("id") else "not_requested", "language": language,
             "dialect": dialect, "specialty": specialty, "purpose": purpose, "scheduledAt": scheduled_at,
             "createdAt": now, "updatedAt": now, "startedAt": None, "endedAt": None,
             "processingModes": {caller["uid"]: processing_mode}}
@@ -582,7 +582,17 @@ class MySqlCallRepository:
     def transition(self, call_id, next_state):
         row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
         if not row: return None
-        if next_state not in CALL_STATE_TRANSITIONS.get(row.status, set()):
+        # Ending is allowed from any live status so each participant can hang up
+        # even when the stored status is outside the usual ringing/connected path.
+        if row.status in CALL_TERMINAL_STATES:
+            self.session.rollback()
+            if next_state in CALL_TERMINAL_STATES:
+                return _document(row, CALL_FIELDS)
+            raise ValueError(f"A call cannot move from {row.status or 'unknown'} to {next_state}.")
+        allowed = set(CALL_STATE_TRANSITIONS.get(row.status, set()))
+        if next_state == "ended":
+            allowed.add("ended")
+        if next_state not in allowed:
             self.session.rollback(); raise ValueError(f"A call cannot move from {row.status or 'unknown'} to {next_state}.")
         now, changes = _now(), {"status": next_state, "updatedAt": _now()}
         if next_state in {"connected", "active"} and not row.started_at: changes["startedAt"] = now
@@ -590,11 +600,36 @@ class MySqlCallRepository:
         _touch(row, changes, CALL_FIELDS); _commit(self.session)
         return _document(row, CALL_FIELDS)
 
+    def release_member(self, call_id, uid):
+        """Remove one guest or interpreter while the customer call continues."""
+        row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
+        if not row:
+            return None
+        call = _document(row, CALL_FIELDS)
+        changes = {"updatedAt": _now()}
+        if call.get("translatorId") == uid:
+            changes.update({
+                "translatorId": None,
+                "translatorName": None,
+                "translationStatus": "not_requested",
+                "invitedTranslatorId": None,
+                "invitedTranslatorName": None,
+            })
+        guests = [item for item in (call.get("guestIds") or []) if item and item != uid]
+        if guests != list(call.get("guestIds") or []):
+            changes["guestIds"] = guests
+        if len(changes) == 1:
+            self.session.rollback()
+            return call
+        _touch(row, changes, CALL_FIELDS)
+        _commit(self.session)
+        return _document(row, CALL_FIELDS)
+
     def request_translator(self, call_id, language=None, languages=None, language_confidence=None, dialect=None, specialty=None, recommended_ids=None, translator_id=None, translator_name=None, decline_translator_id=None):
         row = self.session.scalar(select(SqlCall).where(SqlCall.id == call_id).with_for_update())
         if not row: return None
         current = _document(row, CALL_FIELDS)
-        changes = {"translationStatus": "requested", "updatedAt": _now()}
+        changes = {"updatedAt": _now()}
         if language: changes["detectedLanguage"] = language
         if languages:
             values = languages if isinstance(languages, (list, tuple, set)) else [languages]
@@ -608,6 +643,7 @@ class MySqlCallRepository:
         declined = [str(item) for item in (current.get("declinedTranslatorIds") or []) if str(item).strip()]
         chosen = str(translator_id or "").strip()
         if chosen:
+            changes["translationStatus"] = "requested"
             changes["invitedTranslatorId"] = chosen
             changes["invitedTranslatorName"] = str(translator_name or "").strip() or None
             declined = [item for item in declined if item != chosen]
@@ -631,11 +667,13 @@ class MySqlCallRepository:
         call = _document(row, CALL_FIELDS)
         if row.translation_status not in {"requested", "connected"}:
             self.session.rollback(); raise ValueError("This call is not requesting an interpreter.")
-        invited = str(call.get("invitedTranslatorId") or "").strip()
-        if invited and invited != translator["uid"]:
-            self.session.rollback(); raise PermissionError("This interpretation request was sent to another interpreter.")
         if row.translator_id and row.translator_id != translator["uid"]:
             self.session.rollback(); raise PermissionError("Another interpreter has already accepted this call.")
+        invited = str(call.get("invitedTranslatorId") or "").strip()
+        if not invited:
+            self.session.rollback(); raise PermissionError("Only an invited interpreter can join this call.")
+        if invited != translator["uid"]:
+            self.session.rollback(); raise PermissionError("This interpretation request was sent to another interpreter.")
         changes = {"translatorId": translator["uid"], "translatorName": translator.get("displayName") or translator.get("email") or "FiniSpeak interpreter", "translationStatus": "connected", "updatedAt": _now()}
         if invited:
             changes["invitedTranslatorId"] = None
@@ -670,12 +708,26 @@ class MySqlParticipantRepository:
         return [_document(row, PARTICIPANT_FIELDS) for row in self.session.scalars(select(SqlParticipant).where(SqlParticipant.call_id == call_id)).all()]
     def add(self, call_id, uid, role, display_name):
         now = _now(); row = self.session.get(SqlParticipant, (call_id, uid))
-        data = {"uid": uid, "role": role, "displayName": display_name, "joinedAt": now}
+        data = {"uid": uid, "role": role, "displayName": display_name, "joinedAt": now, "leftAt": None}
         if row: _touch(row, data, PARTICIPANT_FIELDS)
         else:
             row = SqlParticipant(call_id=call_id, id=uid, raw_document=_json_safe(data), migrated_at=now, mutation_version=1,
-                                 uid=uid, role=role, display_name=display_name, joined_at=now); self.session.add(row)
+                                 uid=uid, role=role, display_name=display_name, joined_at=now, left_at=None); self.session.add(row)
         _commit(self.session); return {"id": uid, **data}
+
+    def mark_left(self, call_id, uid):
+        now = _now()
+        row = self.session.get(SqlParticipant, (call_id, uid))
+        if row:
+            _touch(row, {"leftAt": now}, PARTICIPANT_FIELDS)
+        else:
+            data = {"uid": uid, "role": "guest", "leftAt": now, "joinedAt": now}
+            row = SqlParticipant(call_id=call_id, id=uid, raw_document=_json_safe(data), migrated_at=now, mutation_version=1,
+                                 uid=uid, role="guest", joined_at=now, left_at=now)
+            self.session.add(row)
+            _touch(row, data, PARTICIPANT_FIELDS)
+        _commit(self.session)
+        return _document(row, PARTICIPANT_FIELDS)
 
     def update_presence(self, call_id, uid, role, display_name, changes):
         allowed = {}
@@ -723,7 +775,7 @@ class MySqlSessionRepository:
             "translatorId": translator_id,
             "translatorName": translator.display_name if translator else None,
             "status": "ringing" if receiver_id else "connected",
-            "translationStatus": "requested" if translator_id or language else "not_requested",
+            "translationStatus": "requested" if translator_id else "not_requested",
             "language": language, "dialect": dialect, "specialty": specialty,
             "purpose": purpose, "scheduledAt": scheduled_at, "createdAt": now,
             "updatedAt": now, "startedAt": None, "endedAt": None,

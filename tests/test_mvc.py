@@ -183,6 +183,57 @@ class MvcRouteTests(unittest.TestCase):
             translator_name="Marcus Johnson",
         )
 
+    @patch("controllers.calls_controller.CallModel.request_translator")
+    @patch("controllers.calls_controller.CallModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_translator_request_requires_a_specific_interpreter(self, identity, get_call, request_translator):
+        identity.return_value = ({"uid": "customer-1", "role": "customer"}, None)
+        get_call.return_value = {
+            "id": "call-1", "callerId": "customer-1", "receiverId": "customer-2",
+            "status": "connected", "translationStatus": "not_requested", "translatorId": None,
+        }
+        response = self.client.post("/api/calls/call-1/translator-request", json={"languages": ["Spanish"]})
+        self.assertEqual(response.status_code, 400)
+        request_translator.assert_not_called()
+
+    @patch("controllers.calls_controller.CallModel.transition")
+    @patch("controllers.calls_controller.ParticipantModel.mark_left")
+    @patch("controllers.calls_controller.CallModel.is_participant", return_value=True)
+    @patch("controllers.calls_controller.CallModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_receiver_end_call_ends_the_call_for_every_recipient(self, identity, get_call, _participant, mark_left, transition):
+        identity.return_value = ({"uid": "customer-2", "role": "customer"}, None)
+        get_call.return_value = {
+            "id": "call-1", "callerId": "customer-1", "receiverId": "customer-2",
+            "translatorId": "translator-9", "status": "connected",
+        }
+        transition.return_value = {"id": "call-1", "status": "ended"}
+        response = self.client.post("/api/calls/call-1/leave")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["call"]["status"], "ended")
+        mark_left.assert_called_once_with("call-1", "customer-2")
+        transition.assert_called_once_with("call-1", "ended")
+
+    @patch("controllers.calls_controller.CallModel.release_member")
+    @patch("controllers.calls_controller.CallModel.transition")
+    @patch("controllers.calls_controller.ParticipantModel.mark_left")
+    @patch("controllers.calls_controller.CallModel.is_participant", return_value=True)
+    @patch("controllers.calls_controller.CallModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_translator_end_call_removes_only_that_translator(self, identity, get_call, _participant, mark_left, transition, release_member):
+        identity.return_value = ({"uid": "translator-9", "role": "translator"}, None)
+        get_call.return_value = {
+            "id": "call-1", "callerId": "customer-1", "receiverId": "customer-2",
+            "translatorId": "translator-9", "status": "connected",
+        }
+        release_member.return_value = {"id": "call-1", "status": "connected", "translatorId": None}
+        response = self.client.post("/api/calls/call-1/leave")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["call"]["status"], "connected")
+        mark_left.assert_called_once_with("call-1", "translator-9")
+        release_member.assert_called_once_with("call-1", "translator-9")
+        transition.assert_not_called()
+
     @patch("controllers.calls_controller.TranslatorModel.get", return_value={"id": "translator-9"})
     @patch("controllers.calls_controller.CallModel.all")
     @patch("controllers.calls_controller.identity_or_response")
@@ -198,10 +249,10 @@ class MvcRouteTests(unittest.TestCase):
         identity.return_value = ({"uid": "translator-9", "role": "translator"}, None)
         chosen = self.client.get("/api/calls/pending")
         self.assertEqual(chosen.status_code, 200)
-        self.assertEqual([call["id"] for call in chosen.get_json()["calls"]], ["direct", "open"])
+        self.assertEqual([call["id"] for call in chosen.get_json()["calls"]], ["direct"])
         identity.return_value = ({"uid": "translator-2", "role": "translator"}, None)
         other = self.client.get("/api/calls/pending")
-        self.assertEqual([call["id"] for call in other.get_json()["calls"]], ["other-person", "open"])
+        self.assertEqual([call["id"] for call in other.get_json()["calls"]], ["other-person"])
 
     @patch("controllers.calls_controller.CallModel.is_participant", return_value=False)
     @patch("controllers.calls_controller.CallModel.get")

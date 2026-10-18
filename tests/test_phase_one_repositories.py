@@ -175,6 +175,37 @@ class MySqlAuthorizationTests(unittest.TestCase):
         self.assertIn("translator-9", result["declinedTranslatorIds"])
         self.assertEqual(result["translationStatus"], "not_requested")
 
+    def test_language_metadata_does_not_open_an_interpreter_request(self):
+        row = sql_call(status="connected", translation_status="not_requested", translator_id=None, raw_document={})
+        result = MySqlCallRepository(FakeSession(scalar=row)).request_translator(
+            "call-1", language="Spanish", recommended_ids=["translator-9"])
+        self.assertEqual(result["translationStatus"], "not_requested")
+        self.assertIsNone(result.get("invitedTranslatorId"))
+        self.assertEqual(result["recommendedTranslatorIds"], ["translator-9"])
+
+    def test_claim_rejects_a_request_that_did_not_invite_anyone(self):
+        row = sql_call(status="connected", translation_status="requested", translator_id=None, raw_document={})
+        session = FakeSession(scalar=row)
+        with self.assertRaisesRegex(PermissionError, "invited interpreter"):
+            MySqlCallRepository(session).claim_translator("call-1", {"uid": "translator-9"})
+        self.assertEqual(session.rollbacks, 1)
+
+    def test_ending_works_from_a_live_call_and_again_after_it_ended(self):
+        live = sql_call(status="connected", translation_status="not_requested")
+        ended = MySqlCallRepository(FakeSession(scalar=live)).transition("call-1", "ended")
+        self.assertEqual(ended["status"], "ended")
+        self.assertIsNotNone(ended["endedAt"])
+        already = sql_call(status="ended")
+        session = FakeSession(scalar=already)
+        again = MySqlCallRepository(session).transition("call-1", "ended")
+        self.assertEqual(again["status"], "ended")
+        self.assertEqual(session.rollbacks, 1)
+
+    def test_mark_left_records_the_person_who_hung_up(self):
+        result = MySqlParticipantRepository(FakeSession()).mark_left("call-1", "customer-2")
+        self.assertEqual(result["id"], "customer-2")
+        self.assertIsNotNone(result["leftAt"])
+
     def test_claim_rejects_an_interpreter_who_was_not_invited(self):
         row = sql_call(status="connected", translation_status="requested", translator_id=None,
             raw_document={"invitedTranslatorId": "translator-9"})

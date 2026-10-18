@@ -115,11 +115,10 @@ class MilestoneOneApiTests(unittest.TestCase):
         self.assertEqual(response.get_json()["recommendations"][0]["matchConfidence"], 0.93)
         search.assert_called_once_with(language="Spanish", specialty=None, available_now=True)
 
-    @patch("controllers.routing_controller.CallModel.request_translator")
     @patch("controllers.routing_controller.SessionModel.get")
     @patch("controllers.routing_controller.TranslatorModel.search")
     @patch("controllers.routing_controller.identity_or_response")
-    def test_multiple_languages_filter_for_interpreters_who_cover_every_language(self, identity, search, get_session, request_translator):
+    def test_multiple_languages_filter_for_interpreters_who_cover_every_language(self, identity, search, get_session):
         identity.return_value = ({"uid": "customer-1", "role": "customer"}, None)
         get_session.return_value = {"callerId": "customer-1", "receiverId": "customer-2", "translatorId": None}
         search.return_value = [{"id": "interpreter-1", "displayName": "Amira", "rating": 5, "availability": {"availableNow": True}}]
@@ -127,14 +126,6 @@ class MilestoneOneApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["languages"], ["Spanish", "Arabic"])
         search.assert_called_once_with(languages=["Spanish", "Arabic"], specialty=None, available_now=True)
-        request_translator.assert_called_once_with(
-            "call-1",
-            language="Spanish",
-            languages=["Spanish", "Arabic"],
-            language_confidence=0.75,
-            specialty=None,
-            recommended_ids=["interpreter-1"],
-        )
 
     @patch("controllers.admin_controller.TranslatorModel.set_verification")
     @patch("controllers.admin_controller.identity_or_response")

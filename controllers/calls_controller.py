@@ -108,6 +108,33 @@ def detail(call_id):
     return jsonify({"call": call})
 
 
+def leave(call_id):
+    """Hang up for the person who pressed End Call.
+
+    The caller or the person they called ends the conversation for everyone
+    still connected. A guest or interpreter leaves on their own.
+    """
+    identity, error = identity_or_response()
+    if error:
+        return error
+    call = CallModel.get(call_id)
+    if not call:
+        return jsonify({"error": "Call not found."}), 404
+    uid = identity["uid"]
+    if identity.get("role") != "admin" and not CallModel.is_participant(call, uid):
+        return jsonify({"error": "You cannot make this call-state change."}), 403
+    ParticipantModel.mark_left(call_id, uid)
+    ends_for_everyone = uid in {call.get("callerId"), call.get("receiverId")}
+    try:
+        if ends_for_everyone:
+            updated = CallModel.transition(call_id, "ended")
+        else:
+            updated = CallModel.release_member(call_id, uid)
+        return jsonify({"call": updated or call})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+
 def update_state(call_id):
     identity, error = identity_or_response()
     if error:
@@ -136,10 +163,7 @@ def _translator_request_visible(call, uid):
     if call.get("translatorId") not in {None, "", uid}:
         return False
     invited = str(call.get("invitedTranslatorId") or "").strip()
-    if invited:
-        return invited == uid
-    declined = {str(item) for item in (call.get("declinedTranslatorIds") or []) if str(item).strip()}
-    return uid not in declined
+    return bool(invited) and invited == uid
 
 
 def request_translator(call_id):
@@ -167,6 +191,8 @@ def request_translator(call_id):
     if call.get("translationStatus") == "connected" and call.get("translatorId"):
         return jsonify({"error": "A translator has already joined this call."}), 409
     translator_id = str(data.get("translatorId") or "").strip()
+    if not translator_id:
+        return jsonify({"error": "Choose a specific interpreter to invite."}), 400
     translator_name = None
     if translator_id:
         translator = TranslatorModel.get(translator_id)

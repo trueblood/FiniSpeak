@@ -2329,33 +2329,37 @@ function watchCall(callId) {
     connectSignaling(callId);
     const refresh = async () => {
       try {
-        const [callPayload, participantPayload, transcriptPayload] = await Promise.all([
-          apiFetch(`/api/calls/${encodeURIComponent(callId)}`),
+        const callPayload = await apiFetch(`/api/calls/${encodeURIComponent(callId)}`);
+        const call = callPayload.call;
+        if (["ended", "declined", "cancelled"].includes(call.status)) {
+            cleanupCall(); show("dashboardView"); loadConversationHistory(); return;
+        }
+        const [participantPayload, transcriptPayload] = await Promise.all([
           apiFetch(`/api/sessions/${encodeURIComponent(callId)}/participants`),
           apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`)
         ]);
-        const call = callPayload.call;
         const translatorConnected = call.translationStatus === "connected";
         activeTranslatorConnected = translatorConnected;
         $("callTitle").textContent = call.status === "ended" ? "Call ended" : "Live conversation";
         $("requestTranslatorButton").disabled = translatorConnected;
         $("requestTranslatorButton").title = translatorConnected ? "A translator has joined this call" : "";
         invitedTranslatorId = call.invitedTranslatorId || null;
-        const translatorWait = call.invitedTranslatorId
-            ? `Calling ${call.invitedTranslatorName || "the translator"}… waiting for them to accept.`
-            : "Waiting for a translator to join…";
+        const translatorWait = `Calling ${call.invitedTranslatorName || "the translator"}… waiting for them to accept.`;
         $("callStatus").textContent = call.status === "ringing"
             ? "Calling… waiting for the other customer to accept."
             : call.status === "declined"
                 ? "Call declined."
-                : call.translationStatus === "requested"
+                : call.invitedTranslatorId
                     ? translatorWait
                     : translatorConnected
                         ? ""
                         : "Customer call connected";
-        if (["ended", "declined"].includes(call.status)) { cleanupCall(); show("dashboardView"); loadConversationHistory(); return; }
+        const participantRows = participantPayload.participants || [];
+        if (participantRows.some(person => person?.id === currentUser.uid && person.leftAt)) {
+            cleanupCall(); show("dashboardView"); loadConversationHistory(); return;
+        }
         const ids = new Set();
-        rosterParticipants = peopleInCall(call, participantPayload.participants || []);
+        rosterParticipants = peopleInCall(call, participantRows);
         for (const participant of rosterParticipants) {
             if (!participant?.id || participant.id === currentUser.uid) continue;
             ids.add(participant.id);
@@ -2371,7 +2375,7 @@ function watchCall(callId) {
         });
         renderCallRoster(rosterParticipants, rows);
         renderTranscript(rows);
-        callExperience?.sync(call, participantPayload.participants || []);
+        callExperience?.sync(call, participantRows.filter(person => person && !person.leftAt));
         callExperience?.updateSubtitles(rows);
         callExperience?.maybeSpeak(rows);
         callExperience?.layout();
@@ -2394,8 +2398,14 @@ function peerSnapshot(pc) {
 
 function peopleInCall(call, participants) {
     const people = new Map();
+    const left = new Set();
     for (const participant of participants || []) {
-        if (participant?.id) people.set(participant.id, participant);
+        if (!participant?.id) continue;
+        if (participant.leftAt) {
+            left.add(participant.id);
+            continue;
+        }
+        people.set(participant.id, participant);
     }
     const roles = [
         ["callerId", "callerName", "caller"],
@@ -2404,11 +2414,11 @@ function peopleInCall(call, participants) {
     ];
     for (const [idKey, nameKey, role] of roles) {
         const id = call?.[idKey];
-        if (!id || people.has(id)) continue;
+        if (!id || left.has(id) || people.has(id)) continue;
         people.set(id, { id, displayName: call[nameKey] || "Guest", role });
     }
     for (const id of call?.guestIds || []) {
-        if (id && !people.has(id)) people.set(id, { id, displayName: "Guest", role: "guest" });
+        if (id && !left.has(id) && !people.has(id)) people.set(id, { id, displayName: "Guest", role: "guest" });
     }
     return [...people.values()];
 }
@@ -2899,7 +2909,6 @@ async function openTranscriptionPipeline(callId,mode){
 async function saveFinalTranscript(callId,m,mode,generation){
     const evidence=m.languageEvidence||null, stable=evidence?.primaryLanguage||m.language, confidence=normalizeLanguageConfidence(evidence?.primaryConfidence??m.languageConfidence);if(stable)updateDetectedLanguage(stable,confidence,evidence?.confirmed===true);
     const id=`${currentUser.uid}-${generation}-${m.sequence??0}`;await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`,{method:"POST",headers:{"Idempotency-Key":id},body:JSON.stringify({id,language:m.language||null,languageConfidence:normalizeLanguageConfidence(m.languageConfidence),primaryLanguage:stable||null,primaryLanguageConfidence:confidence,languageSampleCount:Number(evidence?.sampleCount||1),languageConfirmationRequired:evidence?.requiresConfirmation===true,text:m.text.trim(),isFinal:true,processingMode:mode,processingGeneration:generation,performance:m.metrics||null,clientCreatedAt:Date.now()})});callExperience?.requestTranslations(callId, id, m.language || stable);showProcessingDiagnostics(m.metrics);$("partialTranscript").classList.add("hidden");callExperience?.onPartial("");$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;
-    const routeKey=languageRouteKey(callId,stable);if(stable&&evidence?.requiresConfirmation!==true&&!routedLanguageCalls.has(routeKey)){routedLanguageCalls.add(routeKey);routeDetectedLanguage(callId,stable,confidence).catch(error=>{routedLanguageCalls.delete(routeKey);console.warn("Automatic language routing unavailable:",error);});}
 }
 async function requestPipelineStop(){const socket=transcriptionSocket;if(!socket||socket.readyState!==WebSocket.OPEN){socket?.close();return;}await new Promise(resolve=>{let done=false;const finish=()=>{if(!done){done=true;transcriptionStopResolver=null;resolve();}};transcriptionStopResolver=finish;socket.send(JSON.stringify({type:"stop"}));setTimeout(finish,60000);});socket.close();}
 async function switchProcessingMode(next){if(!activeCallId||next===selectedProcessingMode)return;const previous=selectedProcessingMode;transcriptionSwitching=true;stopBrowserStreamingPartials();renderProcessingMode();$("processingModeStatus").textContent=`Finishing buffered ${previous} audio…`;try{await requestPipelineStop();await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:next})});selectedProcessingMode=next;renderProcessingMode();await openTranscriptionPipeline(activeCallId,next);}catch(error){selectedProcessingMode="baseline";renderProcessingMode();$("processingModeStatus").textContent=`${next} failed. Returning to baseline.`;try{await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:"baseline"})});await openTranscriptionPipeline(activeCallId,"baseline");}catch(fallbackError){transcriptionSwitching=false;renderProcessingMode();$("processingModeStatus").textContent=`Transcription logging unavailable: ${fallbackError.message||error.message}`;$("transcriptionStatus").textContent="Call audio is still connected; logging is unavailable.";}}}
@@ -3334,8 +3343,7 @@ function renderTranscript(rows) {
     }
     const localLanguage = [...rows].reverse().find(row => row.speakerId === currentUser?.uid && row.language);
     if (localLanguage) updateDetectedLanguage(localLanguage.language, localLanguage.languageConfidence);
-    updateParticipantLanguageBadges(rows);
-    routeTranscriptLanguages(rows);
+        updateParticipantLanguageBadges(rows);
     list.innerHTML = "";
     for (const row of rows) {
         const item = document.createElement("div"); item.className = "transcript-line";
@@ -3376,23 +3384,6 @@ function updateParticipantLanguageBadges(rows) {
         const confidence = normalizeLanguageConfidence(row.languageConfidence);
         badge.textContent = `${detectedLanguageLabel(row.language)}${confidence === null ? "" : ` ${Math.round(confidence * 100)}%`}`;
     });
-}
-
-function routeTranscriptLanguages(rows) {
-    if (!activeCallId) return;
-    const latestBySpeaker = new Map();
-    for (const row of rows) if (row.speakerId && row.language) latestBySpeaker.set(row.speakerId, row);
-    for (const row of latestBySpeaker.values()) {
-        const confidence = normalizeLanguageConfidence(row.languageConfidence);
-        if (confidence === null || confidence < 0.7) continue;
-        const routeKey = languageRouteKey(activeCallId, row.language);
-        if (routedLanguageCalls.has(routeKey)) continue;
-        routedLanguageCalls.add(routeKey);
-        routeDetectedLanguage(activeCallId, row.language, confidence).catch(error => {
-            routedLanguageCalls.delete(routeKey);
-            console.warn("Participant language routing unavailable:", error);
-        });
-    }
 }
 
 function formatTranscriptRole(role) {
@@ -3485,10 +3476,13 @@ async function toggleCamera() {
     callExperience?.persistPresence()?.catch(error => console.warn(error));
 }
 async function endCall() {
-    if (activeCallId) {
-        await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/state`, {
-            method: "PATCH", body: JSON.stringify({ state: "ended" })
-        });
+    const callId = activeCallId;
+    if (callId) {
+        try {
+            await apiFetch(`/api/calls/${encodeURIComponent(callId)}/leave`, { method: "POST", body: "{}" });
+        } catch (error) {
+            console.warn("Ending the call on the server failed", error);
+        }
     }
     cleanupCall(); show("dashboardView"); loadConversationHistory();
 }
@@ -3598,8 +3592,12 @@ function startDashboardListeners() {
             $("acceptIncomingCall").textContent = "Accept";
             openModal("incomingCallModal");
         } else if (currentProfile.role === "translator") {
-            pendingIncomingCall = { ...pending, kind: "translator" };
             const directInvite = pending.invitedTranslatorId && pending.invitedTranslatorId === currentUser.uid;
+            if (!directInvite) {
+                clearPendingIncomingCall();
+                return;
+            }
+            pendingIncomingCall = { ...pending, kind: "translator" };
             $("incomingCallEyebrow").textContent = directInvite ? "Incoming FiniSpeak call" : "Interpretation request";
             $("incomingCallTitle").textContent = directInvite
                 ? `${pending.callerName || "Someone"} is calling you`
