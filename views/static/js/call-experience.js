@@ -170,8 +170,14 @@ export function createCallExperience(deps) {
             deps.renderTranscript?.(state.rows);
             refreshInterpreterLanguages();
         };
-        deps.$("collapseTranscript").onclick = () => setTranscriptCollapsed(true);
-        deps.$("expandTranscript").onclick = () => setTranscriptCollapsed(false);
+        deps.$("collapseTranscript").onclick = closeTranscript;
+        deps.$("expandTranscript").onclick = openTranscript;
+        if (deps.$("toggleCallDetails")) {
+            deps.$("toggleCallDetails").onclick = () => {
+                const shell = deps.$("callShell");
+                setCallDetailsCollapsed(!shell.classList.contains("are-call-details-collapsed"));
+            };
+        }
         deps.$("screenShareButton").onclick = () => toggleScreenShare().catch(showCallError);
         deps.$("summarizeButton").onclick = summarize;
         deps.$("copySummary").onclick = copySummary;
@@ -477,7 +483,11 @@ export function createCallExperience(deps) {
     }
 
     function setPane(pane) {
-        deps.$("callShell").dataset.pane = pane;
+        const shell = deps.$("callShell");
+        if (callLayoutIsMobile() && shell.dataset.pane === "transcript" && pane !== "transcript") {
+            setTranscriptCollapsed(true);
+        }
+        shell.dataset.pane = pane;
         document.querySelectorAll("[data-call-pane]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.callPane === pane)));
         if (pane === "documents") showDocuments();
         else if (pane !== "documents" && callLayoutIsMobile()) {
@@ -597,6 +607,24 @@ export function createCallExperience(deps) {
         deps.$("callShell").classList.toggle("is-transcript-collapsed", collapsed);
         deps.$("collapseTranscript").setAttribute("aria-expanded", String(!collapsed));
         deps.$("expandTranscript").hidden = !collapsed;
+    }
+
+    function openTranscript() {
+        setTranscriptCollapsed(false);
+        if (callLayoutIsMobile()) setPane("transcript");
+    }
+
+    function closeTranscript() {
+        setTranscriptCollapsed(true);
+        if (callLayoutIsMobile() && deps.$("callShell").dataset.pane === "transcript") setPane("video");
+    }
+
+    function setCallDetailsCollapsed(collapsed) {
+        deps.$("callShell").classList.toggle("are-call-details-collapsed", collapsed);
+        const toggle = deps.$("toggleCallDetails");
+        if (!toggle) return;
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+        toggle.textContent = collapsed ? "Show call details" : "Hide call details";
     }
 
     function renderStudioAvatars() {
@@ -1409,6 +1437,7 @@ export function createCallExperience(deps) {
         window.clearTimeout(state.notesTimer);
         if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
         deps.$("videoFilmstrip").hidden = true;
+        setCallDetailsCollapsed(true);
         setTranscriptCollapsed(true);
     }
 

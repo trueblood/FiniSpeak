@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-scroll-controls">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-mobile-call-details">
 </head>
 <body>
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -405,7 +405,7 @@
 
     <section id="callView" class="call-view hidden">
         <video id="localCapture" class="local-capture" autoplay muted playsinline webkit-playsinline aria-hidden="true"></video>
-        <div id="callShell" class="call-shell subs-both is-transcript-collapsed" data-pane="video">
+        <div id="callShell" class="call-shell subs-both is-transcript-collapsed are-call-details-collapsed" data-pane="video">
             <div class="call-frame">
                 <section id="smartInterpreter" class="smart-interpreter" hidden aria-hidden="true">
                     <div class="smart-interpreter-copy">
@@ -423,6 +423,8 @@
                     <div class="call-nav-brand"><span class="brand-mark" aria-hidden="true">F</span><div><span class="eyebrow">FiniSpeak live call</span><h2 id="callTitle">Connecting…</h2></div></div>
                     <div class="call-nav-options" aria-label="Call display options">
                         <button id="expandTranscript" class="secondary expand-transcript" type="button">Transcript</button>
+                        <button id="toggleCallDetails" class="secondary call-details-toggle" type="button" aria-expanded="false" aria-controls="callDetailsMeta callDetailsSettings">Show call details</button>
+                        <div id="callDetailsSettings" class="call-details-settings">
                         <label><span>Subtitles</span>
                             <select id="subtitleMode" aria-label="Subtitle display">
                                 <option value="both">Both</option>
@@ -434,8 +436,9 @@
                         <label><span>Language</span>
                             <select id="viewerLanguage" aria-label="Subtitle language"></select>
                         </label>
+                        </div>
                     </div>
-                    <div class="call-nav-meta">
+                    <div id="callDetailsMeta" class="call-nav-meta">
                         <span id="callDuration" class="call-pill">00:00</span>
                         <span id="callConnection" class="call-pill">Connecting</span>
                         <span id="translationIndicator" class="call-pill">Translation ready</span>
@@ -754,6 +757,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-scroll-controls"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-mobile-call-details"></script>
 </body>
 </html>
