@@ -79,6 +79,8 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="callControls" class="call-controls floating-controls"', self.html)
         self.assertIn('class="call-shell subs-both is-transcript-collapsed"', self.html)
         self.assertIn('class="call-control-more"', self.html)
+        self.assertIn('id="toggleMoreControls"', self.html)
+        self.assertIn('id="callMoreMenu" class="call-control-more-menu" hidden', self.html)
         self.assertIn('id="toggleMobileSections"', self.html)
         self.assertIn('id="callMobileSwitch" class="call-mobile-switch"', self.html)
         self.assertLess(self.html.index('id="expandTranscript"'), self.html.index('class="call-nav-meta"'))

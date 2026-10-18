@@ -197,10 +197,25 @@ export function createCallExperience(deps) {
         document.querySelectorAll("[data-call-pane]").forEach(button => {
             button.onclick = () => setPane(button.dataset.callPane);
         });
+        if (deps.$("toggleMoreControls") && deps.$("callMoreMenu")) {
+            deps.$("toggleMoreControls").onclick = event => {
+                event.stopPropagation();
+                setMoreMenuOpen(deps.$("callMoreMenu").hidden);
+            };
+            deps.$("callMoreMenu").onclick = event => {
+                if (event.target.closest("button")) setMoreMenuOpen(false);
+            };
+            document.addEventListener("click", event => {
+                if (!event.target.closest(".call-control-more")) setMoreMenuOpen(false);
+            });
+            document.addEventListener("keydown", event => {
+                if (event.key === "Escape") setMoreMenuOpen(false);
+            });
+        }
         if (deps.$("toggleMobileSections")) {
             deps.$("toggleMobileSections").onclick = () => {
                 setMobileSectionsCollapsed(!state.mobileSectionsCollapsed);
-                deps.$("toggleMobileSections").closest("details")?.removeAttribute("open");
+                setMoreMenuOpen(false);
                 layout();
             };
         }
@@ -499,6 +514,14 @@ export function createCallExperience(deps) {
 
     function callLayoutIsMobile() {
         return window.matchMedia("(max-width: 900px)").matches;
+    }
+
+    function setMoreMenuOpen(open) {
+        const toggle = deps.$("toggleMoreControls");
+        const menu = deps.$("callMoreMenu");
+        if (!toggle || !menu) return;
+        menu.hidden = !open;
+        toggle.setAttribute("aria-expanded", String(open));
     }
 
     function setMobileSectionsCollapsed(collapsed) {
@@ -1426,6 +1449,7 @@ export function createCallExperience(deps) {
         window.clearTimeout(state.notesTimer);
         if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
         deps.$("videoFilmstrip").hidden = true;
+        setMoreMenuOpen(false);
         setMobileSectionsCollapsed(false);
         setTranscriptCollapsed(true);
     }

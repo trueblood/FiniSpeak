@@ -130,10 +130,10 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
 .call-view .floating-controls { position:absolute; left:50%; bottom:18px; transform:translateX(-50%); width:max-content; max-width:calc(100% - 36px); margin:0; display:flex; flex-wrap:nowrap; justify-content:center; align-items:stretch; gap:6px; z-index:9; padding:7px; border-radius:18px; background:rgba(12,16,22,.9); border:1px solid rgba(255,255,255,.1); box-shadow:0 10px 32px rgba(0,0,0,.38); backdrop-filter:blur(14px); }
 .call-control-tools,.call-control-primary { display:flex; gap:6px; align-items:stretch; }
 .call-control-more { position:relative; display:flex; }
-.call-control-more summary { display:flex; align-items:center; justify-content:center; min-width:58px; min-height:42px; padding:6px 10px; border-radius:12px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08); color:#fff; font-size:.72rem; font-weight:750; cursor:pointer; list-style:none; }
-.call-control-more summary::-webkit-details-marker { display:none; }
-.call-control-more[open] summary { background:#123c69; border-color:#7eb6ff; }
+.call-view .floating-controls .call-control-more-toggle { min-width:58px; }
+.call-view .floating-controls .call-control-more-toggle[aria-expanded="true"] { background:#123c69; border-color:#7eb6ff; }
 .call-control-more-menu { position:absolute; right:0; bottom:calc(100% + 10px); display:grid; grid-template-columns:repeat(2,minmax(100px,1fr)); gap:6px; width:230px; padding:8px; border-radius:16px; background:#111821; border:1px solid rgba(255,255,255,.12); box-shadow:0 14px 40px rgba(0,0,0,.48); }
+.call-control-more-menu[hidden] { display:none !important; }
 .call-frame.is-controls-collapsed .call-nav-meta > :not(#callDuration),
 .call-frame.is-controls-collapsed .call-nav-options,
 .call-frame.is-controls-collapsed .call-control-tools { display:none; }
