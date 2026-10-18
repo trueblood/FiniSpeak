@@ -107,7 +107,6 @@ jobs:
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
-          TURN_HOST: ${{ vars.TURN_HOST || 'finispeak.com' }}
         run: |
           rsync -az --delete \
             --exclude='venv/' \
@@ -122,7 +121,7 @@ jobs:
           ssh -i ~/.ssh/finispeak_deploy \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "$DO_USER@$DO_HOST" \
-            "set -e; cd /var/www/finispeak; sudo /usr/bin/bash scripts/configure_coturn.sh '$TURN_HOST' /etc/finispeak/finispeak.env '$DO_HOST'; /var/www/finispeak/venv/bin/python -m pip install --disable-pip-version-check -r /var/www/finispeak/requirements.txt; /var/www/finispeak/venv/bin/python -m pip uninstall -y firebase-admin >/dev/null 2>&1 || true; set -a; . /etc/finispeak/finispeak.env; set +a; FINISPEAK_ENV=migration /var/www/finispeak/venv/bin/python scripts/ensure_account_schema.py; sudo /usr/local/sbin/finispeak-deploy-test-server '$GITHUB_SHA'"
+            "set -e; systemctl is-active --quiet coturn; nc -z -w 5 127.0.0.1 3478; cd /var/www/finispeak; /var/www/finispeak/venv/bin/python -m pip install --disable-pip-version-check -r /var/www/finispeak/requirements.txt; /var/www/finispeak/venv/bin/python -m pip uninstall -y firebase-admin >/dev/null 2>&1 || true; set -a; . /etc/finispeak/finispeak.env; set +a; FINISPEAK_ENV=migration /var/www/finispeak/venv/bin/python scripts/ensure_account_schema.py; sudo /usr/local/sbin/finispeak-deploy-test-server '$GITHUB_SHA'"
 
       - name: Verify public TURN listener
         env:
