@@ -536,7 +536,12 @@ class MySqlCallRepository:
         return {"id": call_id, **data}
 
     def get(self, call_id):
-        row = self.session.get(SqlCall, call_id)
+        # Signaling and camera WebSockets live much longer than a normal HTTP
+        # request. Refresh an already-loaded call so those connections see a
+        # translator or guest who joined after the socket was opened.
+        row = self.session.scalar(
+            select(SqlCall).where(SqlCall.id == call_id).execution_options(populate_existing=True)
+        )
         return _document(row, CALL_FIELDS) if row else None
 
     def for_user(self, uid):

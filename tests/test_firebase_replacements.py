@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from sqlalchemy import select, text
+from sqlalchemy.orm import Session
 
 from app import create_app
 from extensions import db
@@ -20,6 +21,7 @@ from models.sql_models import (
     SqlFriend, SqlSignalingEvent, SqlStoredFile, SqlTransactionalOutbox, SqlUser,
 )
 from repositories.provider import EXTENSION_KEY
+from repositories.mysql import MySqlCallRepository
 from services.file_storage_service import file_path
 from services.signaling_service import _store_event, _validate_join
 from scripts.migrate_firebase_storage import migrate
@@ -321,6 +323,26 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertTrue(duplicate); self.assertEqual(replay_id, event_id)
         with self.assertRaises(PermissionError):
             _store_event("call-1", "caller", {"caller", "receiver"}, {**message, "to": "outsider", "clientEventId": "event-2"})
+
+    def test_long_lived_call_reader_sees_a_translator_who_joins_later(self):
+        now = datetime.now(timezone.utc)
+        db.session.add(SqlCall(id="late-translator-call", caller_id="caller", receiver_id="receiver",
+            status="connected", translation_status="requested", raw_document={}, migrated_at=now,
+            mutation_version=1))
+        db.session.commit()
+        calls = MySqlCallRepository(db.session)
+        self.assertIsNone(calls.get("late-translator-call").get("translatorId"))
+
+        with Session(db.engine) as writer:
+            row = writer.get(SqlCall, "late-translator-call")
+            row.translator_id = "translator"
+            row.translator_name = "Marcus Johnson"
+            row.translation_status = "connected"
+            writer.commit()
+
+        refreshed = calls.get("late-translator-call")
+        self.assertEqual(refreshed["translatorId"], "translator")
+        self.assertEqual(refreshed["translatorName"], "Marcus Johnson")
 
     def test_source_and_deployment_have_no_runtime_firebase_dependency(self):
         root = Path(__file__).parents[1]
