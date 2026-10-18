@@ -1,4 +1,4 @@
-import { createCallExperience } from "./call-experience.js?v=20261018-camera-first";
+import { createCallExperience } from "./call-experience.js?v=20261018-subtitle-sync";
 import { createCameraRelay } from "./camera-relay.js?v=20261018-membership-refresh";
 import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 
@@ -17,6 +17,7 @@ let cameraRelay = null, cameraRelayOpen = false, cameraRestart = null, lastCamer
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let callMembershipKey = "";
+let captionBroadcastTimer = null, pendingCaptionText = "", lastCaptionText = "";
 let rtcConfiguration = normalizeIceConfiguration(null);
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, transcriptionGain = null, transcriptionCaptureRate = 16000, currentCallRole = null;
 let selectedProcessingMode = "streaming", processingModesEnabled = false, transcriptionGeneration = Date.now();
@@ -558,8 +559,9 @@ async function apiFetch(path, options = {}) {
     const headers = { ...(isForm ? {} : { "Content-Type": "application/json" }), ...(options.headers || {}) };
     if (currentUser.accessToken) headers.Authorization = `Bearer ${currentUser.accessToken}`;
     if (csrf) headers["X-CSRF-TOKEN"] = decodeURIComponent(csrf);
+    const method = String(options.method || "GET").toUpperCase();
     const response = await fetch(path, {
-        ...options, credentials: "same-origin", headers
+        ...options, cache: method === "GET" ? "no-store" : options.cache, credentials: "same-origin", headers
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
@@ -2393,6 +2395,61 @@ function watchCall(callId) {
     callUnsubs.push(() => window.clearInterval(timer));
 }
 
+function mergeLiveTranscript(row) {
+    if (!row?.id || !activeCallId) return;
+    const rows = [...rosterTranscripts];
+    const index = rows.findIndex(item => item.id === row.id);
+    if (index >= 0) rows[index] = row;
+    else rows.push(row);
+    rows.sort((a, b) => {
+        const aMs = profileTimestampMillis(a.createdAt) || a.clientCreatedAt || 0;
+        const bMs = profileTimestampMillis(b.createdAt) || b.clientCreatedAt || 0;
+        return aMs - bMs;
+    });
+    rosterTranscripts = rows;
+    renderCallRoster(rosterParticipants, rows);
+    renderTranscript(rows);
+    callExperience?.updateSubtitles(rows);
+    callExperience?.maybeSpeak(rows);
+}
+
+async function broadcastCallUpdate(type, payload) {
+    if (!activeCallId) return;
+    try { await signalingReady; } catch (_) { return; }
+    const recipients = new Set(rosterParticipants.map(person => person?.id).filter(Boolean));
+    for (const uid of peerConnections.keys()) recipients.add(uid);
+    recipients.delete(currentUser?.uid);
+    for (const uid of recipients) {
+        try { sendSignal(type, uid, payload); } catch (_) {}
+    }
+}
+
+function queueCaptionBroadcast(text) {
+    pendingCaptionText = String(text || "").trim();
+    if (captionBroadcastTimer) return;
+    captionBroadcastTimer = window.setTimeout(() => {
+        captionBroadcastTimer = null;
+        if (pendingCaptionText === lastCaptionText) return;
+        lastCaptionText = pendingCaptionText;
+        broadcastCallUpdate("caption", {
+            text: pendingCaptionText,
+            speakerName: currentProfile?.displayName || currentUser?.displayName || "Speaker"
+        });
+    }, 350);
+}
+
+function clearSharedCaption() {
+    window.clearTimeout(captionBroadcastTimer);
+    captionBroadcastTimer = null;
+    pendingCaptionText = "";
+    if (!lastCaptionText) return;
+    lastCaptionText = "";
+    broadcastCallUpdate("caption", {
+        text: "",
+        speakerName: currentProfile?.displayName || currentUser?.displayName || "Speaker"
+    });
+}
+
 function peerSnapshot(pc) {
     return {
         connection: pc?.connectionState || "waiting",
@@ -2706,6 +2763,15 @@ function connectSignaling(callId) {
                 return;
             }
             if (message.eventId) signalingCursor = Math.max(signalingCursor, Number(message.eventId));
+            if (message.type === "caption") {
+                callExperience?.onRemotePartial(message.from, message.payload?.speakerName, message.payload?.text || "");
+                return;
+            }
+            if (message.type === "transcript" && message.payload?.transcript) {
+                callExperience?.onRemotePartial(message.from, "", "");
+                mergeLiveTranscript(message.payload.transcript);
+                return;
+            }
             if (["offer", "answer", "ice", "hangup", "reconnect"].includes(message.type)) {
                 if (peerConnections.has(message.from)) await applySignal(message);
                 else pendingSignals.set(message.from, [...(pendingSignals.get(message.from) || []), message]);
@@ -2911,13 +2977,13 @@ async function openTranscriptionPipeline(callId,mode){
 }
 async function saveFinalTranscript(callId,m,mode,generation){
     const evidence=m.languageEvidence||null, stable=evidence?.primaryLanguage||m.language, confidence=normalizeLanguageConfidence(evidence?.primaryConfidence??m.languageConfidence);if(stable)updateDetectedLanguage(stable,confidence,evidence?.confirmed===true);
-    const id=`${currentUser.uid}-${generation}-${m.sequence??0}`;await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`,{method:"POST",headers:{"Idempotency-Key":id},body:JSON.stringify({id,language:m.language||null,languageConfidence:normalizeLanguageConfidence(m.languageConfidence),primaryLanguage:stable||null,primaryLanguageConfidence:confidence,languageSampleCount:Number(evidence?.sampleCount||1),languageConfirmationRequired:evidence?.requiresConfirmation===true,text:m.text.trim(),isFinal:true,processingMode:mode,processingGeneration:generation,performance:m.metrics||null,clientCreatedAt:Date.now()})});callExperience?.requestTranslations(callId, id, m.language || stable);showProcessingDiagnostics(m.metrics);$("partialTranscript").classList.add("hidden");callExperience?.onPartial("");$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;
+    const id=`${currentUser.uid}-${generation}-${m.sequence??0}`;const result=await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`,{method:"POST",headers:{"Idempotency-Key":id},body:JSON.stringify({id,language:m.language||null,languageConfidence:normalizeLanguageConfidence(m.languageConfidence),primaryLanguage:stable||null,primaryLanguageConfidence:confidence,languageSampleCount:Number(evidence?.sampleCount||1),languageConfirmationRequired:evidence?.requiresConfirmation===true,text:m.text.trim(),isFinal:true,processingMode:mode,processingGeneration:generation,performance:m.metrics||null,clientCreatedAt:Date.now()})});if(result.transcript){mergeLiveTranscript(result.transcript);broadcastCallUpdate("transcript",{transcript:result.transcript});}clearSharedCaption();callExperience?.requestTranslations(callId, id, m.language || stable);showProcessingDiagnostics(m.metrics);$("partialTranscript").classList.add("hidden");callExperience?.onPartial("");$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;
 }
 async function requestPipelineStop(){const socket=transcriptionSocket;if(!socket||socket.readyState!==WebSocket.OPEN){socket?.close();return;}await new Promise(resolve=>{let done=false;const finish=()=>{if(!done){done=true;transcriptionStopResolver=null;resolve();}};transcriptionStopResolver=finish;socket.send(JSON.stringify({type:"stop"}));setTimeout(finish,60000);});socket.close();}
 async function switchProcessingMode(next){if(!activeCallId||next===selectedProcessingMode)return;const previous=selectedProcessingMode;transcriptionSwitching=true;stopBrowserStreamingPartials();renderProcessingMode();$("processingModeStatus").textContent=`Finishing buffered ${previous} audio…`;try{await requestPipelineStop();await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:next})});selectedProcessingMode=next;renderProcessingMode();await openTranscriptionPipeline(activeCallId,next);}catch(error){selectedProcessingMode="baseline";renderProcessingMode();$("processingModeStatus").textContent=`${next} failed. Returning to baseline.`;try{await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:"baseline"})});await openTranscriptionPipeline(activeCallId,"baseline");}catch(fallbackError){transcriptionSwitching=false;renderProcessingMode();$("processingModeStatus").textContent=`Transcription logging unavailable: ${fallbackError.message||error.message}`;$("transcriptionStatus").textContent="Call audio is still connected; logging is unavailable.";}}}
 async function handleProcessingFailure(error){if(transcriptionSwitching||!activeCallId)return;$("processingModeStatus").textContent=error.message;if(selectedProcessingMode!=="baseline")await switchProcessingMode("baseline");}
-function startBrowserStreamingPartials(){stopBrowserStreamingPartials();const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition)return;const recognition=new Recognition();recognition.continuous=true;recognition.interimResults=true;if("processLocally" in recognition)recognition.processLocally=true;recognition.onresult=event=>{let partial="";for(let i=event.resultIndex;i<event.results.length;i++)if(!event.results[i].isFinal)partial+=event.results[i][0]?.transcript||"";partial=partial.trim();$("partialTranscript").textContent=partial?`Partial · ${partial}`:"";$("partialTranscript").classList.toggle("hidden",!partial);callExperience?.onPartial(partial);};browserSpeechRecognition=recognition;try{recognition.start();}catch(_){}}
-function stopBrowserStreamingPartials(){const recognition=browserSpeechRecognition;browserSpeechRecognition=null;try{recognition?.stop();}catch(_){}$("partialTranscript")?.classList.add("hidden");callExperience?.onPartial("");}
+function startBrowserStreamingPartials(){stopBrowserStreamingPartials();const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition)return;const recognition=new Recognition();recognition.continuous=true;recognition.interimResults=true;if("processLocally" in recognition)recognition.processLocally=true;recognition.onresult=event=>{let partial="";for(let i=event.resultIndex;i<event.results.length;i++)if(!event.results[i].isFinal)partial+=event.results[i][0]?.transcript||"";partial=partial.trim();$("partialTranscript").textContent=partial?`Partial · ${partial}`:"";$("partialTranscript").classList.toggle("hidden",!partial);callExperience?.onPartial(partial);queueCaptionBroadcast(partial);};browserSpeechRecognition=recognition;try{recognition.start();}catch(_){}}
+function stopBrowserStreamingPartials(){const recognition=browserSpeechRecognition;browserSpeechRecognition=null;try{recognition?.stop();}catch(_){}$("partialTranscript")?.classList.add("hidden");callExperience?.onPartial("");clearSharedCaption();}
 function showProcessingDiagnostics(metrics){if(!metrics||!processingModesEnabled)return;const panel=$("processingDiagnostics");panel.classList.toggle("hidden",!(location.hostname==="localhost"||location.hostname==="127.0.0.1"));panel.textContent=`method=${metrics.method}\ncapture continuity=${Math.round((metrics.audioCaptureContinuity||0)*100)}%\nrecognition=${metrics.speechRecognitionLatencyMs}ms\ntranslation=n/a (logging only)\nend-to-end=${metrics.endToEndLatencyMs}ms\naccuracy=${metrics.transcriptionAccuracy??"n/a (no reference transcript)"}\ncpu=${metrics.cpuSeconds}s\nmax rss=${metrics.memoryMaxRss} ${metrics.memoryMaxRssUnit}\napi calls=${metrics.apiCalls}\nestimated cost=${metrics.estimatedCostUsd??"n/a (rate not configured)"}`;console.debug("[FiniSpeak processing diagnostics]",metrics);}
 
 function languageRouteKey(callId, language) {
@@ -3498,6 +3564,7 @@ function cleanupCall(stopMedia = true) {
     }
     if (signalingSocket) { signalingSocket.onclose = null; signalingSocket.close(); signalingSocket = null; }
     signalingReady = null; signalingCursor = 0; callMembershipKey = ""; pendingSignals.clear(); pendingIceCandidates.clear(); peerJobs.clear();
+    window.clearTimeout(captionBroadcastTimer); captionBroadcastTimer = null; pendingCaptionText = ""; lastCaptionText = "";
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
     peerProfiles.clear();
     peerDebug.clear();

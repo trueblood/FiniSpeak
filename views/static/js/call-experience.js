@@ -68,6 +68,7 @@ export function createCallExperience(deps) {
         speaking: false,
         interpreterSpeaking: false,
         partial: "",
+        remotePartials: new Map(),
         call: null,
         participants: [],
         rows: [],
@@ -262,10 +263,12 @@ export function createCallExperience(deps) {
             const subtitle = card.querySelector(".tile-subtitle");
             if (!subtitle) return;
             const row = latest.get(card.dataset.speaker);
-            const partial = card.dataset.role === "local" ? state.partial : "";
+            const remotePartial = state.remotePartials.get(card.dataset.speaker);
+            const partial = card.dataset.role === "local" ? state.partial : remotePartial?.text || "";
             const text = partial || subtitleText(row);
             subtitle.hidden = !text;
-            subtitle.textContent = text ? `${partial ? "You" : row?.speakerName || "Speaker"}: ${text}` : "";
+            const speaker = card.dataset.role === "local" ? "You" : remotePartial?.speakerName || row?.speakerName || "Speaker";
+            subtitle.textContent = text ? `${speaker}: ${text}` : "";
         });
         const ai = document.querySelector('[data-role="ai"] .tile-subtitle');
         if (ai) {
@@ -280,9 +283,7 @@ export function createCallExperience(deps) {
         if (!row) return "";
         const translated = row.translations?.[state.viewerLanguage]?.text;
         if (translated) return translated;
-        const source = String(row.language || "").toLowerCase();
-        if (!source || source === state.viewerLanguage) return row.text || "";
-        return "";
+        return row.text || "";
     }
 
     function onPartial(text) {
@@ -294,6 +295,13 @@ export function createCallExperience(deps) {
         }
         updateSubtitles(state.rows);
         setInterpreterActivity(state.partial ? "hearing" : "listening");
+    }
+
+    function onRemotePartial(speakerId, speakerName, text) {
+        if (!speakerId) return;
+        if (text) state.remotePartials.set(speakerId, { speakerName: speakerName || "Speaker", text });
+        else state.remotePartials.delete(speakerId);
+        updateSubtitles(state.rows);
     }
 
     function viewerLanguage() { return state.viewerLanguage; }
@@ -1388,6 +1396,7 @@ export function createCallExperience(deps) {
         state.audioContext = null;
         state.analyser = null;
         state.partial = "";
+        state.remotePartials.clear();
         state.spoken.clear();
         state.translationRequests.clear();
         state.call = null;
@@ -1404,7 +1413,7 @@ export function createCallExperience(deps) {
     }
 
     return {
-        bind, onJoined, sync, updateSubtitles, onPartial, viewerLanguage, outgoingVideoTrack,
+        bind, onJoined, sync, updateSubtitles, onPartial, onRemotePartial, viewerLanguage, outgoingVideoTrack,
         noteConnection, attachLocalStream, requestTranslations, ensureTranslation, maybeSpeak, layout, cleanup, persistPresence,
         noteLanguages: refreshInterpreterLanguages,
         isAvatar: () => state.mediaMode === "avatar" && !state.screenTrack,

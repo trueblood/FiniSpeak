@@ -16,7 +16,7 @@ from services.auth_service import authenticate_request
 from services.call_access import participant_ids
 
 
-ALLOWED_EVENTS = {"offer", "answer", "ice", "hangup", "reconnect"}
+ALLOWED_EVENTS = {"offer", "answer", "ice", "hangup", "reconnect", "caption", "transcript"}
 HEARTBEAT_SECONDS = 20
 
 

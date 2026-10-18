@@ -324,6 +324,16 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertFalse(duplicate)
         replay_id, duplicate = _store_event("call-1", "caller", {"caller", "receiver"}, message)
         self.assertTrue(duplicate); self.assertEqual(replay_id, event_id)
+        caption_id, duplicate = _store_event("call-1", "caller", {"caller", "receiver"}, {
+            "type": "caption", "to": "receiver", "clientEventId": "caption-1",
+            "payload": {"text": "Hello", "speakerName": "Caller"},
+        })
+        self.assertGreater(caption_id, event_id); self.assertFalse(duplicate)
+        transcript_id, duplicate = _store_event("call-1", "caller", {"caller", "receiver"}, {
+            "type": "transcript", "to": "receiver", "clientEventId": "transcript-1",
+            "payload": {"transcript": {"id": "line-1", "text": "Hello"}},
+        })
+        self.assertGreater(transcript_id, caption_id); self.assertFalse(duplicate)
         with self.assertRaises(PermissionError):
             _store_event("call-1", "caller", {"caller", "receiver"}, {**message, "to": "outsider", "clientEventId": "event-2"})
 

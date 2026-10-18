@@ -93,6 +93,10 @@ class AccessibilityRegressionTests(unittest.TestCase):
         peers = app[app.index("async function ensurePeer"):app.index("function connectSignaling")]
         presence = script[script.index("function applyParticipantPresence"):script.index("function cameraGridShape")]
         self.assertIn("function ensureParticipantTile", app)
+        self.assertIn('broadcastCallUpdate("caption"', app)
+        self.assertIn('broadcastCallUpdate("transcript"', app)
+        self.assertIn('cache: method === "GET" ? "no-store"', app)
+        self.assertIn("onRemotePartial", script)
         self.assertIn("function attachRemoteTrack", app)
         self.assertIn("function peopleInCall", app)
         self.assertIn("nextMembershipKey !== callMembershipKey", app)
