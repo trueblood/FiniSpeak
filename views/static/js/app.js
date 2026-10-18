@@ -1,4 +1,4 @@
-import { createCallExperience } from "./call-experience.js?v=20261018-subtitle-sync";
+import { createCallExperience } from "./call-experience.js?v=20261018-mobile-controls";
 import { createCameraRelay } from "./camera-relay.js?v=20261018-membership-refresh";
 import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 
@@ -189,7 +189,12 @@ function bindUI() {
     $("forgotPassword").onclick = requestPasswordReset;
     $("authForm").onsubmit = submitAuth;
     $("callForm").onsubmit = createCall;
-    $("copyCallId").onclick = () => navigator.clipboard.writeText(activeCallId || "");
+    $("copyCallId").onclick = async () => {
+        if (!activeCallId) return;
+        await navigator.clipboard.writeText(activeCallId);
+        $("copyCallId").textContent = "Copied";
+        window.setTimeout(() => { if ($("copyCallId")) $("copyCallId").textContent = "Copy ID"; }, 1400);
+    };
     $("muteButton").onclick = toggleMute;
     $("cameraButton").onclick = toggleCamera;
     $("callView")?.addEventListener("pointerdown", playRemoteMedia, { passive: true });

@@ -10,12 +10,13 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
 .call-nav-meta { justify-content:flex-end; }
 .call-nav-options { justify-content:center; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
 .call-nav-options::-webkit-scrollbar { display:none; }
-.call-nav-meta .call-nav-modes,.call-nav-meta p,.call-nav-meta #copyCallId,.call-nav-meta #translationIndicator { display:none !important; }
+.call-nav-meta .call-nav-modes,.call-nav-meta p,.call-nav-meta #translationIndicator { display:none !important; }
 .call-nav h2 { margin:0; color:#fff; font-size:1rem; }
 .call-nav .eyebrow,.call-nav p,.call-frame .eyebrow { color:#f5a65b; }
 .call-nav p { margin:0; color:#a7b3c4; display:flex; align-items:center; gap:6px; min-width:0; }
 .call-nav code { background:rgba(255,255,255,.08); color:#fff; max-width:11rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; vertical-align:bottom; }
 .call-pill,.connection-pill { display:inline-flex; align-items:center; border-radius:999px; padding:6px 10px; background:rgba(255,255,255,.08); color:#d7e0ea; font-size:.75rem; font-weight:750; white-space:nowrap; }
+.call-nav-meta .copy-call-id { min-height:32px; padding:5px 10px; border-radius:999px; white-space:nowrap; }
 .call-nav-options label,.documents-editor label,.avatar-studio-card label { margin:0; color:#d7e0ea; font-size:.78rem; }
 .call-nav-options label { display:flex; align-items:center; gap:6px; white-space:nowrap; }
 .call-nav-options select { width:auto; min-width:96px; max-width:132px; min-height:38px; padding:6px 28px 6px 10px; }
@@ -189,6 +190,7 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
 .avatar-swatches button[aria-pressed="true"],.avatar-style-row button[aria-pressed="true"] { border-color:#fff; }
 .avatar-style-row button { padding:8px 12px; border-radius:999px; background:#10151d; color:#fff; border:1px solid rgba(255,255,255,.12); }
 .call-mobile-switch { display:none; }
+.mobile-sections-toggle { display:none; }
 
 @media (max-width:900px) {
     body.in-call .call-view { padding:0; }
@@ -219,18 +221,25 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
     .call-shell[data-pane="video"] .call-status-line:not(:empty) { position:absolute; left:12px; right:12px; max-width:none; bottom:118px; z-index:7; margin:0; padding:6px 10px; border-radius:12px; background:rgba(12,16,22,.82); text-align:left; pointer-events:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .call-shell[data-pane="video"] .call-frame.is-controls-collapsed .call-status-line:not(:empty) { bottom:62px; }
     .call-shell:not([data-pane="video"]) .call-status-line:not(:empty) { position:absolute; left:12px; right:12px; bottom:118px; max-width:none; z-index:7; margin:0; padding:6px 10px; border-radius:12px; background:rgba(12,16,22,.82); text-align:left; pointer-events:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .call-view .floating-controls { position:absolute; left:8px; right:8px; bottom:60px; width:auto; margin:0; flex:none; flex-wrap:nowrap; overflow:hidden; z-index:8; }
+    .call-view .floating-controls { position:absolute; left:8px; right:8px; bottom:60px; width:auto; margin:0; flex:none; flex-wrap:nowrap; overflow:visible; z-index:8; }
     .call-view .floating-controls { max-width:none; transform:none; }
     .call-view .call-control-tools { display:flex; flex:1 1 auto; min-width:0; gap:6px; overflow:visible; }
     .call-view .call-control-primary { min-width:0; overflow-x:auto; }
-    .call-control-more { flex:0 0 auto; }
-    .call-control-more-menu { position:fixed; left:12px; right:12px; bottom:118px; width:auto; grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .call-control-more { position:static; flex:0 0 auto; }
+    .call-control-more-menu { position:absolute; left:4px; right:4px; bottom:calc(100% + 8px); z-index:20; width:auto; grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .mobile-sections-toggle { display:block; }
     .call-view .call-frame.is-controls-collapsed .call-control-tools { display:none; }
     .call-view .floating-controls button,
     .call-view .floating-controls .call-control-tools button { flex:0 0 auto; max-width:none; white-space:nowrap; }
     .call-frame.is-controls-collapsed .floating-controls #toggleCallControls,
     .call-frame.is-controls-collapsed .floating-controls #endCallButton { flex:1 1 0; }
     .call-mobile-switch { display:grid; position:absolute; left:8px; right:8px; bottom:8px; z-index:8; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    .call-shell.is-mobile-sections-collapsed .call-mobile-switch { display:none; }
+    .call-shell.is-mobile-sections-collapsed .floating-controls { bottom:8px; }
+    .call-shell.is-mobile-sections-collapsed[data-pane="video"] .video-stage { padding-bottom:110px; }
+    .call-shell.is-mobile-sections-collapsed[data-pane="video"] .call-status-line:not(:empty),
+    .call-shell.is-mobile-sections-collapsed:not([data-pane="video"]) .call-status-line:not(:empty) { bottom:66px; }
+    .call-shell.is-mobile-sections-collapsed:not([data-pane="video"]) .call-stage { margin-bottom:120px; }
     .call-view .video-card .connection-pill { display:none; }
     .call-view .video-grid.is-mobile-pair { grid-template-columns:minmax(0, 1fr); grid-template-rows:repeat(2, minmax(0, 1fr)); min-height:0; }
     .call-view .video-grid.is-mobile-pair > .video-card { position:relative; height:100%; min-height:0; max-height:100%; }

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-call-menu">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-mobile-controls">
 </head>
 <body>
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -444,7 +444,7 @@
                             <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle" aria-hidden="true"><div><h3 id="processingModeTitle">Dev tools</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="baseline" aria-pressed="false">Baseline</button><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Streaming</button></div><p>Active method: <strong data-active-processing-label>Real-Time Streaming</strong>.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><div class="dev-logging"><span class="eyebrow">Dev logging</span><div id="detectedLanguageCard" class="language-detection pending" role="status"><span class="language-detection-label">Detected language</span><strong id="detectedLanguageValue">Listening…</strong><span id="detectedLanguageConfidence">Waiting for enough speech</span></div><span id="transcriptionStatus" class="transcription-status">Starting…</span><div id="languageConfirmation" class="language-confirmation hidden"><label for="confirmedLanguage">Is this the right language? Confirm it or choose the correct one. Your conversation and interpreter matching will continue while you decide.</label><div><select id="confirmedLanguage"><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="ar">Arabic</option><option value="zh">Mandarin Chinese</option><option value="vi">Vietnamese</option><option value="so">Somali</option><option value="pt">Portuguese</option><option value="hi">Hindi</option></select><button id="confirmDetectedLanguage" type="button">Confirm language</button></div></div></div><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
                         </div>
                         <p hidden>Call ID: <code id="callIdLabel"></code></p>
-                        <button id="copyCallId" class="secondary" type="button" hidden>Copy Call ID</button>
+                        <button id="copyCallId" class="secondary copy-call-id" type="button">Copy ID</button>
                     </div>
                 </header>
                 <div class="call-stage">
@@ -551,12 +551,13 @@
                                 <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
                                 <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
                                 <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
+                                <button id="toggleMobileSections" class="secondary mobile-sections-toggle" type="button" aria-expanded="true" aria-controls="callMobileSwitch">Hide sections</button>
                             </div>
                         </details>
                     </div>
                     <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>
                 </div>
-                <nav class="call-mobile-switch" aria-label="Call sections">
+                <nav id="callMobileSwitch" class="call-mobile-switch" aria-label="Call sections">
                     <button type="button" data-call-pane="video" aria-pressed="true">Video</button>
                     <button type="button" data-call-pane="interpreter" aria-pressed="false">Interpreter</button>
                     <button type="button" data-call-pane="documents" aria-pressed="false">Documents</button>
@@ -759,6 +760,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-subtitle-sync"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-mobile-controls"></script>
 </body>
 </html>

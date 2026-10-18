@@ -76,6 +76,7 @@ export function createCallExperience(deps) {
         notesOpen: false,
         controlsCollapsed: false,
         controlsPinned: false,
+        mobileSectionsCollapsed: false,
         notesDirty: false,
         notesTimer: 0,
         activeDocumentId: null,
@@ -196,6 +197,13 @@ export function createCallExperience(deps) {
         document.querySelectorAll("[data-call-pane]").forEach(button => {
             button.onclick = () => setPane(button.dataset.callPane);
         });
+        if (deps.$("toggleMobileSections")) {
+            deps.$("toggleMobileSections").onclick = () => {
+                setMobileSectionsCollapsed(!state.mobileSectionsCollapsed);
+                deps.$("toggleMobileSections").closest("details")?.removeAttribute("open");
+                layout();
+            };
+        }
         if (deps.$("toggleCallControls")) {
             deps.$("toggleCallControls").onclick = () => {
                 setControlsCollapsed(!document.querySelector("#callView .call-frame")?.classList.contains("is-controls-collapsed"), true);
@@ -491,6 +499,15 @@ export function createCallExperience(deps) {
 
     function callLayoutIsMobile() {
         return window.matchMedia("(max-width: 900px)").matches;
+    }
+
+    function setMobileSectionsCollapsed(collapsed) {
+        state.mobileSectionsCollapsed = collapsed;
+        deps.$("callShell").classList.toggle("is-mobile-sections-collapsed", collapsed);
+        const toggle = deps.$("toggleMobileSections");
+        if (!toggle) return;
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+        toggle.textContent = collapsed ? "Show sections" : "Hide sections";
     }
 
     function setControlsCollapsed(collapsed, pinned) {
@@ -1409,6 +1426,7 @@ export function createCallExperience(deps) {
         window.clearTimeout(state.notesTimer);
         if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
         deps.$("videoFilmstrip").hidden = true;
+        setMobileSectionsCollapsed(false);
         setTranscriptCollapsed(true);
     }
 
