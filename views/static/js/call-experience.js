@@ -76,7 +76,6 @@ export function createCallExperience(deps) {
         notesOpen: false,
         controlsCollapsed: false,
         controlsPinned: false,
-        mobileSectionsCollapsed: false,
         notesDirty: false,
         notesTimer: 0,
         activeDocumentId: null,
@@ -197,28 +196,6 @@ export function createCallExperience(deps) {
         document.querySelectorAll("[data-call-pane]").forEach(button => {
             button.onclick = () => setPane(button.dataset.callPane);
         });
-        if (deps.$("toggleMoreControls") && deps.$("callMoreMenu")) {
-            deps.$("toggleMoreControls").onclick = event => {
-                event.stopPropagation();
-                setMoreMenuOpen(deps.$("callMoreMenu").hidden);
-            };
-            deps.$("callMoreMenu").onclick = event => {
-                if (event.target.closest("button")) setMoreMenuOpen(false);
-            };
-            document.addEventListener("click", event => {
-                if (!event.target.closest(".call-control-more")) setMoreMenuOpen(false);
-            });
-            document.addEventListener("keydown", event => {
-                if (event.key === "Escape") setMoreMenuOpen(false);
-            });
-        }
-        if (deps.$("toggleMobileSections")) {
-            deps.$("toggleMobileSections").onclick = () => {
-                setMobileSectionsCollapsed(!state.mobileSectionsCollapsed);
-                setMoreMenuOpen(false);
-                layout();
-            };
-        }
         if (deps.$("toggleCallControls")) {
             deps.$("toggleCallControls").onclick = () => {
                 setControlsCollapsed(!document.querySelector("#callView .call-frame")?.classList.contains("is-controls-collapsed"), true);
@@ -516,23 +493,6 @@ export function createCallExperience(deps) {
         return window.matchMedia("(max-width: 900px)").matches;
     }
 
-    function setMoreMenuOpen(open) {
-        const toggle = deps.$("toggleMoreControls");
-        const menu = deps.$("callMoreMenu");
-        if (!toggle || !menu) return;
-        menu.hidden = !open;
-        toggle.setAttribute("aria-expanded", String(open));
-    }
-
-    function setMobileSectionsCollapsed(collapsed) {
-        state.mobileSectionsCollapsed = collapsed;
-        deps.$("callShell").classList.toggle("is-mobile-sections-collapsed", collapsed);
-        const toggle = deps.$("toggleMobileSections");
-        if (!toggle) return;
-        toggle.setAttribute("aria-expanded", String(!collapsed));
-        toggle.textContent = collapsed ? "Show sections" : "Hide sections";
-    }
-
     function setControlsCollapsed(collapsed, pinned) {
         if (pinned) state.controlsPinned = true;
         state.controlsCollapsed = collapsed;
@@ -549,7 +509,7 @@ export function createCallExperience(deps) {
 
     function syncControlsForViewport() {
         if (state.controlsPinned) return;
-        setControlsCollapsed(callLayoutIsMobile(), false);
+        setControlsCollapsed(false, false);
     }
 
     function showDocuments() {
@@ -1449,8 +1409,6 @@ export function createCallExperience(deps) {
         window.clearTimeout(state.notesTimer);
         if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
         deps.$("videoFilmstrip").hidden = true;
-        setMoreMenuOpen(false);
-        setMobileSectionsCollapsed(false);
         setTranscriptCollapsed(true);
     }
 

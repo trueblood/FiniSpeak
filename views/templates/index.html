@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-mobile-more-panel">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-scroll-controls">
 </head>
 <body>
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -542,26 +542,20 @@
                             <button id="inviteParticipantButton" class="secondary" type="button" title="Invite participant" aria-label="Invite participant">Invite</button>
                             <button id="requestTranslatorButton" class="secondary" type="button" title="Request a translator" aria-label="Request Translator">Translator</button>
                         </div>
-                        <div class="call-control-more">
-                            <button id="toggleMoreControls" class="secondary call-control-more-toggle" type="button" aria-expanded="false" aria-controls="callMoreMenu">More</button>
-                            <div id="callMoreMenu" class="call-control-more-menu" hidden>
-                                <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
-                                <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
-                                <button id="notesButton" class="secondary" type="button" aria-pressed="false" title="Open call notes" aria-label="Open call notes">Notes</button>
-                                <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
-                                <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
-                                <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
-                                <button id="toggleMobileSections" class="secondary mobile-sections-toggle" type="button" aria-expanded="true" aria-controls="callMobileSwitch">Hide sections</button>
-                            </div>
-                        </div>
+                        <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
+                        <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
+                        <button id="notesButton" class="secondary" type="button" aria-pressed="false" title="Open call notes" aria-label="Open call notes">Notes</button>
+                        <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
+                        <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
+                        <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
+                        <nav id="callMobileSwitch" class="call-mobile-switch" aria-label="Call sections">
+                            <button type="button" data-call-pane="video" aria-pressed="true">Video</button>
+                            <button type="button" data-call-pane="interpreter" aria-pressed="false">Interpreter</button>
+                            <button type="button" data-call-pane="documents" aria-pressed="false">Documents</button>
+                        </nav>
                     </div>
                     <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>
                 </div>
-                <nav id="callMobileSwitch" class="call-mobile-switch" aria-label="Call sections">
-                    <button type="button" data-call-pane="video" aria-pressed="true">Video</button>
-                    <button type="button" data-call-pane="interpreter" aria-pressed="false">Interpreter</button>
-                    <button type="button" data-call-pane="documents" aria-pressed="false">Documents</button>
-                </nav>
             </div>
         </div>
     </section>
@@ -760,6 +754,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-mobile-more-panel"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-scroll-controls"></script>
 </body>
 </html>
