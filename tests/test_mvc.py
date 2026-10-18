@@ -31,6 +31,7 @@ class MvcRouteTests(unittest.TestCase):
             "/api/taxonomy",
             "/ws/transcription",
             "/ws/signaling",
+            "/ws/camera",
         }.issubset(paths))
 
     def test_interpreter_onboarding_exposes_explicit_review_workflow(self):

@@ -32,6 +32,7 @@ from routes.auth import auth_bp
 from routes.files import files_bp
 from routes.friends import friends_bp
 from routes.signaling import register_signaling_socket
+from routes.camera import register_camera_socket
 ApiKeyModel = repository_proxy("api_access")
 
 load_dotenv()
@@ -110,6 +111,7 @@ def create_app(repository_overrides=None):
     sock = Sock(app)
     register_transcription_socket(sock)
     register_signaling_socket(sock)
+    register_camera_socket(sock)
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(users_bp, url_prefix="/api/users")
     app.register_blueprint(translators_bp, url_prefix="/api/translators")

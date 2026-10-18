@@ -1,5 +1,6 @@
-import { createCallExperience } from "./call-experience.js?v=20261017-cameras";
-import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldSendOffer } from "./webrtc-mesh.js?v=20261017-cameras";
+import { createCallExperience } from "./call-experience.js?v=20261018-relay";
+import { createCameraRelay } from "./camera-relay.js?v=20261018-relay";
+import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-relay";
 
 const $ = (id) => document.getElementById(id);
 let callExperience;
@@ -12,6 +13,7 @@ const show = (id) => {
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let authActionToken = null;
 let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerProfiles = new Map(), peerDebug = new Map(), peerJobs = new Map(), rosterParticipants = [], rosterTranscripts = [];
+let cameraRelay = null, cameraRelayOpen = false, cameraRestart = null, lastCameraRestart = 0;
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let rtcConfiguration = normalizeIceConfiguration(null);
@@ -153,9 +155,11 @@ function bindUI() {
         openModal,
         closeModal,
         setCallStatus: (text) => { if ($("callStatus")) $("callStatus").textContent = text; },
-        renderTranscript: (rows) => renderTranscript(rows)
+        renderTranscript: (rows) => renderTranscript(rows),
+        replayCallMedia
     });
     callExperience.bind();
+    watchCameraHealth();
     const workflowTabs = [...document.querySelectorAll(".workflow-tab")];
     workflowTabs.forEach((tab, index) => {
         tab.addEventListener("click", () => activateWorkflowTab(tab));
@@ -2107,17 +2111,217 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
         console.error(`[FiniSpeak call][${attemptId}] join failed`, callErrorDetails(error, stage), error);
         $("dashboardStatus").textContent = error.message;
         setCallFormStatus(error.message || "The call was created, but this device could not join it.", true);
+        if (localStream || activeCallId) cleanupCall();
         show("dashboardView");
     }
 }
 
+const frontCamera = {
+    facingMode: { ideal: "user" },
+    width: { ideal: 640, max: 1280 },
+    height: { ideal: 480, max: 720 },
+    frameRate: { ideal: 15, max: 24 }
+};
+
 async function startMedia() {
-    if (localStream) return;
+    if (localStream) {
+        await bindLocalPreview(localStream);
+        startCameraRelay();
+        return;
+    }
     requireMediaCapture();
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    $("localVideo").srcObject = localStream;
+    localStream = await captureCallMedia();
+    for (const track of localStream.getVideoTracks()) watchCameraTrack(track);
+    await bindLocalPreview(localStream);
     document.querySelector('.video-card[data-role="local"]')?.classList.add("is-camera-on");
     callExperience?.attachLocalStream(localStream);
+    startCameraRelay();
+}
+
+async function captureCallMedia() {
+    const attempts = [
+        { audio: { echoCancellation: true, noiseSuppression: true }, video: frontCamera },
+        { audio: true, video: { facingMode: "user" } },
+        { audio: false, video: { facingMode: "user" } }
+    ];
+    let stream = null;
+    let failure = null;
+    for (const constraints of attempts) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            break;
+        } catch (error) {
+            failure = error;
+        }
+    }
+    if (!stream) throw failure || new Error("Camera is unavailable on this device.");
+    if (!stream.getAudioTracks().some(track => track.readyState === "live")) {
+        try {
+            const microphone = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            for (const track of microphone.getAudioTracks()) stream.addTrack(track);
+        } catch (_) { /* The camera can stay on when the microphone is blocked. */ }
+    }
+    return stream;
+}
+
+async function bindLocalPreview(stream) {
+    for (const id of ["localCapture", "localVideo"]) {
+        const video = $(id);
+        if (!video) continue;
+        if (video.srcObject !== stream) video.srcObject = stream;
+        await playPreview(video);
+    }
+}
+
+async function playPreview(video) {
+    if (!video) return;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute("muted", "");
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    try { await video.play(); } catch (_) {}
+}
+
+function replayCallMedia() {
+    playPreview($("localCapture"));
+    playPreview($("localVideo"));
+    playRemoteMedia();
+}
+
+const watchedCameraTracks = new WeakSet();
+function watchCameraTrack(track) {
+    if (!track || watchedCameraTracks.has(track)) return;
+    watchedCameraTracks.add(track);
+    track.addEventListener("ended", () => { restartLocalCamera(); });
+}
+
+async function restartLocalCamera() {
+    if (!activeCallId || cameraRestart || callExperience?.isAvatar?.()) return;
+    if (Date.now() - lastCameraRestart < 2000) return;
+    const current = localStream?.getVideoTracks?.().find(track => track.readyState === "live" && track.enabled);
+    if (current && ($("localCapture")?.videoWidth > 0 || $("localVideo")?.videoWidth > 0)) return;
+    lastCameraRestart = Date.now();
+    cameraRestart = (async () => {
+        try {
+            const fresh = await navigator.mediaDevices.getUserMedia({ audio: false, video: frontCamera });
+            const track = fresh.getVideoTracks()[0];
+            if (!track || !localStream) { track?.stop(); return; }
+            for (const old of [...localStream.getVideoTracks()]) {
+                localStream.removeTrack(old);
+                old.stop();
+            }
+            localStream.addTrack(track);
+            watchCameraTrack(track);
+            await bindLocalPreview(localStream);
+            replaceOutgoingVideo(track);
+            callExperience?.markCamera?.(true);
+        } catch (error) {
+            console.warn("Camera restart failed", error);
+        } finally {
+            cameraRestart = null;
+        }
+    })();
+    await cameraRestart;
+}
+
+function resumeLocalPreview() {
+    if (!activeCallId) return;
+    replayCallMedia();
+    window.setTimeout(() => {
+        if (!activeCallId) return;
+        const track = localStream?.getVideoTracks?.()[0];
+        if (!track || track.readyState === "ended") restartLocalCamera();
+    }, 400);
+}
+
+function relaySource() {
+    if (callExperience?.isAvatar?.()) {
+        const canvas = $("localAvatarCanvas");
+        return { element: canvas, enabled: Boolean(canvas && canvas.width > 0) };
+    }
+    const outgoing = callExperience?.outgoingVideoTrack?.();
+    const cameraTrack = localStream?.getVideoTracks?.()[0];
+    const sharing = outgoing && outgoing !== cameraTrack;
+    if (sharing) {
+        const preview = $("localVideo");
+        return { element: preview, enabled: Boolean(outgoing.enabled && outgoing.readyState === "live" && preview?.videoWidth) };
+    }
+    const capture = $("localCapture");
+    const preview = $("localVideo");
+    const element = capture?.videoWidth > 0 ? capture : preview;
+    const live = cameraTrack && cameraTrack.readyState === "live" && cameraTrack.enabled;
+    return { element, enabled: Boolean(live && element?.videoWidth) };
+}
+
+function startCameraRelay() {
+    if (!activeCallId || cameraRelay) return;
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    cameraRelay = createCameraRelay({
+        callId: activeCallId,
+        url: `${scheme}://${location.host}/ws/camera`,
+        getSource: relaySource,
+        onFrame: showRelayFrame,
+        onState: open => {
+            cameraRelayOpen = open;
+            renderCallRoster(rosterParticipants);
+        },
+        onClock: refreshRelayPictures
+    });
+}
+
+function stopCameraRelay() {
+    cameraRelay?.stop();
+    cameraRelay = null;
+    cameraRelayOpen = false;
+}
+
+function showRelayFrame(uid, jpeg) {
+    const profile = peerProfiles.get(uid);
+    if (!document.querySelector(`[data-peer="${uid}"]`)) {
+        ensureParticipantTile({ id: uid, role: profile?.role, displayName: profile?.displayName });
+    }
+    const card = document.querySelector(`[data-peer="${uid}"]`);
+    if (!card) return;
+    let image = card.querySelector("img.relay-camera");
+    if (!image) {
+        image = document.createElement("img");
+        image.className = "relay-camera";
+        image.alt = "";
+        card.insertBefore(image, card.querySelector(".video-slate"));
+    }
+    const blob = new Blob([jpeg], { type: "image/jpeg" });
+    const url = URL.createObjectURL(blob);
+    const previous = image.dataset.objectUrl;
+    image.onload = () => { if (previous) URL.revokeObjectURL(previous); };
+    image.onerror = () => URL.revokeObjectURL(url);
+    image.src = url;
+    image.dataset.objectUrl = url;
+    card.dataset.relayAt = String(Date.now());
+    refreshTilePicture(card);
+}
+
+function refreshRelayPictures() {
+    document.querySelectorAll("#callView .video-card[data-peer]").forEach(refreshTilePicture);
+}
+
+function refreshTilePicture(card) {
+    if (!card) return;
+    const video = card.querySelector("video");
+    const webrtc = Boolean(video && video.videoWidth > 0);
+    const relayFresh = Number(card.dataset.relayAt || 0) > Date.now() - 1600;
+    const liveTrack = video?.srcObject instanceof MediaStream && video.srcObject.getVideoTracks().some(track => track.readyState === "live" && track.enabled !== false);
+    card.classList.toggle("is-relay-camera", relayFresh && !webrtc);
+    if (webrtc || relayFresh || liveTrack || card.classList.contains("is-avatar")) card.classList.add("is-camera-on");
+}
+
+function watchCameraHealth() {
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") resumeLocalPreview();
+    });
+    window.addEventListener("pageshow", resumeLocalPreview);
 }
 
 function watchCall(callId) {
@@ -2235,7 +2439,10 @@ function recordPeer(uid, patch) {
 
 function signalingLabel() {
     if (!signalingSocket) return "signaling off";
-    if (signalingSocket.readyState === WebSocket.OPEN) return rtcConfiguration.relay ? "signaling open" : "signaling open, stun only";
+    if (signalingSocket.readyState === WebSocket.OPEN) {
+        const picture = cameraRelayOpen ? "picture relay" : (rtcConfiguration.relay ? "" : "stun only");
+        return ["signaling open", picture].filter(Boolean).join(", ");
+    }
     return "signaling closed";
 }
 
@@ -2606,7 +2813,13 @@ function remoteAudioElement(card) {
     }
     return audio;
 }
-function removeRemoteVideo(uid) { document.querySelector(`[data-peer="${uid}"]`)?.remove(); callExperience?.layout(); }
+function removeRemoteVideo(uid) {
+    const card = document.querySelector(`[data-peer="${uid}"]`);
+    const image = card?.querySelector("img.relay-camera");
+    if (image?.dataset.objectUrl) URL.revokeObjectURL(image.dataset.objectUrl);
+    card?.remove();
+    callExperience?.layout();
+}
 
 async function startTranscription(callId) {
     if (!localStream?.getAudioTracks().length) return;
@@ -3243,7 +3456,11 @@ function toggleMute() {
 async function toggleCamera() {
     if (callExperience?.isAvatar?.()) { await callExperience.activateCamera(); return; }
     const tracks = tracksInCall("video");
-    if (!tracks.length) return;
+    if (!tracks.length) {
+        await restartLocalCamera();
+        setToolLabel("cameraButton", "Camera", false, "Turn camera off");
+        return;
+    }
     const enabled = !tracks[0].enabled;
     for (const track of tracks) track.enabled = enabled;
     setToolLabel("cameraButton", enabled ? "Camera" : "Camera off", !enabled, enabled ? "Turn camera off" : "Turn camera on");
@@ -3274,8 +3491,18 @@ function cleanupCall(stopMedia = true) {
     rosterTranscripts = [];
     if ($("callRosterList")) { $("callRosterList").replaceChildren(); $("callRosterList").dataset.summary = ""; }
     if ($("callRosterStatus")) $("callRosterStatus").textContent = "Waiting for participants";
+    stopCameraRelay();
+    document.querySelectorAll("#callView img.relay-camera").forEach(image => {
+        if (image.dataset.objectUrl) URL.revokeObjectURL(image.dataset.objectUrl);
+    });
     document.querySelectorAll("[data-peer]").forEach(e => e.remove());
-    if (stopMedia && localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; $("localVideo").srcObject = null; }
+    if (stopMedia && localStream) {
+        activeCallId = null;
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+        if ($("localVideo")) $("localVideo").srcObject = null;
+        if ($("localCapture")) $("localCapture").srcObject = null;
+    }
     callExperience?.cleanup();
     activeCallId = null; currentCallRole = null;
     activeTranslatorConnected = false;

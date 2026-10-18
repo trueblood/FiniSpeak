@@ -470,6 +470,7 @@ export function createCallExperience(deps) {
             deps.$("documentsButton").setAttribute("aria-pressed", "false");
         }
         layout();
+        deps.replayCallMedia?.();
     }
 
     function callLayoutIsMobile() {
@@ -722,8 +723,10 @@ export function createCallExperience(deps) {
             card.classList.toggle("is-avatar", participant.mediaMode === "avatar");
             const video = card.querySelector("video");
             const liveVideo = video?.srcObject instanceof MediaStream && video.srcObject.getVideoTracks().some(track => track.readyState === "live" && track.enabled !== false);
+            const relayFresh = Number(card.dataset.relayAt || 0) > Date.now() - 1600;
             // track.muted flips on when speaker audio starts, which was covering a live picture.
-            card.classList.toggle("is-camera-on", participant.mediaMode !== "avatar" && participant.cameraEnabled !== false && (Boolean(liveVideo) || video?.videoWidth > 0));
+            card.classList.toggle("is-relay-camera", relayFresh && !(video?.videoWidth > 0));
+            card.classList.toggle("is-camera-on", participant.mediaMode !== "avatar" && participant.cameraEnabled !== false && (Boolean(liveVideo) || video?.videoWidth > 0 || relayFresh));
             let muted = card.querySelector(".muted-pill");
             if (participant.microphoneEnabled === false) {
                 if (!muted) {

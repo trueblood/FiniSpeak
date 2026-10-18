@@ -404,6 +404,7 @@
     </section>
 
     <section id="callView" class="call-view hidden">
+        <video id="localCapture" class="local-capture" autoplay muted playsinline webkit-playsinline aria-hidden="true"></video>
         <div id="callShell" class="call-shell subs-both" data-pane="video">
             <div class="call-frame">
                 <header class="call-nav">
@@ -468,7 +469,7 @@
                         </div>
                         <div id="videoGrid" class="video-grid">
                             <article class="video-card local is-stage" data-role="local">
-                                <video id="localVideo" autoplay muted playsinline aria-label="Your camera preview"></video>
+                                <video id="localVideo" autoplay muted playsinline webkit-playsinline aria-label="Your camera preview"></video>
                                 <canvas id="localAvatarCanvas" class="avatar-canvas is-hidden" aria-hidden="true"></canvas>
                                 <div class="video-slate" id="localVideoSlate"><strong id="localParticipantName">You</strong><span id="localMediaLabel">Camera</span></div>
                                 <span class="speaking-indicator" id="localSpeaking" aria-hidden="true"></span>
@@ -752,6 +753,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261017-cameras"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-relay"></script>
 </body>
 </html>

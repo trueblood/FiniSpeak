@@ -87,7 +87,11 @@ body.in-call .call-view { height:100dvh; padding:12px; overflow:hidden; backgrou
 .participant-grid[hidden] { display:none; }
 .participant-grid-heading { display:flex; align-items:center; justify-content:space-between; color:#d7e0ea; font-size:.78rem; font-weight:750; }
 .participant-grid-heading span:last-child { min-width:1.4rem; padding:2px 7px; border-radius:999px; background:#123c69; color:#fff; text-align:center; }
-.call-view .video-card video,.call-view .avatar-canvas { width:100%; height:100%; object-fit:cover; position:absolute; inset:0; }
+.call-view .video-card video,.call-view .avatar-canvas,.call-view .relay-camera { width:100%; height:100%; object-fit:cover; position:absolute; inset:0; }
+.local-capture { position:fixed; left:0; bottom:0; width:8px; height:8px; opacity:.02; pointer-events:none; z-index:-1; }
+.call-view .relay-camera { display:none; z-index:1; }
+.call-view .video-card.is-relay-camera .relay-camera { display:block; }
+.call-view .video-card.is-relay-camera video { opacity:0; }
 .call-view .avatar-canvas.is-hidden,.call-view video.is-hidden { display:none; }
 .video-slate { position:absolute; inset:0; display:grid; place-items:center; align-content:center; gap:6px; padding-bottom:64px; background:radial-gradient(circle at 50% 30%,#243044,transparent 55%),#10151d; color:#fff; text-align:center; }
 .video-slate strong { font-size:1.4rem; }
