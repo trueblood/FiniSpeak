@@ -5,8 +5,9 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-from services.camera_relay import CameraRelay, handle_camera_socket, pack_frame
+from services.camera_relay import CameraRelay, _load_current_call, handle_camera_socket, pack_frame
 
 
 JPEG = b"\xff\xd8\xff" + (b"\x00" * 32) + b"\xff\xd9"
@@ -34,6 +35,15 @@ def parse_frame(frame):
 
 
 class CameraRelayTests(unittest.TestCase):
+    def test_live_membership_read_ends_the_old_mysql_snapshot(self):
+        calls = Mock()
+        calls.get.return_value = {"id": "call-1", "translatorId": "late-translator"}
+        with patch("services.camera_relay.get_repository", return_value=calls), \
+                patch("services.camera_relay.db.session.rollback") as rollback:
+            call = _load_current_call("call-1")
+        rollback.assert_called_once_with()
+        self.assertEqual(call["translatorId"], "late-translator")
+
     def test_frames_cross_worker_processes_and_expire(self):
         with tempfile.TemporaryDirectory() as root:
             sender = CameraRelay(root)

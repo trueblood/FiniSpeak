@@ -23,7 +23,7 @@ from models.sql_models import (
 from repositories.provider import EXTENSION_KEY
 from repositories.mysql import MySqlCallRepository
 from services.file_storage_service import file_path
-from services.signaling_service import _store_event, _validate_join
+from services.signaling_service import _load_current_call as load_current_signaling_call, _store_event, _validate_join
 from scripts.migrate_firebase_storage import migrate
 from scripts.check_account_activation_readiness import readiness_report
 from scripts.finalize_test_deployment import update_environment
@@ -323,6 +323,15 @@ class FirebaseReplacementTests(unittest.TestCase):
         self.assertTrue(duplicate); self.assertEqual(replay_id, event_id)
         with self.assertRaises(PermissionError):
             _store_event("call-1", "caller", {"caller", "receiver"}, {**message, "to": "outsider", "clientEventId": "event-2"})
+
+    def test_signaling_membership_read_ends_the_old_mysql_snapshot(self):
+        calls = Mock()
+        calls.get.return_value = {"id": "call-1", "translatorId": "late-translator"}
+        with patch("services.signaling_service.get_repository", return_value=calls), \
+                patch("services.signaling_service.db.session.rollback") as rollback:
+            call = load_current_signaling_call("call-1")
+        rollback.assert_called_once_with()
+        self.assertEqual(call["translatorId"], "late-translator")
 
     def test_long_lived_call_reader_sees_a_translator_who_joins_later(self):
         now = datetime.now(timezone.utc)

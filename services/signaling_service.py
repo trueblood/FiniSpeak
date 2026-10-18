@@ -25,6 +25,14 @@ def _participants(call):
     return participant_ids(call)
 
 
+def _load_current_call(call_id):
+    # A WebSocket can outlive many normal requests. End its current read
+    # transaction before checking membership so MySQL REPEATABLE READ does not
+    # keep returning the two-person snapshot after a translator/guest joins.
+    db.session.rollback()
+    return get_repository("calls").get(call_id)
+
+
 def _send(ws, payload):
     ws.send(json.dumps(payload, separators=(",", ":")))
 
@@ -32,7 +40,7 @@ def _send(ws, payload):
 def _validate_join(message, identity):
     call_id = str(message.get("callId") or "").strip()
     if not call_id or len(call_id) > 128: raise ValueError("A valid call ID is required.")
-    call = get_repository("calls").get(call_id)
+    call = _load_current_call(call_id)
     if not call or identity["uid"] not in _participants(call):
         raise PermissionError("Call not found or access denied.")
     if call.get("status") in {"ended", "declined", "cancelled"}:
@@ -47,7 +55,7 @@ def _store_event(call_id, sender_id, participants, message):
     payload = message.get("payload") or {}
     if event_type not in ALLOWED_EVENTS: raise ValueError("Unsupported signaling event.")
     if recipient not in participants:
-        refreshed = get_repository("calls").get(call_id)
+        refreshed = _load_current_call(call_id)
         participants = _participants(refreshed)
     if recipient not in participants or recipient == sender_id: raise PermissionError("Invalid signaling recipient.")
     if not isinstance(payload, dict) or len(json.dumps(payload)) > 65536: raise ValueError("Invalid signaling payload.")
@@ -104,7 +112,7 @@ def handle_signaling_socket(ws):
                 _send(ws, {"type": row.event_type, "from": row.sender_id, "to": row.recipient_id,
                     "payload": row.payload, "eventId": row.id, "clientEventId": row.client_event_id})
             if (_now() - last_call_check).total_seconds() >= 10:
-                call = get_repository("calls").get(call_id)
+                call = _load_current_call(call_id)
                 if not call or call.get("status") in {"ended", "declined", "cancelled"}:
                     _send(ws, {"type": "closed", "reason": "call_ended"}); break
                 participants, last_call_check = _participants(call), _now()

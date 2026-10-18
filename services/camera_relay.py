@@ -13,6 +13,7 @@ import threading
 import time
 from pathlib import Path
 
+from extensions import db
 from services.auth_service import authenticate_request
 from services.call_access import participant_ids
 from repositories.provider import get_repository
@@ -110,10 +111,19 @@ def get_camera_relay():
     return relay
 
 
+def _load_current_call(call_id):
+    # Camera sockets are long-lived. Close the current read transaction so a
+    # newly accepted translator/guest becomes visible under MySQL's default
+    # REPEATABLE READ isolation instead of leaving the original member list
+    # pinned for the lifetime of the socket.
+    db.session.rollback()
+    return get_repository("calls").get(call_id)
+
+
 def handle_camera_socket(ws, hub=None, authenticate=None, load_call=None):
     hub = hub or get_camera_relay()
     authenticate = authenticate or (lambda: authenticate_request())
-    load_call = load_call or (lambda call_id: get_repository("calls").get(call_id))
+    load_call = load_call or _load_current_call
     call_id = None
     try:
         identity = authenticate()
