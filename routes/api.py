@@ -1,0 +1,12 @@
+from flask import Blueprint
+
+from controllers import api_controller
+
+api_bp = Blueprint("api", __name__)
+api_bp.add_url_rule("", view_func=api_controller.index, methods=["GET"])
+api_bp.add_url_rule("/", view_func=api_controller.index, methods=["GET"])
+api_bp.add_url_rule("/routes", view_func=api_controller.routes, methods=["GET"])
+api_bp.add_url_rule("/health", view_func=api_controller.health, methods=["GET"])
+api_bp.add_url_rule("/ready", view_func=api_controller.readiness, methods=["GET"])
+api_bp.add_url_rule("/webrtc-config", view_func=api_controller.webrtc_config, methods=["GET"])
+api_bp.add_url_rule("/openapi.json", view_func=api_controller.openapi, methods=["GET"])

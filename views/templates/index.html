@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en" data-map-tile-url="{{ map_tile_url }}" data-map-attribution="{{ map_attribution }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FiniSpeak</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-mobile-call-details">
+</head>
+<body>
+<a class="skip-link" href="#mainContent">Skip to main content</a>
+<header class="site-header">
+    <a class="brand" href="/" aria-label="FiniSpeak home"><span class="brand-mark">F</span><span>FiniSpeak</span></a>
+    <nav class="site-nav" aria-label="Main navigation">
+        <button id="homeNav" class="nav-link" type="button">Home</button>
+        <button id="browseNav" class="nav-link" type="button">Find an interpreter</button>
+        <button id="authNav" class="nav-login" type="button">Log in</button>
+    </nav>
+</header>
+
+<main id="mainContent" tabindex="-1">
+    <section id="heroView" class="landing-view">
+        <div class="landing-hero">
+            <div class="hero-content">
+                <span class="eyebrow">Live human interpretation</span>
+                <h1>Find the right voice for the moment.</h1>
+                <p class="hero-lead">Search verified interpreters by language, dialect, region, and specialty—then bring the right person into your conversation.</p>
+                <div class="actions">
+                    <button id="browseHero" type="button">Find an interpreter</button>
+                    <button id="startCall" class="secondary" type="button">Start a call</button>
+                    <button id="translatorSignup" class="text-button" type="button">Join as an interpreter</button>
+                </div>
+                <div class="hero-trust" aria-label="FiniSpeak benefits"><span>Verified profiles</span><span>Human expertise</span><span>Accessible three-way calls</span></div>
+                <p id="status" class="status" aria-live="polite"></p>
+            </div>
+            <div class="hero-visual" aria-label="FiniSpeak interpreter matching preview">
+                <div class="hero-visual-header"><span><span class="brand-mark">F</span> Interpreter network</span><strong><span class="live-dot"></span> Available now</strong></div>
+                <div class="hero-search-preview"><span aria-hidden="true">⌕</span><span>Language, dialect, or specialty</span></div>
+                <button id="heroPrimaryProfile" class="hero-match-card hero-match-primary" type="button" disabled aria-label="Loading featured interpreter profile">
+                    <span id="heroPrimaryAvatar" class="hero-match-avatar">MV</span>
+                    <span><strong id="heroPrimaryName">Marisol Vega</strong><small id="heroPrimarySummary">Spanish · Healthcare</small></span>
+                    <span id="heroPrimaryVerified" class="hero-verified" aria-label="Verified interpreter">✓</span>
+                </button>
+                <div id="heroPrimaryDetails" class="hero-match-details"><span id="heroPrimaryRegion">Mexican &amp; Central American</span><span id="heroPrimaryRating">4.9 rating</span><span id="heroPrimaryExperience">9 years</span></div>
+                <button id="heroSecondaryProfile" class="hero-match-card" type="button" disabled aria-label="Loading featured interpreter profile">
+                    <span id="heroSecondaryAvatar" class="hero-match-avatar hero-match-avatar-blue">KH</span>
+                    <span><strong id="heroSecondaryName">Karim Haddad</strong><small id="heroSecondarySummary">Arabic · Legal</small></span>
+                    <span id="heroSecondaryVerified" class="hero-verified" aria-label="Verified interpreter">✓</span>
+                </button>
+            </div>
+        </div>
+        <div id="featuredProfiles" class="landing-directory-section">
+            <div class="directory-section-heading">
+                <div class="section-intro"><span class="eyebrow">Interpreter network</span><h2>Start with a strong match</h2><p>Browse verified profiles and compare language coverage, specialties, experience, ratings, and availability before creating an account.</p></div>
+                <div class="directory-availability-note"><span class="live-dot"></span><div><strong id="featuredAvailableCount">Checking availability…</strong><span>Profiles update automatically</span></div></div>
+            </div>
+            <div class="featured-filter-panel" aria-label="Filter public interpreter profiles">
+                <label class="featured-search" for="featuredSearch">Search<input id="featuredSearch" type="search" placeholder="Name, language, region, or specialty"></label>
+                <label for="featuredLanguage">Language<select id="featuredLanguage"><option value="">All languages</option></select></label>
+                <label for="featuredSpecialty">Specialty<select id="featuredSpecialty"><option value="">All specialties</option></select></label>
+                <label class="featured-available"><input id="featuredAvailable" type="checkbox"> Available now</label>
+            </div>
+            <div class="directory-results-heading"><p id="featuredResultCount">Loading interpreter profiles…</p><button id="clearFeaturedFilters" class="text-button" type="button">Clear filters</button></div>
+            <div id="featuredInterpreters" class="interpreter-directory featured-interpreter-grid" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading interpreter profiles…</div></div>
+        </div>
+        <div class="landing-section">
+            <div class="section-intro"><span class="eyebrow">How FiniSpeak works</span><h2>Choose how you want to connect</h2><p>Start a new conversation, add an interpreter to a call already in progress, or plan a session for later.</p></div>
+            <div class="workflow-tabs" role="tablist" aria-label="Choose a FiniSpeak workflow">
+                <button id="startCallTab" class="workflow-tab active" type="button" role="tab" aria-selected="true" aria-controls="startCallSteps" tabindex="0"><span aria-hidden="true">📹</span> Start a Call</button>
+                <button id="addCallTab" class="workflow-tab" type="button" role="tab" aria-selected="false" aria-controls="addCallSteps" tabindex="-1"><span aria-hidden="true">📞</span> Add to My Call</button>
+                <button id="scheduleTab" class="workflow-tab" type="button" role="tab" aria-selected="false" aria-controls="scheduleSteps" tabindex="-1"><span aria-hidden="true">📅</span> Schedule</button>
+            </div>
+            <div id="startCallSteps" class="feature-grid workflow-panel" role="tabpanel" aria-labelledby="startCallTab">
+                <article class="feature-card"><span class="feature-number">01</span><h3>Find an interpreter</h3><p>Search by language, dialect, specialty, availability, rating, and feedback.</p></article>
+                <article class="feature-card"><span class="feature-number">02</span><h3>Start the call</h3><p>Start a secure browser-based call with the people who need to communicate.</p></article>
+                <article class="feature-card"><span class="feature-number">03</span><h3>Interpreter joins</h3><p>Your selected interpreter joins the live call to provide human interpretation.</p></article>
+            </div>
+            <div id="addCallSteps" class="feature-grid workflow-panel" role="tabpanel" aria-labelledby="addCallTab" hidden>
+                <article class="feature-card"><span class="feature-number">01</span><h3>Open FiniSpeak</h3><p>While your phone conversation is in progress, find an available interpreter in FiniSpeak.</p></article>
+                <article class="feature-card"><span class="feature-number">02</span><h3>Add the interpreter</h3><p>Call the interpreter and add them to your existing phone conversation.</p></article>
+                <article class="feature-card"><span class="feature-number">03</span><h3>Continue together</h3><p>Keep talking while the interpreter provides real-time interpretation for everyone on the call.</p></article>
+            </div>
+            <div id="scheduleSteps" class="feature-grid workflow-panel" role="tabpanel" aria-labelledby="scheduleTab" hidden>
+                <article class="feature-card"><span class="feature-number">01</span><h3>Choose a time</h3><p>Find an interpreter or tutor and choose an available date and time.</p></article>
+                <article class="feature-card"><span class="feature-number">02</span><h3>Book the session</h3><p>Confirm the interpreter, language, specialty, and session details.</p></article>
+                <article class="feature-card"><span class="feature-number">03</span><h3>Connect when it’s time</h3><p>Join the scheduled FiniSpeak session with your interpreter.</p></article>
+            </div>
+        </div>
+        <div class="landing-cta"><div><span class="eyebrow">Ready when language gets in the way</span><h2>Make your next conversation easier.</h2></div><button id="landingCta" type="button">Create your account</button></div>
+    </section>
+
+    <section id="authView" class="panel hidden">
+        <div class="card narrow">
+            <div class="section-heading"><span class="eyebrow">FiniSpeak account</span><h2 id="authTitle">Sign in</h2></div>
+            <form id="authForm">
+                <label id="nameField" class="hidden">Name<input id="displayName" autocomplete="name"></label>
+                <label id="phoneField" class="hidden">Phone number<span class="phone-input-group"><select id="signupPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="signupPhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="317 555 0123" aria-describedby="signupPhoneHelp"></span><small id="signupPhoneHelp">Used only so other registered FiniSpeak users can call you inside the app.</small></label>
+                <label id="emailField">Email<input id="email" type="email" autocomplete="email" required></label>
+                <label>Password<input id="password" type="password" minlength="12" required></label>
+                <label id="roleField" class="hidden">Account type
+                    <select id="role"><option value="customer">Customer</option><option value="translator">Translator</option></select>
+                </label>
+                <button id="authSubmit" type="submit">Sign in</button>
+            </form>
+            <button id="authToggle" class="text-button" type="button">Need an account? Create one</button>
+            <button id="forgotPassword" class="text-button" type="button">Forgot password?</button>
+            <p id="authStatus" class="status"></p>
+        </div>
+    </section>
+
+    <section id="dashboardView" class="panel hidden">
+        <div class="app-shell">
+            <aside class="dashboard-sidebar" aria-label="Account navigation">
+                <div class="sidebar-user">
+                    <div id="profileInitials" class="profile-avatar" aria-hidden="true">FS</div>
+                    <div><strong id="sidebarName">FiniSpeak</strong><span id="sidebarRole">Customer</span></div>
+                </div>
+                <nav class="dashboard-nav" aria-label="Dashboard sections">
+                    <button class="dashboard-nav-item active" type="button" data-dashboard-panel="home" aria-current="page"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3.5 10.5 8.5-7 8.5 7v9a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"/></svg></span><span>Home</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="directory"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5M11 8v6M8 11h6"/></svg></span><span>Discover</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="classroom" aria-label="Language Classroom"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span>Classroom</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="friends"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.5"/><path d="M3.5 20c.5-4 2.4-6 5.5-6s5 2 5.5 6M14 15c3.5 0 5.5 1.7 6 5"/></svg></span><span>Friends</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="profile"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c.8-4 3.3-6 7.5-6s6.7 2 7.5 6"/></svg></span><span>Profile</span></button>
+                    <button id="interpreterProfileNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="interpreter"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.2c0 4.4-2.8 7.7-7 9.3-4.2-1.6-7-4.9-7-9.3V6z"/><path d="m9 12 2 2 4-4"/></svg></span><span>Interpreter</span></button>
+                    <button id="adminNav" class="dashboard-nav-item hidden" type="button" data-dashboard-panel="admin"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span><span>Admin</span></button>
+                    <button class="dashboard-nav-item" type="button" data-dashboard-panel="settings"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></span><span>Settings</span></button>
+                </nav>
+            </aside>
+
+            <div class="dashboard-content">
+                <header class="mobile-app-header">
+                    <div class="mobile-app-brand"><span aria-hidden="true">◎</span><strong>FiniSpeak</strong></div>
+                    <button class="mobile-settings-button" type="button" data-open-panel="settings" aria-label="Open settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></button>
+                </header>
+                <div id="dashboardHome" class="dashboard-panel">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Welcome back</span><h2 id="welcomeName">FiniSpeak</h2><p id="accountRole"></p></div><span id="accountStatusBadge" class="status-badge">Active</span></div>
+                    <section class="app-action-hub" aria-labelledby="appActionTitle">
+                        <p class="app-greeting">Hello, <strong id="appWelcomeName">there</strong></p>
+                        <h2 id="appActionTitle">What do you need today?</h2>
+                        <div class="app-primary-actions">
+                            <button type="button" data-open-panel="directory"><span class="app-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5M11 8v6M8 11h6"/></svg></span><span><strong>Find an interpreter</strong><small>Search languages and specialties</small></span><span class="app-action-arrow" aria-hidden="true">›</span></button>
+                            <button id="openStartCall" type="button"><span class="app-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7.5 4.5h-2A1.5 1.5 0 0 0 4 6c0 7.7 6.3 14 14 14a1.5 1.5 0 0 0 1.5-1.5v-2l-4.2-1-1.1 2a12.2 12.2 0 0 1-7.7-7.7l2-1.1z"/></svg></span><span><strong>Start a call</strong><small>Connect and request live help</small></span><span class="app-action-arrow" aria-hidden="true">›</span></button>
+                        </div>
+                        <div class="app-category-row" aria-label="Browse common needs">
+                            <button type="button" data-discovery-category="Business">Business</button>
+                            <button type="button" data-discovery-category="Education">Education</button>
+                            <button type="button" data-discovery-category="Personal">Personal</button>
+                        </div>
+                    </section>
+                    <div class="dashboard-grid">
+                        <div class="card call-start-card" id="callStartCard">
+                            <div id="customerTools">
+                                <span class="eyebrow">Connect now</span><h3>Start a conversation</h3>
+                                <p id="callFormHelp">Call another FiniSpeak customer by their account email or saved phone number, then add a verified interpreter when needed.</p>
+                                <div id="selectedInterpreter" class="selected-interpreter hidden" aria-live="polite">
+                                    <div><span>Selected interpreter</span><strong id="selectedInterpreterName"></strong></div>
+                                    <button id="clearSelectedInterpreter" class="text-button" type="button">Change</button>
+                                </div>
+                                <form id="callForm">
+                                    <label for="receiverEmail">FiniSpeak email</label><input id="receiverEmail" type="email" autocomplete="email" placeholder="Enter their FiniSpeak email">
+                                    <div class="call-method-separator" aria-hidden="true"><span>or</span></div>
+                                    <label for="receiverPhone">Phone number</label><div class="phone-input-group"><select id="receiverPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="receiverPhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="Enter their saved phone number" aria-describedby="receiverPhoneHelp"></div>
+                                    <p id="receiverPhoneHelp" class="field-help call-phone-help">This starts a secure in-app call. It does not dial a cellular or landline number.</p>
+                                    <button type="submit">Start in-app call</button>
+                                </form>
+                                <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
+                            </div>
+                            <div id="translatorTools" class="hidden translator-workspace">
+                                <div class="translator-hero-row">
+                                    <div><span class="eyebrow">Interpreter workspace</span><h3>Your interpreter dashboard</h3><p>Manage your availability, profile, verification, and interpretation sessions from one place.</p></div>
+                                    <label class="availability-switch"><input id="dashboardAvailableNow" type="checkbox"><span><strong id="dashboardAvailabilityLabel">Unavailable</strong><small>Accept new requests</small></span></label>
+                                </div>
+                                <div class="translator-stat-grid">
+                                    <div class="translator-stat"><span>Profile</span><strong id="dashboardProfileCompletion">0%</strong><small id="dashboardProfileCompletionText">Finish onboarding</small></div>
+                                    <div class="translator-stat"><span>Verification</span><strong id="dashboardVerification">Unverified</strong><small>Credential review status</small></div>
+                                    <div class="translator-stat"><span>Rating</span><strong id="dashboardRating">New</strong><small id="dashboardRatingCount">No reviews yet</small></div>
+                                    <div class="translator-stat"><span>Experience</span><strong id="dashboardExperience">0 yrs</strong><small>Interpreter experience</small></div>
+                                </div>
+                                <div class="translator-summary-grid">
+                                    <div class="translator-summary"><span class="eyebrow">Languages & dialects</span><p id="dashboardLanguages">Add your languages and dialects.</p></div>
+                                    <div class="translator-summary"><span class="eyebrow">Specialties</span><p id="dashboardSpecialties">Add your specialties.</p></div>
+                                    <div class="translator-summary"><span class="eyebrow">Schedule</span><p id="dashboardSchedule">Add your availability schedule.</p></div>
+                                </div>
+                                <div class="translator-actions"><button type="button" data-open-panel="interpreter">Edit interpreter profile</button><span id="translatorRequestStatus" class="request-ready">Waiting for interpretation requests…</span></div>
+                            </div>
+                        </div>
+                        <div class="card history-card">
+                            <div class="section-heading"><span class="eyebrow">Your activity</span><h3>Recent conversations</h3></div>
+                            <p>Open a session to review its saved transcript.</p>
+                            <div id="conversationHistory" class="conversation-history"><p class="transcript-empty">Loading conversations…</p></div>
+                        </div>
+                    </div>
+                    <p id="dashboardStatus" class="status" aria-live="polite"></p>
+                </div>
+
+                <div id="dashboardProfile" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Account</span><h2>Profile</h2><p>Keep the information people see in FiniSpeak up to date.</p></div></div>
+                    <div class="card form-card">
+                        <form id="profileForm">
+                            <div class="profile-field"><label for="profileDisplayName">Display name</label><input id="profileDisplayName" autocomplete="name" required></div>
+                            <div class="profile-field"><label for="profileEmail">Email</label><input id="profileEmail" type="email" disabled aria-describedby="emailHelp"><p id="emailHelp" class="field-help">Your sign-in email cannot be changed here yet.</p></div>
+                            <div class="profile-field"><label for="profilePhone">Phone number for in-app calls</label><div class="phone-input-group"><select id="profilePhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="profilePhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="317 555 0123" aria-describedby="profilePhoneHelp"></div><p id="profilePhoneHelp" class="field-help">Other FiniSpeak users can enter this number to reach you inside the app. FiniSpeak does not place telephone-network calls.</p></div>
+                            <div class="profile-field"><label for="profileRole">Account type</label><input id="profileRole" disabled></div>
+                            <button type="submit">Save profile</button>
+                        </form>
+                        <p id="profileStatus" class="status" aria-live="polite"></p>
+                    </div>
+                </div>
+
+                <div id="dashboardDirectory" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search nearby or remote profiles and compare expertise, ratings, and availability.</p></div><div class="directory-view-switch" role="group" aria-label="Directory view"><button id="directoryListView" class="secondary active" type="button" aria-pressed="true">List</button><button id="directoryMapView" class="secondary" type="button" aria-pressed="false">Map</button><button id="directorySplitView" class="secondary" type="button" aria-pressed="false">Split</button></div></div>
+                    <div class="directory-filters card" aria-label="Interpreter filters">
+                        <label class="directory-search" for="directorySearch">Search<input id="directorySearch" type="search" placeholder="Name, language, specialty, or keyword"></label>
+                        <label for="directoryLanguage">Language<select id="directoryLanguage"><option value="">All languages</option></select></label>
+                        <label for="directoryDialect">Dialect<select id="directoryDialect"><option value="">All dialects</option></select></label>
+                        <label for="directorySpecialty">Specialty<select id="directorySpecialty"><option value="">All specialties</option></select></label>
+                        <label for="directoryRating">Minimum rating<select id="directoryRating"><option value="0">Any rating</option><option value="3">3+ stars</option><option value="4">4+ stars</option><option value="4.5">4.5+ stars</option></select></label>
+                        <label for="directoryMode">Service<select id="directoryMode"><option value="both">Nearby + remote</option><option value="nearby">Nearby</option><option value="remote">Remote video</option></select></label>
+                        <label for="directoryRadius">Distance<select id="directoryRadius"><option value="5">5 miles</option><option value="10">10 miles</option><option value="25" selected>25 miles</option><option value="50">50 miles</option><option value="100">100 miles</option><option value="anywhere">Anywhere</option></select></label>
+                        <label for="directorySort">Sort by<select id="directorySort"><option value="top-rated">Top rated</option><option value="experience">Most experienced</option><option value="name">Name</option></select></label>
+                        <label class="directory-available"><input id="directoryAvailable" type="checkbox"> Available now</label>
+                        <label class="directory-available"><input id="directoryVerified" type="checkbox"> Verified only</label>
+                    </div>
+                    <div class="directory-location-bar card"><button id="useMyLocation" type="button">Use my location</button><form id="manualLocationForm"><label for="manualLocation">Or enter a city, state, or ZIP<span class="location-entry"><input id="manualLocation" placeholder="Indianapolis, IN"><button class="secondary" type="submit">Search</button></span></label></form><span id="directoryLocationStatus" role="status" aria-live="polite">Location is optional for remote search.</span></div>
+                    <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p><button id="searchMapArea" class="secondary hidden" type="button">Search this area</button></div>
+                    <div id="directoryResultsLayout" class="directory-results-layout list-view">
+                        <div id="interpreterDirectory" class="interpreter-directory" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div></div>
+                        <div id="interpreterMapPanel" class="interpreter-map-panel hidden"><div id="interpreterMap" aria-label="Map of interpreter service areas" role="application"></div><p class="map-privacy-note">Locations are approximate public service areas. Your precise location is never shared.</p></div>
+                    </div>
+                </div>
+
+                <div id="dashboardInterpreter" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter onboarding</span><h2>Interpreter profile</h2><p>Complete your professional profile so FiniSpeak can match you with the right conversations.</p></div><span id="interpreterCompletionBadge" class="status-badge pending-badge">Not complete</span></div>
+                    <div class="onboarding-progress" aria-label="Interpreter profile completion"><div id="interpreterProgressBar" class="onboarding-progress-bar"></div></div>
+                    <p id="interpreterProgressText" class="field-help">Complete the required fields below.</p>
+                    <div class="verification-banner"><span>Verification status</span><strong id="interpreterVerificationSummary">Not submitted</strong><p id="interpreterLifecycleText" aria-live="polite">Finish the steps below, then submit your profile for review.</p></div>
+                    <ol class="profile-wizard-steps" aria-label="Interpreter profile steps">
+                        <li><button type="button" data-wizard-step="0" aria-current="step"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 1</small>Personal info</span></button></li>
+                        <li><button type="button" data-wizard-step="1"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 2</small>Languages</span></button></li>
+                        <li><button type="button" data-wizard-step="2"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 3</small>Credentials</span></button></li>
+                        <li><button type="button" data-wizard-step="3"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 4</small>Service location</span></button></li>
+                        <li><button type="button" data-wizard-step="4"><span class="wizard-step-icon" aria-hidden="true">✕</span><span><small>Step 5</small>Availability</span></button></li>
+                    </ol>
+                    <form id="interpreterProfileForm" class="interpreter-form">
+                        <div class="card form-section" data-wizard-panel="0"><span class="eyebrow">Step 1 of 5</span><h3 tabindex="-1">Personal information</h3>
+                            <div class="profile-photo-row"><div id="interpreterPhotoPreview" class="interpreter-photo-placeholder" aria-hidden="true">Photo</div><div><label for="interpreterPhoto">Profile photo</label><input id="interpreterPhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="field-help">JPG, PNG, or WebP. Your current photo stays in place unless you choose a new one.</p></div></div>
+                            <div class="form-grid"><label for="interpreterFullName">Full name<input id="interpreterFullName" autocomplete="name" required></label><label for="interpreterPhone">Phone number<span class="phone-input-group"><select id="interpreterPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="interpreterPhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="555 555 5555"></span></label></div>
+                            <label for="interpreterBio">Professional bio<textarea id="interpreterBio" rows="4" maxlength="800" placeholder="Tell customers about your interpretation background and approach." required></textarea></label>
+                        </div>
+                        <div class="card form-section hidden" data-wizard-panel="1"><span class="eyebrow">Step 2 of 5</span><h3 tabindex="-1">Languages and specialties</h3>
+                            <div class="tag-field" data-tag-field="languages">
+                                <label for="interpreterLanguages">Languages</label>
+                                <div id="interpreterLanguagesTags" class="tag-list" aria-live="polite"></div>
+                                <div class="tag-entry-row"><div class="tag-entry-input"><input id="interpreterLanguages" placeholder="Search or add a language" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="languagesOptions" aria-describedby="languagesHelp"><div id="languagesOptions" class="tag-suggestions hidden" role="listbox"></div></div><button class="secondary tag-add-button" type="button" data-add-tag="languages">Add</button></div>
+                                <p id="languagesHelp" class="field-help">Choose a language from the database, or type a new one and press Enter/Add. New values are saved automatically.</p>
+                            </div>
+                            <div class="tag-field" data-tag-field="dialects">
+                                <label for="interpreterDialects">Dialects / regions</label>
+                                <div id="interpreterDialectsTags" class="tag-list" aria-live="polite"></div>
+                                <div class="tag-entry-row"><div class="tag-entry-input"><input id="interpreterDialects" placeholder="Search or add a dialect / region" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dialectsOptions"><div id="dialectsOptions" class="tag-suggestions hidden" role="listbox"></div></div><button class="secondary tag-add-button" type="button" data-add-tag="dialects">Add</button></div>
+                            </div>
+                            <div class="tag-field" data-tag-field="specialties">
+                                <label for="interpreterSpecialties">Specialties</label>
+                                <div id="interpreterSpecialtiesTags" class="tag-list" aria-live="polite"></div>
+                                <div class="tag-entry-row"><div class="tag-entry-input"><input id="interpreterSpecialties" placeholder="Search or add a specialty" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="specialtiesOptions"><div id="specialtiesOptions" class="tag-suggestions hidden" role="listbox"></div></div><button class="secondary tag-add-button" type="button" data-add-tag="specialties">Add</button></div>
+                            </div>
+                        </div>
+                        <div class="card form-section hidden" data-wizard-panel="2"><span class="eyebrow">Step 3 of 5</span><h3 tabindex="-1">Experience and credentials</h3>
+                            <div class="form-grid"><label for="interpreterYears">Years of experience<input id="interpreterYears" type="number" min="0" max="80" step="1" required></label><div><span class="field-label">Credential review</span><strong id="interpreterCredentialStatus" class="credential-review-status">Not submitted</strong></div></div>
+                            <label for="interpreterCredentials">Credentials / certifications<textarea id="interpreterCredentials" rows="4" placeholder="One credential per line, for example: CCHI Certified Healthcare Interpreter"></textarea></label>
+                            <label for="interpreterCredentialFiles">Credential documents<input id="interpreterCredentialFiles" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" aria-describedby="credentialFilesHelp"></label>
+                            <p id="credentialFilesHelp" class="field-help">Upload PDF, JPG, PNG, or WebP evidence. Each private document must be under 10 MB and is visible only to you and administrators. To replace a file, remove it and choose the replacement before saving.</p>
+                            <div id="credentialDocumentList" class="credential-document-list" aria-live="polite"></div>
+                        </div>
+                        <div class="card form-section hidden" data-wizard-panel="3"><span class="eyebrow">Step 4 of 5</span><h3 tabindex="-1">Service location</h3>
+                            <p class="field-help service-location-intro">Add the city or region where you provide in-person interpretation. FiniSpeak publishes only an approximate service area—never a street address or your live location.</p>
+                            <fieldset class="service-area-settings"><legend>How you provide interpretation</legend><div class="form-grid"><label class="inline-check"><input id="interpreterInPerson" type="checkbox"> In-person interpretation</label><label class="inline-check"><input id="interpreterRemote" type="checkbox" checked> Remote video interpretation</label></div><div class="form-grid"><label for="interpreterServiceArea">Public service city, state/province, or ZIP<input id="interpreterServiceArea" placeholder="Indianapolis, IN" autocomplete="address-level2"><small>Use a public service area—not a residential address.</small></label><label for="interpreterServiceRadius">In-person service radius<select id="interpreterServiceRadius"><option value="5">5 miles</option><option value="10">10 miles</option><option value="25" selected>25 miles</option><option value="50">50 miles</option><option value="100">100 miles</option></select></label></div><label class="inline-check"><input id="interpreterShowOnMap" type="checkbox"> Show my approximate public service area on the map</label><p class="field-help map-sharing-note">Map visibility is optional. Remote interpreters can leave the service area blank.</p></fieldset>
+                        </div>
+                        <div class="card form-section hidden" data-wizard-panel="4"><span class="eyebrow">Step 5 of 5</span><h3 tabindex="-1">Availability</h3>
+                            <fieldset><legend>Available days</legend><div class="day-options"><label><input type="checkbox" name="availabilityDay" value="monday"> Monday</label><label><input type="checkbox" name="availabilityDay" value="tuesday"> Tuesday</label><label><input type="checkbox" name="availabilityDay" value="wednesday"> Wednesday</label><label><input type="checkbox" name="availabilityDay" value="thursday"> Thursday</label><label><input type="checkbox" name="availabilityDay" value="friday"> Friday</label><label><input type="checkbox" name="availabilityDay" value="saturday"> Saturday</label><label><input type="checkbox" name="availabilityDay" value="sunday"> Sunday</label></div></fieldset>
+                            <div class="form-grid"><label for="availabilityStart">Available from<input id="availabilityStart" type="time"></label><label for="availabilityEnd">Available until<input id="availabilityEnd" type="time"></label></div>
+                            <label class="inline-check"><input id="interpreterAvailableNow" type="checkbox"> Available for interpretation requests now</label>
+                        </div>
+                        <div class="wizard-navigation"><button id="interpreterWizardBack" class="secondary" type="button">Back</button><span id="interpreterWizardPosition">Step 1 of 5</span><button id="saveInterpreterDraft" class="secondary" type="button">Save draft</button><button id="interpreterWizardNext" type="button">Next</button></div>
+                        <div id="interpreterFinalActions" class="form-actions hidden"><button id="submitInterpreterVerification" type="button">Submit for verification</button><button id="saveInterpreterProfile" class="secondary" type="submit">Save profile</button></div>
+                    </form>
+                    <p id="interpreterProfileStatus" class="status" aria-live="polite"></p>
+                </div>
+
+                <div id="dashboardClassroom" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Language Classroom</span><h2>Learn with an avatar or a teacher</h2><p>Students will be able to attend language classes taught by AI avatars or by human translators who choose to teach. This page is a placeholder. Classes are not open, and billing is not active.</p></div><span class="status-badge pending-badge">Placeholder</span></div>
+                    <div class="classroom-grid">
+                        <article class="card"><span class="eyebrow">Classes</span><h3>Create, browse, and join</h3><p>Schedule a class, look through upcoming lessons, and join when the classroom opens.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">AI teachers</span><h3>Vocabulary, grammar, and pronunciation</h3><p>An avatar teacher will explain words, grammar, and how to say them.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">Human teachers</span><h3>Translators can opt in</h3><p>Verified translators will be able to apply or opt in to teach. Profiles will show languages, qualifications, and availability.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">Live classroom</span><h3>Video, avatars, and subtitles</h3><p>Classrooms will use live video, avatar participation, and translated subtitles for everyone in the room.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">In class</span><h3>Enrollment, hands, and chat</h3><p>Students will enroll, raise a hand, and use classroom chat. Teachers will share a screen, lessons, and assignments.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        <article class="card"><span class="eyebrow">Later</span><h3>Paid classes stay off</h3><p>The classroom can support paid classes later. No prices, checkout, or billing are turned on from this page.</p><span class="classroom-placeholder">Placeholder</span></article>
+                    </div>
+                    <section class="classroom-personal" aria-labelledby="aiLanguageTeacherTitle">
+                        <div class="dashboard-heading"><div><span class="eyebrow">Personal learning</span><h2 id="aiLanguageTeacherTitle">AI Language Teacher</h2><p>A one-on-one learning experience, separate from group classrooms. An AI avatar will practice with one student at a time. Lessons are not open yet.</p></div><span class="status-badge pending-badge">Placeholder</span></div>
+                        <div class="classroom-grid">
+                            <article class="card"><span class="eyebrow">One-on-one</span><h3>Avatar lessons</h3><p>Practice with a personal AI avatar instead of joining a group class.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Conversation</span><h3>Spoken practice</h3><p>Hold a conversation in the language you are learning, with the avatar responding as you go.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Exercises</span><h3>Vocabulary and grammar</h3><p>Work through words and grammar chosen for the lesson.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Speaking</span><h3>Pronunciation coaching</h3><p>Hear a correction when a sound or phrase needs another try.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Level</span><h3>Beginner to advanced</h3><p>Start at beginner, intermediate, or advanced, then keep the lesson at that level.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Progress</span><h3>Lessons that follow you</h3><p>Later lessons will use what you have already practiced.</p><span class="classroom-placeholder">Placeholder</span></article>
+                            <article class="card"><span class="eyebrow">Your calls</span><h3>Practice real phrases</h3><p>Phrases from earlier calls can be used for practice only with the student's permission. Nothing is pulled from a call automatically.</p><span class="classroom-placeholder">Placeholder</span></article>
+                        </div>
+                    </section>
+                </div>
+
+                <div id="dashboardSettings" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Preferences</span><h2>Settings</h2><p>Manage your FiniSpeak account experience.</p></div></div>
+                    <div class="settings-grid">
+                        <div class="card"><h3>Account</h3><p>Signed in as <strong id="settingsEmail"></strong>.</p><button id="settingsSignOut" class="secondary" type="button">Sign out</button></div>
+                        <div class="card"><h3>Accessibility</h3><p>FiniSpeak supports keyboard navigation, visible focus states, semantic form labels, and live status announcements.</p></div>
+                        <div class="card"><h3>Privacy</h3><p>Finalized transcript text can be saved with a call. Raw microphone audio is not stored by FiniSpeak.</p></div>
+                    </div>
+                </div>
+
+                <div id="dashboardFriends" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Your contacts</span><h2>Friends</h2><p>Save FiniSpeak contacts, their numbers, and see who is recently online.</p></div><button id="refreshFriends" class="secondary" type="button">Refresh</button></div>
+                    <div class="friends-layout">
+                        <section class="card form-card" aria-labelledby="addFriendTitle">
+                            <h3 id="addFriendTitle">Add a friend</h3>
+                            <form id="friendForm">
+                                <label for="friendEmail">FiniSpeak email<input id="friendEmail" type="email" autocomplete="email" placeholder="friend@example.com"></label>
+                                <div class="call-method-separator" aria-hidden="true"><span>or</span></div>
+                                <label for="friendPhone">FiniSpeak phone number</label><div class="phone-input-group"><select id="friendPhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="friendPhone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="317 555 0123"></div>
+                                <label for="friendNickname">Nickname (optional)<input id="friendNickname" maxlength="160" placeholder="How you know them"></label>
+                                <button type="submit">Add friend</button>
+                            </form>
+                            <p id="friendsStatus" class="status" role="status" aria-live="polite"></p>
+                        </section>
+                        <section class="card" aria-labelledby="friendsListTitle"><div class="section-heading"><span class="eyebrow">Saved contacts</span><h3 id="friendsListTitle">Friends list</h3></div><div id="friendsList" class="friends-list" aria-live="polite"><p>Loading friends…</p></div></section>
+                    </div>
+                </div>
+
+                <div id="dashboardAdmin" class="dashboard-panel hidden">
+                    <div class="dashboard-heading"><div><span class="eyebrow">Administration</span><h2>Platform oversight</h2><p>Review credentials, accounts, sessions, organizations, and moderation activity.</p></div><button id="refreshAdmin" class="secondary" type="button">Refresh</button></div>
+                    <div class="admin-metric-grid" aria-label="Platform activity">
+                        <article class="admin-metric"><span>Accounts</span><strong id="adminAccounts">—</strong><small id="adminActiveAccounts">— active</small></article>
+                        <article class="admin-metric"><span>Verified interpreters</span><strong id="adminVerified">—</strong><small id="adminPending">— awaiting review</small></article>
+                        <article class="admin-metric"><span>Sessions</span><strong id="adminSessions">—</strong><small id="adminActiveSessions">— active</small></article>
+                        <article class="admin-metric"><span>Organizations</span><strong id="adminOrganizations">—</strong><small>Managed accounts</small></article>
+                    </div>
+                    <section class="card admin-section" aria-labelledby="verificationQueueTitle">
+                        <div class="admin-section-heading"><div><span class="eyebrow">Credential verification</span><h3 id="verificationQueueTitle">Review queue</h3></div><span id="adminQueueStatus" class="status-badge pending-badge">Loading…</span></div>
+                        <div id="adminVerificationQueue" class="admin-review-list" aria-live="polite"><p>Loading verification requests…</p></div>
+                    </section>
+                    <div class="admin-operations-grid">
+                        <section class="card admin-section" aria-labelledby="accountManagementTitle">
+                            <div class="admin-section-heading"><div><span class="eyebrow">Users & interpreters</span><h3 id="accountManagementTitle">Account status</h3></div></div>
+                            <div id="adminAccountList" class="admin-list" aria-live="polite"><p>Loading accounts…</p></div>
+                        </section>
+                        <section class="card admin-section" aria-labelledby="sessionActivityTitle">
+                            <div class="admin-section-heading"><div><span class="eyebrow">Calls</span><h3 id="sessionActivityTitle">Session activity</h3></div></div>
+                            <div id="adminSessionList" class="admin-list" aria-live="polite"><p>Loading sessions…</p></div>
+                        </section>
+                        <section class="card admin-section" aria-labelledby="reviewModerationTitle">
+                            <div class="admin-section-heading"><div><span class="eyebrow">Safety & quality</span><h3 id="reviewModerationTitle">Review moderation</h3></div></div>
+                            <div id="adminReviewList" class="admin-list" aria-live="polite"><p>Loading reviews…</p></div>
+                        </section>
+                        <section class="card admin-section" aria-labelledby="organizationTitle">
+                            <div class="admin-section-heading"><div><span class="eyebrow">Commercial accounts</span><h3 id="organizationTitle">Organizations</h3></div></div>
+                            <form id="organizationForm" class="admin-inline-form">
+                                <label for="organizationName">Name<input id="organizationName" required maxlength="160"></label>
+                                <label for="organizationEmail">Contact email<input id="organizationEmail" type="email" maxlength="320"></label>
+                                <button type="submit">Add organization</button>
+                            </form>
+                            <div id="adminOrganizationList" class="admin-list" aria-live="polite"><p>Loading organizations…</p></div>
+                        </section>
+                    </div>
+                    <p id="adminStatus" class="status" role="status" aria-live="polite"></p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="profileView" class="panel profile-detail-view hidden">
+        <div class="profile-detail-shell">
+            <button id="backToDirectory" class="text-button profile-back" type="button">← Back to interpreters</button>
+            <article class="profile-detail-card">
+                <div class="profile-detail-hero">
+                    <div id="publicProfileAvatar" class="public-profile-avatar" aria-hidden="true">FS</div>
+                    <div class="profile-detail-heading"><span id="publicProfileAvailability" class="availability-pill">Availability unknown</span><h1 id="publicProfileName">Interpreter</h1><p id="publicProfileHeadline">Professional FiniSpeak interpreter</p><div id="publicProfileRating" class="profile-rating"></div></div>
+                    <button id="profileStartCall" type="button">Start a call</button>
+                </div>
+                <div class="profile-detail-grid">
+                    <div class="profile-main-content">
+                        <section><span class="eyebrow">About</span><h2>Meet your interpreter</h2><p id="publicProfileBio"></p></section>
+                        <section><span class="eyebrow">Expertise</span><h2>Languages and specialties</h2><div id="publicProfileLanguages" class="profile-tag-group"></div><div id="publicProfileSpecialties" class="profile-tag-group"></div></section>
+                        <section><div class="reviews-heading"><div><span class="eyebrow">Community feedback</span><h2>Most recent reviews</h2></div><div id="publicProfileReviewSummary" class="review-summary"></div></div><div id="publicProfileReviews" class="review-list"><p>No reviews yet.</p></div></section>
+                    </div>
+                    <aside class="profile-facts card"><h3>Profile details</h3><dl><div><dt>Experience</dt><dd id="publicProfileExperience">—</dd></div><div><dt>Credentials</dt><dd id="publicProfileCredentials">—</dd></div><div><dt>Service location</dt><dd id="publicProfileLocation">Remote only</dd></div><div><dt>Schedule</dt><dd id="publicProfileSchedule">—</dd></div><div><dt>Verification</dt><dd id="publicProfileVerification">—</dd></div></dl></aside>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <section id="callView" class="call-view hidden">
+        <video id="localCapture" class="local-capture" autoplay muted playsinline webkit-playsinline aria-hidden="true"></video>
+        <div id="callShell" class="call-shell subs-both is-transcript-collapsed are-call-details-collapsed" data-pane="video">
+            <div class="call-frame">
+                <section id="smartInterpreter" class="smart-interpreter" hidden aria-hidden="true">
+                    <div class="smart-interpreter-copy">
+                        <strong>Smart Interpreter</strong>
+                        <span id="smartInterpreterStatus">Listening for speech</span>
+                    </div>
+                    <canvas id="smartInterpreterWave" class="smart-wave" aria-hidden="true"></canvas>
+                    <div class="smart-interpreter-languages">
+                        <span id="smartSourceLanguage">Detecting</span>
+                        <span aria-hidden="true">→</span>
+                        <span id="smartTargetLanguage">Your subtitles</span>
+                    </div>
+                </section>
+                <header class="call-nav">
+                    <div class="call-nav-brand"><span class="brand-mark" aria-hidden="true">F</span><div><span class="eyebrow">FiniSpeak live call</span><h2 id="callTitle">Connecting…</h2></div></div>
+                    <div class="call-nav-options" aria-label="Call display options">
+                        <button id="expandTranscript" class="secondary expand-transcript" type="button">Transcript</button>
+                        <button id="toggleCallDetails" class="secondary call-details-toggle" type="button" aria-expanded="false" aria-controls="callDetailsMeta callDetailsSettings">Show call details</button>
+                        <div id="callDetailsSettings" class="call-details-settings">
+                        <label><span>Subtitles</span>
+                            <select id="subtitleMode" aria-label="Subtitle display">
+                                <option value="both">Both</option>
+                                <option value="floating">Floating</option>
+                                <option value="transcript">Transcript</option>
+                                <option value="hidden">Off</option>
+                            </select>
+                        </label>
+                        <label><span>Language</span>
+                            <select id="viewerLanguage" aria-label="Subtitle language"></select>
+                        </label>
+                        </div>
+                    </div>
+                    <div id="callDetailsMeta" class="call-nav-meta">
+                        <span id="callDuration" class="call-pill">00:00</span>
+                        <span id="callConnection" class="call-pill">Connecting</span>
+                        <span id="translationIndicator" class="call-pill">Translation ready</span>
+                        <div class="call-nav-modes is-collapsed" hidden>
+                            <button id="toggleCallProcessingModes" class="secondary processing-mode-toggle hidden" type="button" aria-expanded="false" aria-controls="callProcessingModes">Dev tools</button>
+                            <section id="callProcessingModes" class="processing-mode-panel call-processing-modes hidden" aria-labelledby="processingModeTitle" aria-hidden="true"><div><h3 id="processingModeTitle">Dev tools</h3></div><div class="processing-mode-buttons"><button class="secondary" type="button" data-processing-mode="baseline" aria-pressed="false">Baseline</button><button class="secondary" type="button" data-processing-mode="concurrent" aria-pressed="false">Concurrent</button><button class="secondary" type="button" data-processing-mode="streaming" aria-pressed="false">Streaming</button></div><p>Active method: <strong data-active-processing-label>Real-Time Streaming</strong>.</p><p id="processingModeStatus" class="processing-mode-status" role="status" aria-live="polite"></p><div class="dev-logging"><span class="eyebrow">Dev logging</span><div id="detectedLanguageCard" class="language-detection pending" role="status"><span class="language-detection-label">Detected language</span><strong id="detectedLanguageValue">Listening…</strong><span id="detectedLanguageConfidence">Waiting for enough speech</span></div><span id="transcriptionStatus" class="transcription-status">Starting…</span><div id="languageConfirmation" class="language-confirmation hidden"><label for="confirmedLanguage">Is this the right language? Confirm it or choose the correct one. Your conversation and interpreter matching will continue while you decide.</label><div><select id="confirmedLanguage"><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="ar">Arabic</option><option value="zh">Mandarin Chinese</option><option value="vi">Vietnamese</option><option value="so">Somali</option><option value="pt">Portuguese</option><option value="hi">Hindi</option></select><button id="confirmDetectedLanguage" type="button">Confirm language</button></div></div></div><pre id="processingDiagnostics" class="processing-diagnostics hidden" aria-label="Development processing diagnostics"></pre></section>
+                        </div>
+                        <p hidden>Call ID: <code id="callIdLabel"></code></p>
+                        <button id="copyCallId" class="secondary copy-call-id" type="button">Copy ID</button>
+                    </div>
+                </header>
+                <div class="call-stage">
+                    <aside id="aiPanel" class="ai-panel" aria-label="AI communication">
+                        <section class="transcript-card" aria-live="polite">
+                            <div class="transcript-header">
+                                <div><span class="eyebrow">Live transcript</span><h3>Conversation</h3></div>
+                                <button id="collapseTranscript" class="secondary" type="button" aria-expanded="false" title="Collapse transcript panel">Close</button>
+                            </div>
+                            <div id="transcriptList" class="transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live call transcript"><p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p></div>
+                            <p id="partialTranscript" class="partial-transcript hidden" role="status" aria-live="polite"></p>
+                            <p class="transcript-note">Only finalized text is saved to FiniSpeak. Raw microphone audio is not stored. Partial captions stay on this device.</p>
+                        </section>
+                        <section id="interpreterMatches" class="interpreter-matches hidden" aria-live="polite">
+                            <div class="interpreter-matches-heading"><div><span class="eyebrow">Available now</span><h3>Interpreter matches</h3></div><span id="interpreterMatchSummary"></span></div>
+                            <div id="interpreterMatchList" class="interpreter-match-list"></div>
+                        </section>
+                        <section class="summary-card" aria-label="AI summary">
+                            <div class="summary-heading"><div><span class="eyebrow">AI summary</span><h3>Key points and actions</h3></div><div class="summary-actions"><button id="summarizeButton" class="secondary" type="button">Summarize</button><button id="copySummary" class="secondary" type="button">Copy</button><button id="saveSummary" type="button">Save</button></div></div>
+                            <label class="summary-consent"><input id="summaryConsent" type="checkbox"> Save this summary with the call when I click Save</label>
+                            <p id="summaryText" class="summary-empty">Summarize the finalized conversation to see key points. Nothing is stored until you confirm Save.</p>
+                            <ul id="summaryPoints" class="summary-list"></ul>
+                            <ul id="summaryActions" class="summary-list"></ul>
+                            <p id="summaryStatus" class="summary-status" role="status"></p>
+                        </section>
+                    </aside>
+                    <section class="video-stage" aria-label="Active video">
+                        <div id="participantGrid" class="participant-grid" hidden>
+                            <div class="participant-grid-heading"><span>Participants</span><span id="participantCount">1</span></div>
+                            <div id="videoFilmstrip" class="video-filmstrip"></div>
+                        </div>
+                        <div id="callRoster" class="call-roster" aria-label="People in this call">
+                            <div class="call-roster-heading"><span>In this call</span><span id="callRosterStatus">Waiting for participants</span></div>
+                            <ul id="callRosterList"></ul>
+                        </div>
+                        <div id="videoGrid" class="video-grid">
+                            <article class="video-card local is-stage" data-role="local">
+                                <video id="localVideo" autoplay muted playsinline webkit-playsinline aria-label="Your camera preview"></video>
+                                <canvas id="localAvatarCanvas" class="avatar-canvas is-hidden" aria-hidden="true"></canvas>
+                                <div class="video-slate" id="localVideoSlate"><strong id="localParticipantName">You</strong><span id="localMediaLabel">Camera</span></div>
+                                <span class="speaking-indicator" id="localSpeaking" aria-hidden="true"></span>
+                                <div class="video-label video-label-local"><span class="video-role">You</span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name" id="localVideoName">You</span><span class="connection-pill" id="localConnection">Connecting</span></div>
+                                <p class="tile-subtitle" id="localSubtitle" hidden></p>
+                            </article>
+                        </div>
+                    </section>
+                    <aside id="documentsPanel" class="documents-panel" hidden aria-label="Collaborative documents">
+                        <div class="documents-heading"><div><span class="eyebrow">Documents</span><h3>Collaborative translation</h3></div><button id="closeDocuments" class="secondary" type="button">Close</button></div>
+                        <div class="documents-layout">
+                            <div class="documents-list">
+                                <button id="uploadDocument" type="button">Upload document</button>
+                                <p class="documents-hint">PDF, Word, or text</p>
+                                <input id="documentFile" type="file" accept=".txt,.md,.csv,.text,.json,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+                                <ul id="documentList"></ul>
+                            </div>
+                            <div class="documents-editor">
+                                <label>Title<input id="documentTitle" maxlength="160"></label>
+                                <div class="document-languages">
+                                    <label>Original<select id="documentSourceLang"></select></label>
+                                    <label>Translation<select id="documentTargetLang"></select></label>
+                                    <button id="translateDocument" class="secondary" type="button">Translate</button>
+                                </div>
+                                <div class="document-panes">
+                                    <label>Original<textarea id="documentOriginal" rows="8"></textarea></label>
+                                    <label>Translated<textarea id="documentTranslated" rows="8"></textarea></label>
+                                </div>
+                                <div class="document-tools">
+                                    <button id="explainSelection" class="secondary" type="button">Explain selection</button>
+                                    <label>Permission<select id="documentPermission"><option value="edit">Participants can edit</option><option value="view">View only</option></select></label>
+                                    <section id="termExplanation" class="term-explanation" hidden>
+                                        <button id="toggleTermExplanation" class="term-explanation-toggle" type="button" aria-expanded="false" aria-controls="termExplanationBody">
+                                            <span id="termExplanationLabel">Explanation</span>
+                                            <span id="termExplanationToggleHint">Show</span>
+                                        </button>
+                                        <div id="termExplanationBody" class="term-explanation-body" role="status" hidden></div>
+                                    </section>
+                                </div>
+                                <p id="documentStatus" class="summary-status" role="status"></p>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+                <p id="callStatus" class="status call-status-line" role="status" aria-live="polite"></p>
+                <aside id="callNotesPanel" class="call-notes-panel" hidden aria-label="Call notes">
+                    <div class="documents-heading"><div><span class="eyebrow">Notes</span><h3>Call notes</h3></div><button id="closeCallNotes" class="secondary" type="button">Close</button></div>
+                    <textarea id="callNotes" rows="6" maxlength="4000" placeholder="Write a note from this call" aria-label="Call notes"></textarea>
+                    <p id="callNotesStatus" class="summary-status" role="status"></p>
+                </aside>
+                <div id="callControls" class="call-controls floating-controls" role="toolbar" aria-label="Call controls">
+                    <button id="toggleCallControls" class="secondary" type="button" aria-expanded="true" aria-controls="callControls" title="Hide call controls" aria-label="Hide call controls"><span class="tool-label">Hide</span></button>
+                    <div class="call-control-tools">
+                        <div class="call-control-primary">
+                            <button id="muteButton" class="secondary" type="button" aria-pressed="false" title="Mute microphone" aria-label="Mute microphone"><span class="tool-label">Mute</span></button>
+                            <button id="cameraButton" class="secondary" type="button" aria-pressed="false" title="Turn camera off" aria-label="Turn camera off"><span class="tool-label">Camera</span></button>
+                            <button id="inviteParticipantButton" class="secondary" type="button" title="Invite participant" aria-label="Invite participant">Invite</button>
+                            <button id="requestTranslatorButton" class="secondary" type="button" title="Request a translator" aria-label="Request Translator">Translator</button>
+                        </div>
+                        <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
+                        <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
+                        <button id="notesButton" class="secondary" type="button" aria-pressed="false" title="Open call notes" aria-label="Open call notes">Notes</button>
+                        <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
+                        <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
+                        <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
+                        <nav id="callMobileSwitch" class="call-mobile-switch" aria-label="Call sections">
+                            <button type="button" data-call-pane="video" aria-pressed="true">Video</button>
+                            <button type="button" data-call-pane="interpreter" aria-pressed="false">Interpreter</button>
+                            <button type="button" data-call-pane="documents" aria-pressed="false">Documents</button>
+                        </nav>
+                    </div>
+                    <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+    <div id="incomingCallModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="incomingCallTitle" aria-describedby="incomingCallDetails">
+        <div class="modal-card">
+            <span class="eyebrow" id="incomingCallEyebrow">Incoming FiniSpeak call</span>
+            <h2 id="incomingCallTitle">Someone is calling you</h2>
+            <p id="incomingCallDetails">A FiniSpeak customer wants to connect.</p>
+            <div class="actions">
+                <button id="declineIncomingCall" class="danger" type="button">Decline</button>
+                <button id="acceptIncomingCall" type="button">Accept</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="transcriptModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="historyTranscriptTitle" aria-describedby="historyTranscriptMeta">
+        <div class="modal-card transcript-modal-card">
+            <div class="transcript-header">
+                <div><span class="eyebrow">Previous conversation</span><h2 id="historyTranscriptTitle">Call transcript</h2></div>
+                <button id="closeTranscriptModal" class="secondary" type="button">Close</button>
+            </div>
+            <p id="historyTranscriptMeta"></p>
+            <div id="historyTranscriptList" class="transcript-list history-transcript-list" role="log" aria-label="Previous call transcript"></div>
+        </div>
+    </div>
+
+    <div id="translatorRequestModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="translatorRequestTitle" aria-describedby="translatorRequestDescription">
+        <div class="modal-card translator-request-modal-card">
+            <div class="transcript-header">
+                <div><span class="eyebrow">Language matching</span><h2 id="translatorRequestTitle">Request a translator</h2></div>
+                <button id="closeTranslatorRequestModal" class="secondary" type="button">Close</button>
+            </div>
+            <p id="translatorRequestDescription">The top translators for the languages in this call are listed first. Click one to invite them, or change the languages below and pick someone else.</p>
+            <form id="translatorRequestForm">
+                <section id="requestBestMatches" class="request-best-matches" aria-live="polite">
+                    <div class="request-language-heading"><strong>Top matches</strong><span id="requestBestMatchCount"></span></div>
+                    <p id="requestMatchHint" class="request-language-empty">Click a translator to invite them to this call.</p>
+                    <div id="requestBestMatchList"></div>
+                    <details id="requestMoreMatches" class="request-more hidden">
+                        <summary>More translators</summary>
+                        <div id="requestMoreMatchList"></div>
+                    </details>
+                </section>
+                <details id="requestLanguageSearchPanel" class="request-search-disclosure" open>
+                    <summary>Search languages</summary>
+                    <section class="request-language-section" aria-labelledby="detectedRequestLanguagesLabel">
+                        <div class="request-language-heading"><strong id="detectedRequestLanguagesLabel">Detected in this call</strong><span id="detectedRequestLanguageCount"></span></div>
+                        <div id="detectedRequestLanguages" class="request-language-chips"></div>
+                    </section>
+                    <label class="request-language-search" for="translatorLanguageSearch"><span>Search languages</span><input id="translatorLanguageSearch" type="search" autocomplete="off" placeholder="Start typing a language…"></label>
+                    <div class="request-language-heading"><strong>Select one or more languages</strong><span id="selectedRequestLanguageCount">0 selected</span></div>
+                    <div id="translatorLanguageOptions" class="request-language-options" role="group" aria-label="Languages to match"></div>
+                    <p id="translatorRequestError" class="request-language-error hidden" role="alert"></p>
+                    <div class="actions">
+                        <button id="cancelTranslatorRequest" class="secondary" type="button">Cancel</button>
+                        <button id="submitTranslatorRequest" type="submit">Find translators</button>
+                    </div>
+                </details>
+                <section class="request-map-options" aria-label="Map options">
+                    <div class="request-language-heading"><strong>Map options</strong></div>
+                    <div class="directory-view-switch" role="group" aria-label="Match view">
+                        <button id="requestMatchList" class="secondary active" type="button" aria-pressed="true">List</button>
+                        <button id="requestMatchMapButton" class="secondary" type="button" aria-pressed="false">Map</button>
+                        <button id="requestMatchSplit" class="secondary" type="button" aria-pressed="false">Split</button>
+                    </div>
+                    <label class="request-map-mode" for="requestMatchMode">Service<select id="requestMatchMode"><option value="both">Nearby + remote</option><option value="nearby">Nearby</option><option value="remote">Remote video</option></select></label>
+                    <div id="requestMatchMapPanel" class="request-match-map" hidden><div id="requestMatchMapCanvas" aria-label="Map of matching interpreters"></div></div>
+                </section>
+            </form>
+        </div>
+    </div>
+
+    <div id="reviewModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reviewModalTitle">
+        <div class="modal-card">
+            <div class="transcript-header">
+                <div><span class="eyebrow">Interpreter feedback</span><h2 id="reviewModalTitle">Review your interpreter</h2></div>
+                <button id="closeReviewModal" class="secondary" type="button">Close</button>
+            </div>
+            <form id="reviewForm">
+                <label for="reviewRating">Rating
+                    <select id="reviewRating" required>
+                        <option value="5">5 — Excellent</option><option value="4">4 — Good</option>
+                        <option value="3">3 — Fair</option><option value="2">2 — Poor</option><option value="1">1 — Very poor</option>
+                    </select>
+                </label>
+                <label for="reviewText">Comments<textarea id="reviewText" rows="4" maxlength="1000" placeholder="Share useful, respectful feedback about the interpretation."></textarea></label>
+                <button id="submitReview" type="submit">Submit review</button>
+                <p id="reviewStatus" class="status" role="status" aria-live="polite"></p>
+            </form>
+        </div>
+    </div>
+
+    <div id="signAccessModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="signAccessTitle" aria-describedby="signAccessDescription">
+        <div class="modal-card sign-access-card">
+            <div class="transcript-header">
+                <div><span class="eyebrow">Accessibility</span><h2 id="signAccessTitle">FiniSpeak — AI Sign Language Accessibility Engine</h2></div>
+                <button id="closeSignAccess" class="secondary" type="button">Close</button>
+            </div>
+            <p id="signAccessDescription">Sign recognition and avatar signing are not running, and this window does not read the camera or microphone.</p>
+            <section class="sign-access-notes" aria-labelledby="signNetNotesTitle">
+                <span class="eyebrow">Notes</span>
+                <h3 id="signNetNotesTitle">FiniSpeak SignNet v1</h3>
+                <p>An AI-powered, bidirectional sign-language system for FiniSpeak video calls. SignNet is meant to use the real-time translation engine, live subtitles, and the customizable avatar platform.</p>
+                <ul>
+                    <li>Sign to speech: signs from the call video become captions with the live subtitles.</li>
+                    <li>Speech to sign: spoken words drive the call avatar so signing appears in the video tile.</li>
+                </ul>
+            </section>
+            <section class="signnet-architecture" aria-labelledby="signNetArchitectureTitle">
+                <h3 id="signNetArchitectureTitle">Our simplified AI architecture</h3>
+                <div class="signnet-source-grid">
+                    <div>
+                        <div class="signnet-step"><svg class="signnet-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8 21h8"/></svg><strong>Microphone</strong><small>Translator's voice</small></div>
+                        <span class="signnet-arrow" aria-hidden="true">↓</span>
+                        <div class="signnet-step"><strong>Speech-to-Text</strong><small>Existing FiniSpeak engine</small></div>
+                    </div>
+                    <div>
+                        <div class="signnet-step"><svg class="signnet-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V6.5a2.5 2.5 0 0 1 5 0V11"/><path d="M10 11.5V7.2a1.6 1.6 0 0 1 3.2 0v4.2"/><path d="M12.2 11.5V8.2a1.5 1.5 0 0 1 3 0V13c0 3-1.6 5.2-4.6 5.8-2.6.5-5.1-.8-5.8-3.2L4 12.2a1.4 1.4 0 0 1 2.6-.8z"/></svg><strong>Camera</strong><small>Hands only</small></div>
+                        <span class="signnet-arrow" aria-hidden="true">↓</span>
+                        <div class="signnet-step"><strong>MediaPipe Hands</strong><small>21 landmarks per hand</small></div>
+                    </div>
+                </div>
+                <span class="signnet-arrow" aria-hidden="true">↓</span>
+                <div class="signnet-model">
+                    <svg class="signnet-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2"/><circle cx="18" cy="7" r="2"/><circle cx="12" cy="17" r="2"/><path d="M8 8.2 11 15.2M16 8.2 13 15.2M8 7h8"/></svg>
+                    <strong>FiniSpeak SignNet v0.1</strong>
+                    <small>Small PyTorch temporal recognition model</small>
+                    <small>Separate timestamped voice and sign predictions</small>
+                </div>
+                <span class="signnet-arrow" aria-hidden="true">↓</span>
+                <div class="signnet-step"><strong>Live transcript</strong><small>Speech text + recognized hand signs</small></div>
+            </section>
+            <div class="sign-access-lanes">
+                <article>
+                    <span class="eyebrow">Sign to speech</span>
+                    <h3>Camera signs become captions</h3>
+                    <p>A later version will read signs from the call video and show the words with the live subtitles.</p>
+                    <span class="sign-access-badge">Placeholder</span>
+                </article>
+                <article>
+                    <span class="eyebrow">Speech to sign</span>
+                    <h3>Spoken words become avatar signs</h3>
+                    <p>A later version will drive the call avatar from the transcript so signing appears in the video tile.</p>
+                    <span class="sign-access-badge">Placeholder</span>
+                </article>
+            </div>
+        </div>
+    </div>
+
+    <div id="avatarStudioModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="avatarStudioTitle">
+        <div class="modal-card avatar-studio-card">
+            <div class="transcript-header"><div><span class="eyebrow">Avatar Studio</span><h2 id="avatarStudioTitle">Choose how you appear</h2></div><button id="closeAvatarStudio" class="secondary" type="button">Close</button></div>
+            <p>Live Camera sends your video. My Avatar stops the camera and sends an animated avatar in the same video tile. Mouth movement follows your microphone.</p>
+            <div class="avatar-studio-actions">
+                <button id="useLiveCamera" type="button">Live Camera</button>
+                <button id="buildOwnAvatar" class="secondary" type="button">Build your own</button>
+            </div>
+            <div id="avatarStudioGrid" class="avatar-grid"></div>
+            <section id="avatarBuilder" class="avatar-builder" hidden aria-labelledby="avatarBuilderTitle">
+                <h3 id="avatarBuilderTitle">Build your own</h3>
+                <div class="avatar-builder-preview"><canvas id="avatarBuilderPreview" width="160" height="180" aria-hidden="true"></canvas></div>
+                <label>Name<input id="avatarBuilderName" maxlength="24" value="Mine" autocomplete="off"></label>
+                <fieldset><legend>Skin</legend><div id="avatarSkinChoices" class="avatar-swatches"></div></fieldset>
+                <fieldset><legend>Hair</legend><div id="avatarHairChoices" class="avatar-swatches"></div></fieldset>
+                <fieldset><legend>Style</legend><div id="avatarStyleChoices" class="avatar-style-row"></div></fieldset>
+                <fieldset><legend>Color</legend><div id="avatarAccentChoices" class="avatar-swatches"></div></fieldset>
+                <div class="actions"><button id="avatarBuilderBack" class="secondary" type="button">Presets</button><button id="avatarBuilderUse" type="button">Use this avatar</button></div>
+            </section>
+        </div>
+    </div>
+
+    <div id="aiInterpreterModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="aiInterpreterTitle">
+        <div class="modal-card avatar-studio-card">
+            <div class="transcript-header"><div><span class="eyebrow">AI participant</span><h2 id="aiInterpreterTitle">Invite AI interpreter</h2></div><button id="closeAiInterpreter" class="secondary" type="button">Close</button></div>
+            <p>The interpreter joins this call as an AI participant, with its own avatar tile and translated captions.</p>
+            <div id="aiAvatarGrid" class="avatar-grid"></div>
+            <label>Source language<select id="aiSourceLang"></select></label>
+            <label>Target language<select id="aiTargetLang"></select></label>
+            <label>AI voice<select id="aiVoice"></select></label>
+            <div class="actions"><button id="cancelAiInterpreter" class="secondary" type="button">Cancel</button><button id="confirmAiInterpreter" type="button">Add to call</button></div>
+            <p id="aiInterpreterStatus" class="status" role="status"></p>
+        </div>
+    </div>
+
+    <div id="inviteParticipantModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="inviteParticipantTitle">
+        <div class="modal-card">
+            <div class="transcript-header"><div><span class="eyebrow">People</span><h2 id="inviteParticipantTitle">Invite a participant</h2></div><button id="closeInviteParticipant" class="secondary" type="button">Close</button></div>
+            <form id="inviteParticipantForm">
+                <label>Email or phone number<input id="inviteEmail" type="text" inputmode="email" autocomplete="off" required placeholder="name@example.com or +1 555 0100"></label>
+                <p id="inviteStatus" class="status" role="status"></p>
+                <div class="actions"><button id="cancelInviteParticipant" class="secondary" type="button">Cancel</button><button type="submit">Send invite</button></div>
+            </form>
+        </div>
+    </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-mobile-call-details"></script>
+</body>
+</html>

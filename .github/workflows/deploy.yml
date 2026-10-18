@@ -5,9 +5,14 @@ on:
     branches:
       - main
 
+concurrency:
+  group: finispeak-test-deployment
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     permissions:
       contents: read
@@ -16,29 +21,119 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: finispeak-prod
-
-      - name: Deploy to Cloud Run
+      - name: Install Python dependencies
         run: |
-          gcloud run deploy finispeak \
-            --source . \
-            --project=finispeak-prod \
-            --region=us-east1 \
-            --allow-unauthenticated \
-            --memory=1Gi \
-            --clear-base-image \
-            --quiet
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt 'pytest>=8,<9'
 
-      - name: Install Firebase CLI
-        run: npm install -g firebase-tools
+      - name: Run regression tests
+        run: |
+          python -m unittest discover -s tests -v
+          python -m pytest -q
 
-      - name: Deploy Firebase Rules
-        run: firebase deploy --only firestore:rules,storage --project finispeak --non-interactive
+      - name: Verify OpenAI transcription secret
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: test -n "$OPENAI_API_KEY"
+
+      - name: Configure DigitalOcean SSH
+        env:
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/finispeak_deploy
+          chmod 600 ~/.ssh/finispeak_deploy
+          printf '%s\n' "$DO_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Stage candidate on DigitalOcean
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          candidate="/tmp/finispeak-candidate-${GITHUB_SHA}"
+          ssh -i ~/.ssh/finispeak_deploy \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$DO_USER@$DO_HOST" "install -d -m 0755 '$candidate'"
+          rsync -az --delete \
+            --exclude='venv/' \
+            --exclude='.env' \
+            --exclude='.git/' \
+            --exclude='.integration-venv/' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            -e "ssh -i $HOME/.ssh/finispeak_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
+            ./ "$DO_USER@$DO_HOST:$candidate/"
+
+      - name: Run isolated MySQL 8 integration tests
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          ssh -i ~/.ssh/finispeak_deploy \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$DO_USER@$DO_HOST" "/usr/bin/bash -s -- '$GITHUB_SHA'" <<'REMOTE'
+          set -euo pipefail
+          commit="$1"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          candidate="/tmp/finispeak-candidate-${commit}"
+          test -f "$candidate/requirements.txt"
+          integration_venv="$candidate/.integration-venv"
+          if ! test -x "$integration_venv/bin/python"; then
+            python3 -m venv "$integration_venv"
+          fi
+          "$integration_venv/bin/python" -m pip install \
+            --disable-pip-version-check -r "$candidate/requirements.txt"
+          set -a
+          . /etc/finispeak/finispeak.env
+          set +a
+          export MYSQL_DATABASE=finispeak_migration_test
+          export FINISPEAK_ENV=testing
+          export FINISPEAK_RUN_MYSQL8_INTEGRATION=true
+          export FINISPEAK_REPOSITORY_BACKEND=mysql
+          export FINISPEAK_MYSQL_PRIMARY_ENABLED=true
+          export FINISPEAK_MYSQL_EXPECTED_REVISION=20261016_0004
+          export FINISPEAK_COOKIE_SECURE=true
+          test "$MYSQL_DATABASE" = finispeak_migration_test
+          cd "$candidate"
+          "$integration_venv/bin/alembic" upgrade 20261016_0004
+          "$integration_venv/bin/python" -m unittest -v \
+            tests.test_mysql8_cutover_integration
+          REMOTE
+
+      - name: Deploy verified candidate and run controlled migrations
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          rsync -az --delete \
+            --exclude='venv/' \
+            --exclude='.env' \
+            --exclude='.git/' \
+            --exclude='.integration-venv/' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            -e "ssh -i $HOME/.ssh/finispeak_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
+            ./ "$DO_USER@$DO_HOST:/var/www/finispeak/"
+
+          ssh -i ~/.ssh/finispeak_deploy \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$DO_USER@$DO_HOST" \
+            "set -e; systemctl is-active --quiet coturn; nc -z -w 5 127.0.0.1 3478; cd /var/www/finispeak; /var/www/finispeak/venv/bin/python -m pip install --disable-pip-version-check -r /var/www/finispeak/requirements.txt; /var/www/finispeak/venv/bin/python -m pip uninstall -y firebase-admin >/dev/null 2>&1 || true; set -a; . /etc/finispeak/finispeak.env; set +a; FINISPEAK_ENV=migration /var/www/finispeak/venv/bin/python scripts/ensure_account_schema.py; sudo /usr/local/sbin/finispeak-deploy-test-server '$GITHUB_SHA'"
+
+      - name: Verify public TURN listener
+        env:
+          TURN_HOST: ${{ vars.TURN_HOST || 'finispeak.com' }}
+        run: nc -vz -w 10 "$TURN_HOST" 3478
+
+      - name: Record deployed revision
+        run: |
+          {
+            echo "### FiniSpeak test deployment"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- MySQL target: \`20261016_0004\`"
+            echo "- Repository routing: 10/10 MySQL"
+            echo "- Self-hosted TURN: configured and externally reachable on TCP 3478"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,19 +1,68 @@
 # FiniSpeak Web MVP
 
-FiniSpeak is being built web-first with a shared Firebase/WebRTC architecture that can later be reused by native iOS (SwiftUI) and Android (Kotlin/Compose) clients.
+> **Current architecture:** MySQL 8 is the only application data backend.
+> FiniSpeak now uses first-party Argon2id/JWT authentication, private
+> DigitalOcean file storage, and authenticated MySQL-backed WebRTC signaling.
+> The Firebase-era setup notes below are retained only as historical migration
+> context and must not be used for a new deployment. Follow
+> [`docs/FIREBASE_REMOVAL.md`](docs/FIREBASE_REMOVAL.md) and `.env.example` for
+> current setup, verification, rollback, and retirement steps.
+
+FiniSpeak is being built web-first with a MySQL/WebRTC architecture that can later be reused by native iOS (SwiftUI) and Android (Kotlin/Compose) clients.
+
+## MVC architecture
+
+The Flask backend follows an MVC structure while keeping routing and external services explicit:
+
+- `models/` defines the SQL data model.
+- `controllers/` validates requests, coordinates models/services, and builds responses.
+- `views/templates/` contains server-rendered HTML views.
+- `views/static/` contains the view layer's CSS and browser JavaScript.
+- `routes/` maps URLs to controllers and contains no business or database logic.
+- `services/` integrates first-party authentication, transcription, and other external systems.
+- `app.py` is the application factory and dependency-wiring entry point.
+
+Open `/api` or `/api/routes` while the app is running to see the current route catalog. Run the MVC regression tests with:
+
+```bash
+python -m unittest discover -s tests
+```
 
 ## Current MVP
 
-- Firebase Email/Password Authentication
+- First-party Email/Password Authentication
 - Customer and Translator account roles
-- Firestore user profiles
+- MySQL user profiles and call records
 - Customer 1 creates a call to Customer 2 by FiniSpeak email
 - Translator can join the existing call as participant #3
 - Browser camera/microphone access
-- Three-person WebRTC mesh signaling through Firestore
+- Three-person WebRTC mesh signaling through the authenticated Flask signaling service
 - Mute, camera, request translator, copy Call ID, and end-call controls
-- STUN configured for development; TURN is intentionally deferred
-- Firebase Storage for interpreter profile photos; FCM is intentionally deferred
+- STUN for development plus self-hosted TURN support for reliable production calls
+- Private DigitalOcean-hosted storage for interpreter profile photos
+- Interpreter onboarding with draft, profile-complete, submitted, changes-requested, rejected, and verified states
+- Private credential evidence uploads with interpreter view/remove controls and administrator review
+- Location-aware interpreter discovery with Leaflet, marker clustering, approximate public service areas, map/list/split views, radius filtering, and remote-video fallback
+
+## Interpreter discovery map
+
+The directory supports Nearby, Remote, and Both search modes. Browser coordinates are used only for the active search request and are not written to Firestore. Interpreter profiles may publish an approximate city/region centroid only after the interpreter enables **Show on map**; residential addresses are rejected.
+
+Public interpreter fields added by this feature:
+
+- `serviceLocation`: `city`, `state`, `country`, rounded `latitude`/`longitude`, `geohash`, and `showOnMap`
+- `serviceOptions`: `inPerson`, `remote`, and `radiusMiles`
+
+Deploy the included composite indexes before enabling geographic traffic. OpenStreetMap development tiles are the default. For production volume, configure a commercial/provider-hosted tile URL and its required attribution:
+
+```env
+MAP_TILE_URL=https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
+MAP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
+GEOCODING_BASE_URL=https://nominatim.openstreetmap.org/search
+GEOCODING_USER_AGENT=FiniSpeak/1.0 (support@finispeak.com)
+```
+
+Replace the example geocoding contact with a monitored address and review the chosen provider's production rate/usage terms. Existing interpreter documents remain compatible; interpreters opt into map visibility when they next update their profiles.
 
 ## Run locally
 
@@ -35,6 +84,8 @@ Open http://127.0.0.1:5050
 4. Copy the Firebase web configuration values into `.env`.
 5. Publish `firestore.rules` for MVP testing. The call update rule is deliberately broad for development and must be tightened before production.
 
+The optional, parallel MySQL migration preparation is documented in [`docs/MYSQL_MIGRATION.md`](docs/MYSQL_MIGRATION.md). It does not replace Firebase application behavior or run automatically.
+
 ## Interpreter profile photos
 
 Create Firebase Storage in **production mode** and set `FIREBASE_STORAGE_BUCKET`
@@ -46,29 +97,66 @@ or WebP images smaller than 5 MB.
 Deploy both rule files after Storage is created:
 
 ```bash
-firebase deploy --only firestore:rules,storage --project finispeak
+firebase deploy --only firestore,storage --project finispeak
 ```
+
+## Interpreter onboarding and verification
+
+Interpreters can save an incomplete draft, save a complete profile, or submit a complete profile and credential evidence for administrator review. Submission requires a name, bio, language, specialty, years of experience, valid weekly availability, at least one credential, and at least one credential document. Administrators can approve the profile or request changes. Approved profiles become visible in discovery; a returned profile can be edited and submitted again.
+
+Credential files are private under `interpreter-credentials/{userId}/`. Interpreters can view or remove their own files. To replace a file, remove it, choose the replacement, and save or resubmit the profile.
 
 For local testing, create three accounts in separate browser profiles/incognito contexts: Customer 1, Customer 2, and Translator. Customer 1 creates a call using Customer 2's email address. Customer 2 joins using the Call ID. Press Request Translator, then the Translator joins using the same Call ID.
 
-## Production work still required
+## Deployment-ready branch
 
-Add TURN/coturn, stricter Firestore security rules, server-authoritative call state, translator discovery/availability, billing, push notifications, verification, abuse controls, and mobile incoming-call behavior before production use.
+The `deployment-ready` branch includes the current web MVP plus the production code foundations that do not depend on the pending DigitalOcean infrastructure:
+
+- Call creation, state transitions, interpreter requests, and interpreter claims go through authenticated API endpoints and transactional server-side logic.
+- Public interpreter documents are separated from private contact and credential evidence data in `interpreterPrivate/{userId}`.
+- Public profile detail endpoints return verified interpreters only, and public profiles include moderated recent reviews.
+- Customers can submit a review from completed-call history; administrators can moderate reviews.
+- Administrators can create and update organization records, alongside account, interpreter, session, and review oversight.
+- `/api/openapi.json`, security response headers, Firestore indexes, and a deployment regression-test gate are included.
+
+Before enabling production traffic, complete browser acceptance testing with three real accounts, transcript consent/retention review, and the DigitalOcean networking/TURN work described in [`docs/SELF_HOSTED_TURN.md`](docs/SELF_HOSTED_TURN.md). Billing, push notifications, abuse controls, and native mobile incoming-call behavior remain intentionally outside this branch's infrastructure scope.
+
+For Google Cloud Run, build and deploy the existing container, then publish Firestore rules and indexes:
+
+```bash
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/finispeak/web
+gcloud run deploy finispeak --image REGION-docker.pkg.dev/PROJECT/finispeak/web --region REGION --allow-unauthenticated
+firebase deploy --only firestore:rules,firestore:indexes,storage --project PROJECT
+```
+
+Set the existing Firebase/OpenAI environment values plus the map/geocoder values above on the Cloud Run service. Grant its runtime service account Firestore and Storage access through least-privilege IAM.
+
+Production-hardening controls and the remaining evidence checklist are documented in [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md). Commercial API operations are in [`docs/COMMERCIAL_API.md`](docs/COMMERCIAL_API.md), the internal accessibility audit is in [`docs/ACCESSIBILITY_AUDIT.md`](docs/ACCESSIBILITY_AUDIT.md), and language reliability/evaluation is in [`docs/LANGUAGE_DETECTION.md`](docs/LANGUAGE_DETECTION.md).
+
+Run the static readiness gate locally with `python scripts/production_readiness_check.py`. In the deployed environment, use `python scripts/production_readiness_check.py --production --language-dataset <approved.jsonl>` and require `/api/ready` to return HTTP 200 before routing traffic.
+
+To migrate legacy interpreter documents that still contain private fields, preview first and then apply the migration with the production Firebase credentials:
+
+```bash
+python scripts/migrate_interpreter_privacy.py --dry-run
+python scripts/migrate_interpreter_privacy.py --apply
+```
 
 
 ## Customer lookup
 
-For the MVP, FiniSpeak uses email/password authentication and customer-to-customer calling by FiniSpeak email address. Each new account creates a small `emailDirectory` entry so another signed-in customer can find the intended receiver without exposing the full private user profile. Phone-number calling can be added later for the native iOS and Android apps.
+For the MVP, FiniSpeak uses first-party email/password authentication and customer-to-customer calling by a saved FiniSpeak email address or phone number. Lookup goes through authenticated server routes backed by MySQL without exposing the full private user profile.
 
 
-## Legacy email lookup compatibility
-Customer lookup first checks `emailDirectory`. If the receiver account was created before that collection was introduced, the web client falls back to an exact email query against `users`. The included development Firestore rules allow authenticated reads of basic user profiles for this MVP fallback. Tighten/profile-split these rules before production if additional private fields are added to `users`.
+## Legacy migration material
 
-## Live transcription (self-hosted)
+Older Firebase-era files and notes remain in the repository only for migration verification and rollback history. The running application fails closed if a Firebase repository backend is selected; new application work must use the first-party APIs and MySQL repositories.
 
-FiniSpeak now transcribes each participant independently: Customer 1, Customer 2, and the Translator. Each browser sends a copy of only its own microphone as PCM16 to `/ws/transcription`. The WebRTC call remains independent, so a transcription failure does not interrupt the call.
+## Live transcription logging
 
-The Flask server uses `faster-whisper`. Raw microphone chunks are held only in memory long enough to transcribe and are not saved. Final text segments are written by the authenticated browser to `calls/{callId}/transcripts/{segmentId}` and all three participants subscribe to that collection for the live transcript panel.
+FiniSpeak transcribes each participant independently for logging: Customer 1, Customer 2, and the Translator. Each browser sends a copy of only its own microphone as PCM16 to `/ws/transcription`. The WebRTC call remains independent, so a transcription failure does not interrupt the call. This pipeline does not machine-translate speech.
+
+Raw microphone chunks are held only in memory long enough to transcribe and are not saved. Final text segments are written through the authenticated transcript API into MySQL and all participants see them in the live transcript panel.
 
 Install the new dependencies with:
 
@@ -76,19 +164,20 @@ Install the new dependencies with:
 pip install -r requirements.txt
 ```
 
-The WebSocket verifies Firebase ID tokens and call membership. For local development it can use the existing Firebase web API key plus the signed-in user token, so a service-account file is not required just to test transcription. If `FIREBASE_CREDENTIALS` is configured, Firebase Admin is used instead. Optional transcription settings:
+The WebSocket verifies the first-party session and call membership. Baseline is the production default. During the current production trial, every signed-in user can compare Concurrent and Streaming from the call screen; the selection is stored per participant, not globally. Optional transcription settings:
 
 ```env
-WHISPER_MODEL=small
-WHISPER_DEVICE=cpu
-WHISPER_COMPUTE_TYPE=int8
-TRANSCRIPTION_CHUNK_SECONDS=5.0
+OPENAI_TRANSCRIPTION_MODEL=gpt-transcribe
+TRANSCRIPTION_CHUNK_SECONDS=1.5
+CONCURRENT_TRANSCRIPTION_WORKERS=2
+STREAMING_TRANSCRIPTION_CHUNK_SECONDS=0.75
+TRANSCRIPTION_ESTIMATED_USD_PER_MINUTE=0
 ```
 
-For a GPU deployment, use a supported CUDA environment and set `WHISPER_DEVICE=cuda` with an appropriate compute type. The first transcription can take longer because the Whisper model may need to be downloaded and loaded.
+Live chunks stay at or below those values so a longer setting cannot hold the microphone before speech-to-text starts. Concurrent and streaming keep capture running while background workers process complete chunks. Every mode shows browser speech-recognition partials where supported, while only finalized server results are saved. Microphone audio is reduced to 16 kHz before it is sent to the transcription model. During a mode change, the prior pipeline drains, new microphone frames are buffered, and the next pipeline receives that buffer without replacing the WebRTC connection.
+
+For local testing, start the app with a local MySQL database (or the development SQLite fallback), sign in, and start a call from `http://localhost:8080`. Select either experimental mode before the call, or switch while connected. Development diagnostics are shown only on localhost.
 
 ## Dashboard, incoming calls, and transcript history
 
-Authenticated users are now routed to their dashboard. Customers receive a live Firestore-backed incoming-call popup with Accept/Decline instead of manually entering a Call ID. Translators receive interpretation-request popups and can join the existing three-person call. The dashboard also loads previous calls for the signed-in participant and opens saved `calls/{callId}/transcripts` in a transcript viewer.
-
-The existing development Firestore rules permit these call queries. Before production, tighten call reads/updates and translator request visibility/state transitions.
+Authenticated users are routed to their dashboard. Customers receive a MySQL-backed incoming-call popup with Accept/Decline instead of manually entering a Call ID. Translators receive interpretation-request popups and can join the existing three-person call. The dashboard also loads previous calls for the signed-in participant and opens saved transcript records in a transcript viewer.

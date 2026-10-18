@@ -1,0 +1,1 @@
+"""FiniSpeak automated tests."""

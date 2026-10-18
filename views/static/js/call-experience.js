@@ -1,0 +1,1626 @@
+const AVATARS = [
+    { id: "amara", name: "Amara", skin: "#8d5524", hair: "#24160f", accent: "#f5a65b", style: "bob" },
+    { id: "jules", name: "Jules", skin: "#c68642", hair: "#3b2414", accent: "#7eb6ff", style: "short" },
+    { id: "nova", name: "Nova", skin: "#efd0b4", hair: "#60a5fa", accent: "#38bdf8", style: "ai" },
+    { id: "sol", name: "Sol", skin: "#f1c27d", hair: "#111827", accent: "#f59e0b", style: "curly" },
+    { id: "mina", name: "Mina", skin: "#f3d5c0", hair: "#6d28d9", accent: "#c4b5fd", style: "long" },
+    { id: "kai", name: "Kai", skin: "#d4a574", hair: "#0f172a", accent: "#34d399", style: "crop" }
+];
+
+const AVATAR_SKINS = [
+    ["#8d5524", "Deep"], ["#c68642", "Medium deep"], ["#d4a574", "Medium"],
+    ["#f1c27d", "Golden"], ["#efd0b4", "Light"], ["#f3d5c0", "Fair"]
+];
+const AVATAR_HAIR = [
+    ["#24160f", "Black"], ["#3b2414", "Brown"], ["#111827", "Ink"],
+    ["#6d28d9", "Purple"], ["#60a5fa", "Blue"], ["#f5a65b", "Copper"]
+];
+const AVATAR_ACCENTS = [
+    ["#f5a65b", "Amber"], ["#7eb6ff", "Blue"], ["#38bdf8", "Sky"],
+    ["#f59e0b", "Gold"], ["#c4b5fd", "Lilac"], ["#34d399", "Green"]
+];
+const AVATAR_STYLES = [
+    ["bob", "Bob"], ["short", "Short"], ["curly", "Curly"],
+    ["long", "Long"], ["crop", "Crop"], ["ai", "Smooth"]
+];
+
+function loadCustomAvatar() {
+    try {
+        const saved = JSON.parse(localStorage.getItem("finispeak.customAvatar") || "null");
+        return saved ? normalizeCustomAvatar(saved) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function normalizeCustomAvatar(input) {
+    const pick = (options, value, fallback) => options.some(([option]) => option === value) ? value : fallback;
+    const name = String(input?.name || "Mine").replace(/\s+/g, " ").trim().slice(0, 24) || "Mine";
+    return {
+        id: "custom",
+        name,
+        skin: pick(AVATAR_SKINS, input?.skin, AVATAR_SKINS[3][0]),
+        hair: pick(AVATAR_HAIR, input?.hair, AVATAR_HAIR[3][0]),
+        accent: pick(AVATAR_ACCENTS, input?.accent, AVATAR_ACCENTS[5][0]),
+        style: AVATAR_STYLES.some(([style]) => style === input?.style) ? input.style : "curly"
+    };
+}
+
+const LANGUAGE_OPTIONS = [
+    ["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["pt", "Portuguese"],
+    ["it", "Italian"], ["zh", "Mandarin Chinese"], ["ja", "Japanese"], ["ko", "Korean"], ["ar", "Arabic"],
+    ["hi", "Hindi"], ["ru", "Russian"], ["vi", "Vietnamese"], ["so", "Somali"]
+];
+
+export function createCallExperience(deps) {
+    const state = {
+        mediaMode: localStorage.getItem("finispeak.mediaMode") || "camera",
+        avatarId: localStorage.getItem("finispeak.avatarId") || "amara",
+        customAvatar: loadCustomAvatar(),
+        viewerLanguage: localStorage.getItem("finispeak.viewerLanguage") || "es",
+        subtitleMode: localStorage.getItem("finispeak.subtitleMode") || "both",
+        screenTrack: null,
+        avatarTrack: null,
+        avatarStream: null,
+        analyser: null,
+        audioContext: null,
+        level: 0,
+        speaking: false,
+        interpreterSpeaking: false,
+        partial: "",
+        remotePartials: new Map(),
+        call: null,
+        participants: [],
+        rows: [],
+        documentsOpen: false,
+        notesOpen: false,
+        controlsCollapsed: false,
+        controlsPinned: false,
+        notesDirty: false,
+        notesTimer: 0,
+        activeDocumentId: null,
+        documentFieldId: "documentOriginal",
+        documentDirty: false,
+        documentRevision: 0,
+        preserveDocumentStatus: false,
+        saveChain: Promise.resolve(),
+        summary: null,
+        spoken: new Set(),
+        translationRequests: new Set(),
+        raf: 0,
+        clock: 0,
+        joinedAt: 0,
+        reducedMotion: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    };
+
+    const avatarById = (id) => {
+        if (id === "custom" && state.customAvatar) return state.customAvatar;
+        return AVATARS.find(avatar => avatar.id === id) || AVATARS[0];
+    };
+    const languageName = (code) => LANGUAGE_OPTIONS.find(([value]) => value === code)?.[1] || deps.languageLabel?.(code) || code || "Unknown";
+
+    function fillLanguageSelect(select, selected) {
+        if (!select || select.dataset.ready === "true") {
+            if (select && selected) select.value = selected;
+            return;
+        }
+        select.innerHTML = "";
+        for (const [value, label] of LANGUAGE_OPTIONS) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            select.appendChild(option);
+        }
+        select.dataset.ready = "true";
+        select.value = selected || "en";
+    }
+
+    function bind() {
+        fillLanguageSelect(deps.$("viewerLanguage"), state.viewerLanguage);
+        fillLanguageSelect(deps.$("aiSourceLang"), "en");
+        fillLanguageSelect(deps.$("aiTargetLang"), state.viewerLanguage);
+        fillLanguageSelect(deps.$("documentSourceLang"), "en");
+        fillLanguageSelect(deps.$("documentTargetLang"), state.viewerLanguage);
+        deps.$("subtitleMode").value = state.subtitleMode;
+        applySubtitleMode(state.subtitleMode);
+        if (state.avatarId === "custom" && !state.customAvatar) state.avatarId = "amara";
+        renderStudioAvatars();
+        renderAvatarChoices(deps.$("aiAvatarGrid"), "nova", (id) => { state.pendingAiAvatar = id; });
+        state.pendingAiAvatar = "nova";
+        loadVoices();
+        window.speechSynthesis?.addEventListener?.("voiceschanged", loadVoices);
+
+        deps.$("avatarButton").onclick = () => {
+            showAvatarPresets();
+            renderStudioAvatars();
+            deps.openModal("avatarStudioModal");
+        };
+        deps.$("closeAvatarStudio").onclick = () => deps.closeModal("avatarStudioModal");
+        deps.$("buildOwnAvatar").onclick = openAvatarBuilder;
+        deps.$("avatarBuilderBack").onclick = showAvatarPresets;
+        deps.$("avatarBuilderUse").onclick = () => saveCustomAvatar();
+        deps.$("avatarBuilderName").oninput = () => {
+            if (!state.draftAvatar) return;
+            state.draftAvatar.name = deps.$("avatarBuilderName").value;
+            drawAvatar(deps.$("avatarBuilderPreview"), normalizeCustomAvatar(state.draftAvatar), { mouth: 0.2, blink: 1, breath: 0, head: 0 });
+        };
+        buildAvatarOptions();
+        deps.$("useLiveCamera").onclick = () => useCamera();
+        if (deps.$("closeAiInterpreter")) deps.$("closeAiInterpreter").onclick = () => deps.closeModal("aiInterpreterModal");
+        if (deps.$("cancelAiInterpreter")) deps.$("cancelAiInterpreter").onclick = () => deps.closeModal("aiInterpreterModal");
+        if (deps.$("confirmAiInterpreter")) deps.$("confirmAiInterpreter").onclick = confirmInterpreter;
+        deps.$("inviteParticipantButton").onclick = () => deps.openModal("inviteParticipantModal");
+        deps.$("closeInviteParticipant").onclick = () => deps.closeModal("inviteParticipantModal");
+        deps.$("cancelInviteParticipant").onclick = () => deps.closeModal("inviteParticipantModal");
+        deps.$("inviteParticipantForm").onsubmit = inviteParticipant;
+        deps.$("documentsButton").onclick = () => state.documentsOpen ? closeDocuments() : openDocuments();
+        deps.$("notesButton").onclick = toggleNotes;
+        deps.$("closeCallNotes").onclick = () => setNotesOpen(false);
+        deps.$("callNotes").oninput = scheduleNotesSave;
+        deps.$("closeDocuments").onclick = closeDocuments;
+        deps.$("subtitleButton").onclick = cycleSubtitles;
+        deps.$("signAccessButton").onclick = () => deps.openModal("signAccessModal");
+        deps.$("closeSignAccess").onclick = () => deps.closeModal("signAccessModal");
+        deps.$("subtitleMode").onchange = () => applySubtitleMode(deps.$("subtitleMode").value);
+        deps.$("viewerLanguage").onchange = () => {
+            state.viewerLanguage = deps.$("viewerLanguage").value;
+            localStorage.setItem("finispeak.viewerLanguage", state.viewerLanguage);
+            state.translationRequests.clear();
+            updateSubtitles(state.rows);
+            deps.renderTranscript?.(state.rows);
+            refreshInterpreterLanguages();
+        };
+        deps.$("collapseTranscript").onclick = closeTranscript;
+        deps.$("expandTranscript").onclick = openTranscript;
+        if (deps.$("toggleCallDetails")) {
+            deps.$("toggleCallDetails").onclick = () => {
+                const shell = deps.$("callShell");
+                setCallDetailsCollapsed(!shell.classList.contains("are-call-details-collapsed"));
+            };
+        }
+        deps.$("screenShareButton").onclick = () => toggleScreenShare().catch(showCallError);
+        deps.$("summarizeButton").onclick = summarize;
+        deps.$("copySummary").onclick = copySummary;
+        deps.$("saveSummary").onclick = saveSummary;
+        deps.$("uploadDocument").onclick = () => deps.$("documentFile").click();
+        deps.$("documentFile").onchange = uploadDocument;
+        deps.$("translateDocument").onclick = translateDocument;
+        deps.$("explainSelection").addEventListener("mousedown", event => event.preventDefault());
+        deps.$("explainSelection").onclick = explainSelection;
+        deps.$("toggleTermExplanation").onclick = () => {
+            const open = deps.$("toggleTermExplanation").getAttribute("aria-expanded") !== "true";
+            setTermExplanationOpen(open);
+        };
+        deps.$("documentOriginal").addEventListener("focus", rememberDocumentField);
+        deps.$("documentTranslated").addEventListener("focus", rememberDocumentField);
+        deps.$("documentPermission").onchange = noteDocumentEdit;
+        deps.$("documentSourceLang").onchange = noteDocumentEdit;
+        deps.$("documentTargetLang").onchange = noteDocumentEdit;
+        deps.$("documentTitle").oninput = noteDocumentEdit;
+        deps.$("documentOriginal").oninput = noteDocumentEdit;
+        deps.$("documentTranslated").oninput = noteDocumentEdit;
+        document.querySelectorAll("[data-call-pane]").forEach(button => {
+            button.onclick = () => setPane(button.dataset.callPane);
+        });
+        if (deps.$("toggleCallControls")) {
+            deps.$("toggleCallControls").onclick = () => {
+                setControlsCollapsed(!document.querySelector("#callView .call-frame")?.classList.contains("is-controls-collapsed"), true);
+                layout();
+            };
+        }
+        syncControlsForViewport();
+        window.addEventListener("resize", () => {
+            resizeCanvases();
+            syncControlsForViewport();
+            layout();
+        });
+        const videoGrid = deps.$("videoGrid");
+        if (videoGrid && window.ResizeObserver) {
+            const observer = new ResizeObserver(() => layout());
+            observer.observe(videoGrid);
+            state.gridObserver = observer;
+        }
+        refreshInterpreterLanguages();
+        startLoop();
+    }
+
+    function onJoined(call) {
+        state.joinedAt = Date.now();
+        startLoop();
+        state.call = call;
+        setTranscriptCollapsed(true);
+        const name = deps.getProfile()?.displayName || "You";
+        deps.$("localParticipantName").textContent = name;
+        deps.$("localVideoName").textContent = name;
+        if (state.mediaMode === "avatar") useAvatar(state.avatarId, false);
+        else markCameraMode(true);
+        startLoop();
+    }
+
+    function sync(call, participants) {
+        state.call = call;
+        state.participants = participants || [];
+        const interpreter = call?.aiInterpreter;
+        document.querySelector('.video-card[data-role="ai"]')?.remove();
+        deps.$("translationIndicator").textContent = "Translation ready";
+        setInterpreterActivity("ready");
+        refreshInterpreterLanguages();
+        if (interpreter) state.call = { ...call, aiInterpreter: null };
+        applyParticipantPresence(participants || []);
+        renderDocuments(call?.documents || []);
+        syncNotes(call);
+        if (!state.summary && call?.savedSummaries?.length) showSummary(call.savedSummaries[call.savedSummaries.length - 1], "Saved with this call.");
+        updateClock(call);
+    }
+
+    function updateClock(call) {
+        const started = Date.parse(call?.startedAt || "") || state.joinedAt || Date.now();
+        const elapsed = Math.max(0, Date.now() - started);
+        const minutes = String(Math.floor(elapsed / 60000)).padStart(2, "0");
+        const seconds = String(Math.floor(elapsed / 1000) % 60).padStart(2, "0");
+        deps.$("callDuration").textContent = `${minutes}:${seconds}`;
+    }
+
+    function updateSubtitles(rows) {
+        state.rows = rows || [];
+        const latest = new Map();
+        for (const row of state.rows) if (row.speakerId) latest.set(row.speakerId, row);
+        document.querySelectorAll("#callView .video-card[data-speaker]").forEach(card => {
+            const subtitle = card.querySelector(".tile-subtitle");
+            if (!subtitle) return;
+            const row = latest.get(card.dataset.speaker);
+            const remotePartial = state.remotePartials.get(card.dataset.speaker);
+            const partial = card.dataset.role === "local" ? state.partial : remotePartial?.text || "";
+            const text = partial || subtitleText(row);
+            subtitle.hidden = !text;
+            const speaker = card.dataset.role === "local" ? "You" : remotePartial?.speakerName || row?.speakerName || "Speaker";
+            subtitle.textContent = text ? `${speaker}: ${text}` : "";
+        });
+        const ai = document.querySelector('[data-role="ai"] .tile-subtitle');
+        if (ai) {
+            const row = [...state.rows].reverse().find(item => item.speakerId !== deps.getUser()?.uid) || state.rows.at(-1);
+            const text = subtitleText(row);
+            ai.hidden = !text;
+            ai.textContent = text ? `AI: ${text}` : "";
+        }
+    }
+
+    function subtitleText(row) {
+        if (!row) return "";
+        const translated = row.translations?.[state.viewerLanguage]?.text;
+        if (translated) return translated;
+        return row.text || "";
+    }
+
+    function onPartial(text) {
+        state.partial = text || "";
+        const partial = deps.$("partialTranscript");
+        if (partial) {
+            partial.textContent = state.partial ? `Partial · ${state.partial}` : "";
+            partial.classList.toggle("hidden", !state.partial);
+        }
+        updateSubtitles(state.rows);
+        setInterpreterActivity(state.partial ? "hearing" : "listening");
+    }
+
+    function onRemotePartial(speakerId, speakerName, text) {
+        if (!speakerId) return;
+        if (text) state.remotePartials.set(speakerId, { speakerName: speakerName || "Speaker", text });
+        else state.remotePartials.delete(speakerId);
+        updateSubtitles(state.rows);
+    }
+
+    function viewerLanguage() { return state.viewerLanguage; }
+    function outgoingVideoTrack() {
+        if (state.screenTrack?.readyState === "live") return state.screenTrack;
+        if (state.mediaMode === "avatar" && state.avatarTrack) return state.avatarTrack;
+        return deps.getLocalStream()?.getVideoTracks?.()[0] || null;
+    }
+
+    function noteConnection(connectionState) {
+        const label = connectionState === "connected" ? "Connected" : connectionState === "failed" ? "Reconnecting" : "Connecting";
+        deps.$("callConnection").textContent = label;
+        deps.$("localConnection").textContent = label;
+    }
+
+    function attachLocalStream(stream) {
+        if (!stream) return;
+        try {
+            state.audioContext = state.audioContext || new (window.AudioContext || window.webkitAudioContext)();
+            state.analyser = state.audioContext.createAnalyser();
+            state.analyser.fftSize = 256;
+            const source = state.audioContext.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+            source.connect(state.analyser);
+        } catch (error) {
+            console.warn("Call audio meter unavailable", error);
+        }
+    }
+
+    async function postExperience(action, extra = {}) {
+        const callId = deps.getCallId();
+        if (!callId) throw new Error("Join a call before using this control.");
+        return deps.apiFetch(`/api/calls/${encodeURIComponent(callId)}/experience`, {
+            method: "POST",
+            body: JSON.stringify({ action, ...extra })
+        });
+    }
+
+    async function persistPresence(extra = {}) {
+        const audio = deps.getLocalStream()?.getAudioTracks?.().find(track => track.readyState === "live");
+        const camera = deps.getLocalStream()?.getVideoTracks?.().find(track => track.readyState === "live");
+        await postExperience("set-media", {
+            mediaMode: state.mediaMode,
+            avatarId: state.avatarId,
+            microphoneEnabled: audio ? audio.enabled : true,
+            cameraEnabled: state.mediaMode === "camera" && camera ? camera.enabled : false,
+            ...extra
+        });
+    }
+
+    function markCameraMode(cameraOn) {
+        const card = document.querySelector('.video-card[data-role="local"]');
+        card?.classList.toggle("is-camera-on", cameraOn && state.mediaMode === "camera" && !state.screenTrack);
+        card?.classList.toggle("is-avatar", state.mediaMode === "avatar" && !state.screenTrack);
+        deps.$("localMediaLabel").textContent = state.screenTrack ? "Screen" : state.mediaMode === "avatar" ? "Avatar" : cameraOn ? "Camera" : "Camera off";
+        deps.$("localAvatarCanvas").classList.toggle("is-hidden", state.mediaMode !== "avatar" || Boolean(state.screenTrack));
+        deps.$("localVideo").classList.toggle("is-hidden", state.mediaMode === "avatar" && !state.screenTrack);
+    }
+
+    async function useCamera() {
+        state.mediaMode = "camera";
+        localStorage.setItem("finispeak.mediaMode", "camera");
+        stopScreenShare(false);
+        const stream = deps.getLocalStream();
+        let track = stream?.getVideoTracks?.()[0];
+        if (!track || track.readyState === "ended") {
+            const fresh = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            track = fresh.getVideoTracks()[0];
+            stream?.addTrack(track);
+        }
+        track.enabled = true;
+        if (deps.$("localVideo").srcObject !== stream) deps.$("localVideo").srcObject = stream;
+        deps.replaceOutgoingVideo(track);
+        markCameraMode(true);
+        deps.$("cameraButton").setAttribute("aria-pressed", "false");
+        deps.$("cameraButton").querySelector(".tool-label").textContent = "Camera";
+        deps.closeModal("avatarStudioModal");
+        persistPresence().catch(showCallError);
+    }
+
+    async function chooseAvatar(avatarId) {
+        state.avatarId = avatarId;
+        localStorage.setItem("finispeak.avatarId", avatarId);
+        await useAvatar(avatarId, true);
+        deps.closeModal("avatarStudioModal");
+    }
+
+    async function useAvatar(avatarId, persist) {
+        state.mediaMode = "avatar";
+        state.avatarId = avatarId || state.avatarId;
+        localStorage.setItem("finispeak.mediaMode", "avatar");
+        stopScreenShare(false);
+        const canvas = deps.$("localAvatarCanvas");
+        if (!state.avatarStream) {
+            state.avatarStream = canvas.captureStream(24);
+            state.avatarTrack = state.avatarStream.getVideoTracks()[0];
+        }
+        const camera = deps.getLocalStream()?.getVideoTracks?.()[0];
+        if (camera) camera.enabled = false;
+        deps.replaceOutgoingVideo(state.avatarTrack);
+        markCameraMode(false);
+        deps.$("cameraButton").setAttribute("aria-pressed", "true");
+        deps.$("cameraButton").querySelector(".tool-label").textContent = "Camera off";
+        if (persist) persistPresence().catch(showCallError);
+    }
+
+    async function toggleScreenShare() {
+        if (state.screenTrack) {
+            stopScreenShare(true);
+            return;
+        }
+        const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        state.screenTrack = display.getVideoTracks()[0];
+        state.screenTrack.onended = () => stopScreenShare(true);
+        deps.$("localVideo").srcObject = display;
+        deps.$("localVideo").classList.remove("is-hidden");
+        deps.$("localAvatarCanvas").classList.add("is-hidden");
+        deps.replaceOutgoingVideo(state.screenTrack);
+        deps.$("screenShareButton").setAttribute("aria-pressed", "true");
+        deps.$("screenShareButton").textContent = "Stop sharing";
+        markCameraMode(false);
+    }
+
+    function stopScreenShare(restore) {
+        if (state.screenTrack) {
+            state.screenTrack.onended = null;
+            state.screenTrack.stop();
+            state.screenTrack = null;
+        }
+        deps.$("screenShareButton").setAttribute("aria-pressed", "false");
+        deps.$("screenShareButton").textContent = "Share";
+        if (!restore) return;
+        if (state.mediaMode === "avatar") useAvatar(state.avatarId, false);
+        else useCamera();
+    }
+
+    async function confirmInterpreter() {
+        const status = deps.$("aiInterpreterStatus");
+        status.textContent = "Adding the interpreter…";
+        try {
+            await postExperience("set-interpreter", {
+                interpreter: {
+                    active: true,
+                    paused: false,
+                    avatarId: state.pendingAiAvatar || "nova",
+                    sourceLanguage: deps.$("aiSourceLang").value,
+                    targetLanguage: deps.$("aiTargetLang").value,
+                    voiceURI: deps.$("aiVoice").value
+                }
+            });
+            status.textContent = "";
+            deps.closeModal("aiInterpreterModal");
+        } catch (error) {
+            status.textContent = error.message;
+        }
+    }
+
+    async function toggleInterpreterPause() {
+        const paused = !state.call?.aiInterpreter?.paused;
+        await postExperience("set-interpreter-paused", { paused });
+    }
+
+    async function inviteParticipant(event) {
+        event.preventDefault();
+        const status = deps.$("inviteStatus");
+        status.textContent = "Sending invitation…";
+        try {
+            await postExperience("invite", { contact: deps.$("inviteEmail").value.trim() });
+            status.textContent = "Invitation sent. They can join this call from their dashboard.";
+            deps.$("inviteEmail").value = "";
+        } catch (error) {
+            status.textContent = error.message;
+        }
+    }
+
+    function setPane(pane) {
+        const shell = deps.$("callShell");
+        if (callLayoutIsMobile() && shell.dataset.pane === "transcript" && pane !== "transcript") {
+            setTranscriptCollapsed(true);
+        }
+        shell.dataset.pane = pane;
+        document.querySelectorAll("[data-call-pane]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.callPane === pane)));
+        if (pane === "documents") showDocuments();
+        else if (pane !== "documents" && callLayoutIsMobile()) {
+            state.documentsOpen = false;
+            deps.$("documentsPanel").hidden = true;
+            deps.$("documentsButton").setAttribute("aria-pressed", "false");
+        }
+        layout();
+        deps.replayCallMedia?.();
+    }
+
+    function callLayoutIsMobile() {
+        return window.matchMedia("(max-width: 900px)").matches;
+    }
+
+    function setControlsCollapsed(collapsed, pinned) {
+        if (pinned) state.controlsPinned = true;
+        state.controlsCollapsed = collapsed;
+        document.querySelector("#callView .call-frame")?.classList.toggle("is-controls-collapsed", collapsed);
+        const toggle = deps.$("toggleCallControls");
+        if (!toggle) return;
+        toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        const label = collapsed ? "Show call controls" : "Hide call controls";
+        toggle.title = label;
+        toggle.setAttribute("aria-label", label);
+        const text = toggle.querySelector(".tool-label");
+        if (text) text.textContent = collapsed ? "Controls" : "Hide";
+    }
+
+    function syncControlsForViewport() {
+        if (state.controlsPinned) return;
+        setControlsCollapsed(false, false);
+    }
+
+    function showDocuments() {
+        state.documentsOpen = true;
+        deps.$("documentsPanel").hidden = false;
+        deps.$("documentsButton").setAttribute("aria-pressed", "true");
+        if (!state.activeDocumentId) createDocument();
+    }
+
+    function openDocuments() {
+        showDocuments();
+        if (window.matchMedia("(max-width: 900px)").matches) {
+            deps.$("callShell").dataset.pane = "documents";
+            document.querySelectorAll("[data-call-pane]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.callPane === "documents")));
+        }
+    }
+
+    function setNotesOpen(open) {
+        state.notesOpen = open;
+        deps.$("callNotesPanel").hidden = !open;
+        deps.$("notesButton").setAttribute("aria-pressed", String(open));
+        if (open) deps.$("callNotes").focus();
+    }
+
+    function toggleNotes() {
+        setNotesOpen(!state.notesOpen);
+    }
+
+    function syncNotes(call) {
+        const notes = call?.callNotes || "";
+        const field = deps.$("callNotes");
+        if (!field || state.notesDirty || document.activeElement === field) return;
+        if (field.value !== notes) field.value = notes;
+    }
+
+    function scheduleNotesSave() {
+        state.notesDirty = true;
+        window.clearTimeout(state.notesTimer);
+        state.notesTimer = window.setTimeout(saveNotes, 700);
+    }
+
+    async function saveNotes() {
+        const text = deps.$("callNotes").value;
+        if (!deps.getCallId()) {
+            deps.$("callNotesStatus").textContent = "Join a call before saving notes.";
+            return;
+        }
+        try {
+            await postExperience("save-notes", { text });
+            state.notesDirty = false;
+            deps.$("callNotesStatus").textContent = text.trim() ? "Notes saved for everyone on the call." : "Notes cleared for everyone on the call.";
+        } catch (error) {
+            deps.$("callNotesStatus").textContent = error.message;
+        }
+    }
+
+    function closeDocuments() {
+        state.documentsOpen = false;
+        deps.$("documentsPanel").hidden = true;
+        deps.$("documentsButton").setAttribute("aria-pressed", "false");
+        if (deps.$("callShell").dataset.pane === "documents") {
+            deps.$("callShell").dataset.pane = "video";
+            document.querySelectorAll("[data-call-pane]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.callPane === "video")));
+        }
+    }
+
+    function applySubtitleMode(mode) {
+        state.subtitleMode = ["both", "floating", "transcript", "hidden"].includes(mode) ? mode : "both";
+        localStorage.setItem("finispeak.subtitleMode", state.subtitleMode);
+        const shell = deps.$("callShell");
+        shell.classList.remove("subs-both", "subs-floating", "subs-transcript", "subs-hidden");
+        shell.classList.add(`subs-${state.subtitleMode}`);
+        deps.$("subtitleMode").value = state.subtitleMode;
+        const visible = state.subtitleMode === "both" || state.subtitleMode === "floating";
+        deps.$("subtitleButton").setAttribute("aria-pressed", String(visible));
+    }
+
+    function cycleSubtitles() {
+        const order = ["both", "floating", "transcript", "hidden"];
+        const next = order[(order.indexOf(state.subtitleMode) + 1) % order.length];
+        applySubtitleMode(next);
+    }
+
+    function setTranscriptCollapsed(collapsed) {
+        deps.$("callShell").classList.toggle("is-transcript-collapsed", collapsed);
+        deps.$("collapseTranscript").setAttribute("aria-expanded", String(!collapsed));
+        deps.$("expandTranscript").hidden = !collapsed;
+    }
+
+    function openTranscript() {
+        setTranscriptCollapsed(false);
+        if (callLayoutIsMobile()) setPane("transcript");
+    }
+
+    function closeTranscript() {
+        setTranscriptCollapsed(true);
+        if (callLayoutIsMobile() && deps.$("callShell").dataset.pane === "transcript") setPane("video");
+    }
+
+    function setCallDetailsCollapsed(collapsed) {
+        deps.$("callShell").classList.toggle("are-call-details-collapsed", collapsed);
+        const toggle = deps.$("toggleCallDetails");
+        if (!toggle) return;
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+        toggle.textContent = collapsed ? "Show call details" : "Hide call details";
+    }
+
+    function renderStudioAvatars() {
+        const extras = state.customAvatar ? [state.customAvatar] : [];
+        renderAvatarChoices(deps.$("avatarStudioGrid"), state.avatarId, (id) => chooseAvatar(id), extras);
+    }
+
+    function showAvatarPresets() {
+        deps.$("avatarBuilder").hidden = true;
+        deps.$("avatarStudioGrid").hidden = false;
+        deps.$("buildOwnAvatar").hidden = false;
+    }
+
+    function openAvatarBuilder() {
+        state.draftAvatar = normalizeCustomAvatar(state.customAvatar || { name: "Mine", style: "curly" });
+        deps.$("avatarBuilderName").value = state.draftAvatar.name;
+        deps.$("avatarStudioGrid").hidden = true;
+        deps.$("buildOwnAvatar").hidden = true;
+        deps.$("avatarBuilder").hidden = false;
+        paintAvatarOptions();
+        drawAvatar(deps.$("avatarBuilderPreview"), state.draftAvatar, { mouth: 0.2, blink: 1, breath: 0, head: 0 });
+    }
+
+    function buildAvatarOptions() {
+        const groups = [
+            ["avatarSkinChoices", AVATAR_SKINS, "skin", true],
+            ["avatarHairChoices", AVATAR_HAIR, "hair", true],
+            ["avatarAccentChoices", AVATAR_ACCENTS, "accent", true],
+            ["avatarStyleChoices", AVATAR_STYLES, "style", false]
+        ];
+        for (const [id, options, key, color] of groups) {
+            const container = deps.$(id);
+            container.innerHTML = "";
+            for (const [value, label] of options) {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.dataset.value = value;
+                button.setAttribute("aria-label", label);
+                button.textContent = color ? "" : label;
+                if (color) button.style.background = value;
+                button.onclick = () => {
+                    state.draftAvatar[key] = value;
+                    paintAvatarOptions();
+                    drawAvatar(deps.$("avatarBuilderPreview"), normalizeCustomAvatar(state.draftAvatar), { mouth: 0.2, blink: 1, breath: 0, head: 0 });
+                };
+                container.appendChild(button);
+            }
+        }
+    }
+
+    function paintAvatarOptions() {
+        const draft = state.draftAvatar || {};
+        const selected = {
+            avatarSkinChoices: draft.skin,
+            avatarHairChoices: draft.hair,
+            avatarAccentChoices: draft.accent,
+            avatarStyleChoices: draft.style
+        };
+        for (const [id, value] of Object.entries(selected)) {
+            for (const button of deps.$(id).querySelectorAll("button[data-value]")) {
+                button.setAttribute("aria-pressed", String(button.dataset.value === value));
+            }
+        }
+    }
+
+    async function saveCustomAvatar() {
+        state.customAvatar = normalizeCustomAvatar({ ...state.draftAvatar, name: deps.$("avatarBuilderName").value });
+        localStorage.setItem("finispeak.customAvatar", JSON.stringify(state.customAvatar));
+        await chooseAvatar("custom");
+    }
+
+    function renderAvatarChoices(container, selected, onSelect, extras = []) {
+        if (!container) return;
+        container.innerHTML = "";
+        for (const avatar of [...AVATARS, ...extras]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "avatar-choice";
+            button.setAttribute("aria-pressed", String(avatar.id === selected));
+            const canvas = document.createElement("canvas");
+            canvas.width = 96;
+            canvas.height = 96;
+            drawAvatar(canvas, avatar, { mouth: 0.15, blink: 1, breath: 0, head: 0 });
+            const name = document.createElement("span");
+            name.textContent = avatar.name;
+            button.append(canvas, name);
+            button.onclick = () => {
+                container.querySelectorAll(".avatar-choice").forEach(choice => choice.setAttribute("aria-pressed", "false"));
+                button.setAttribute("aria-pressed", "true");
+                onSelect(avatar.id);
+            };
+            container.appendChild(button);
+        }
+    }
+
+    function loadVoices() {
+        const select = deps.$("aiVoice");
+        if (!select || !window.speechSynthesis) return;
+        const voices = speechSynthesis.getVoices();
+        const current = select.value;
+        select.innerHTML = "";
+        const fallback = document.createElement("option");
+        fallback.value = "";
+        fallback.textContent = "Default voice for the target language";
+        select.appendChild(fallback);
+        for (const voice of voices) {
+            const option = document.createElement("option");
+            option.value = voice.voiceURI;
+            option.textContent = `${voice.name} (${voice.lang})`;
+            option.dataset.lang = voice.lang;
+            select.appendChild(option);
+        }
+        if (current) select.value = current;
+    }
+
+    function renderAiTile(interpreter) {
+        let card = document.querySelector('.video-card[data-role="ai"]');
+        if (!interpreter?.active) {
+            card?.remove();
+            layout();
+            return;
+        }
+        if (!card) {
+            card = document.createElement("article");
+            card.className = "video-card is-avatar";
+            card.dataset.role = "ai";
+            card.dataset.speaker = "ai-interpreter";
+            card.innerHTML = '<canvas class="avatar-canvas" aria-hidden="true"></canvas><span class="ai-badge">AI</span><span class="speaking-indicator" aria-hidden="true"></span><div class="video-label"><span class="video-role">AI</span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name"></span></div><p class="tile-subtitle" hidden></p>';
+            deps.$("videoGrid").appendChild(card);
+        }
+        card.querySelector(".video-name").textContent = interpreter.displayName || "AI interpreter";
+        card.classList.toggle("is-speaking", state.interpreterSpeaking && !interpreter.paused);
+        layout();
+    }
+
+    function applyParticipantPresence(participants) {
+        for (const participant of participants) {
+            const card = document.querySelector(`[data-peer="${participant.id}"]`);
+            if (!card) continue;
+            card.classList.toggle("is-avatar", participant.mediaMode === "avatar");
+            const video = card.querySelector("video");
+            const liveVideo = video?.srcObject instanceof MediaStream && video.srcObject.getVideoTracks().some(track => track.readyState === "live" && track.enabled !== false);
+            const relayFresh = Number(card.dataset.relayAt || 0) > Date.now() - 1600;
+            // track.muted flips on when speaker audio starts, which was covering a live picture.
+            card.classList.toggle("is-relay-camera", relayFresh && !(video?.videoWidth > 0));
+            card.classList.toggle("is-camera-on", participant.mediaMode !== "avatar" && participant.cameraEnabled !== false && (Boolean(liveVideo) || video?.videoWidth > 0 || relayFresh));
+            let muted = card.querySelector(".muted-pill");
+            if (participant.microphoneEnabled === false) {
+                if (!muted) {
+                    muted = document.createElement("span");
+                    muted.className = "connection-pill muted-pill";
+                    muted.textContent = "Muted";
+                    card.querySelector(".video-label")?.appendChild(muted);
+                }
+            } else muted?.remove();
+        }
+    }
+
+    function cameraGridShape(count, width, height) {
+        if (count <= 1) return { columns: 1, rows: 1 };
+        const wide = width >= 720;
+        const usableHeight = height >= 80 ? height : (wide ? Math.max(280, width * 0.46) : Math.max(220, width * 0.9));
+        const minWidth = wide ? 160 : 108;
+        const minHeight = wide ? 120 : 88;
+        const maxColumns = wide ? Math.min(count, 3) : Math.min(count, 2);
+        let best = null;
+        for (let columns = 1; columns <= maxColumns; columns += 1) {
+            const rows = Math.ceil(count / columns);
+            const tileWidth = (Math.max(width, 1) - 10 * (columns - 1)) / columns;
+            const tileHeight = (usableHeight - 10 * (rows - 1)) / rows;
+            if (tileWidth < minWidth || tileHeight < minHeight) continue;
+            const aspect = tileWidth / tileHeight;
+            const target = wide ? 16 / 10 : 4 / 5;
+            const empty = columns * rows - count;
+            const stackedPenalty = columns === 1 && count > 1 ? 1.6 : 0;
+            const score = Math.abs(Math.log(aspect / target)) + empty * 0.35 + stackedPenalty;
+            if (!best || score < best.score) best = { columns, rows, score };
+        }
+        if (best) return best;
+        const columns = wide ? Math.min(3, count) : Math.min(2, count);
+        return { columns, rows: Math.ceil(count / columns) };
+    }
+
+    function applyCameraGrid(stage, cards, columns, rows) {
+        stage.style.setProperty("--camera-columns", String(columns));
+        stage.style.setProperty("--camera-rows", String(rows));
+        // Inline templates keep Safari from dropping repeat(var(...)).
+        stage.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
+        stage.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+        cards.forEach((card, index) => {
+            const column = (index % columns) + 1;
+            const row = Math.floor(index / columns) + 1;
+            const lastAlone = index === cards.length - 1 && cards.length % columns !== 0;
+            card.style.gridColumn = lastAlone ? "1 / -1" : String(column);
+            card.style.gridRow = String(row);
+        });
+    }
+
+    function layout() {
+        const cards = [...document.querySelectorAll("#callView .video-card")];
+        const stage = deps.$("videoGrid");
+        if (!stage || !cards.length) return;
+        const frame = stage.getBoundingClientRect();
+        const signature = `${cards.length}:${Math.round(frame.width)}:${Math.round(frame.height)}:${callLayoutIsMobile()}`;
+        const parked = cards.some(card => card.parentElement !== stage);
+        if (!parked && state.layoutSignature === signature) return;
+        state.layoutSignature = signature;
+        for (const card of cards) {
+            card.classList.add("is-stage");
+            card.classList.remove("is-self-pip", "is-main", "is-thumb", "is-pair-remote", "is-pair-self");
+            card.style.gridColumn = "";
+            card.style.gridRow = "";
+            // Moving a live video element restarts it and flashes the camera.
+            if (card.parentElement !== stage) stage.appendChild(card);
+        }
+        stage.classList.remove("is-zoom-pip", "is-mobile-pair");
+        const mobile = callLayoutIsMobile();
+        const counted = cards;
+        if (mobile && counted.length === 2 && frame.height >= frame.width) {
+            const local = cards.find(card => card.dataset.role === "local") || cards[0];
+            const remote = cards.find(card => card !== local);
+            stage.classList.add("is-mobile-pair");
+            remote.classList.add("is-pair-remote");
+            local.classList.add("is-pair-self");
+            stage.style.setProperty("--camera-columns", "1");
+            stage.style.setProperty("--camera-rows", "2");
+            stage.style.gridTemplateColumns = "minmax(0, 1fr)";
+            stage.style.gridTemplateRows = "repeat(2, minmax(0, 1fr))";
+            remote.style.gridColumn = "1";
+            remote.style.gridRow = "1";
+            local.style.gridColumn = "1";
+            local.style.gridRow = "2";
+        } else {
+            const shape = cameraGridShape(counted.length, frame.width, frame.height);
+            applyCameraGrid(stage, counted, shape.columns, shape.rows);
+        }
+        stage.dataset.count = String(cards.length);
+        if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
+        if (deps.$("videoFilmstrip")) deps.$("videoFilmstrip").hidden = true;
+        if (deps.$("participantCount")) deps.$("participantCount").textContent = String(cards.length);
+    }
+
+    function setInterpreterActivity(mode) {
+        const panel = deps.$("smartInterpreter");
+        const status = deps.$("smartInterpreterStatus");
+        const labels = {
+            listening: "Listening for speech",
+            hearing: "Hearing speech",
+            translating: "Translating the latest line",
+            ready: "Translation ready"
+        };
+        if (status) status.textContent = labels[mode] || labels.listening;
+        panel?.classList.toggle("is-working", mode === "hearing" || mode === "translating");
+        const pill = mode === "translating" ? "Translating" : mode === "hearing" ? "Hearing speech" : "Translation ready";
+        if (deps.$("translationIndicator")) deps.$("translationIndicator").textContent = pill;
+    }
+
+    function refreshInterpreterLanguages() {
+        const source = deps.$("detectedLanguageValue")?.textContent?.trim() || "Detecting";
+        const target = deps.$("viewerLanguage")?.selectedOptions?.[0]?.textContent?.trim() || "Your subtitles";
+        if (deps.$("smartSourceLanguage")) deps.$("smartSourceLanguage").textContent = source === "Listening…" ? "Detecting" : source;
+        if (deps.$("smartTargetLanguage")) deps.$("smartTargetLanguage").textContent = target;
+    }
+
+    function maybeSpeak() {}
+
+    async function requestTranslations(callId, transcriptId, source) {
+        const targets = new Set([state.viewerLanguage]);
+        if (state.call?.aiInterpreter?.targetLanguage) targets.add(state.call.aiInterpreter.targetLanguage);
+        for (const target of targets) {
+            const key = `${transcriptId}:${target}`;
+            if (state.translationRequests.has(key)) continue;
+            state.translationRequests.add(key);
+            setInterpreterActivity("translating");
+            refreshInterpreterLanguages();
+            try {
+                await deps.apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts/${encodeURIComponent(transcriptId)}/translation`, {
+                    method: "POST",
+                    body: JSON.stringify({ targetLanguage: target, sourceLanguage: source })
+                });
+                setInterpreterActivity("ready");
+            } catch (error) {
+                state.translationRequests.delete(key);
+                setInterpreterActivity("listening");
+                console.warn("Translation unavailable", error);
+            }
+        }
+    }
+
+    function ensureTranslation(row) {
+        const callId = deps.getCallId();
+        if (!callId || !row?.id || !row.language || String(row.language).toLowerCase() === state.viewerLanguage) return;
+        if (row.translations?.[state.viewerLanguage]) return;
+        requestTranslations(callId, row.id, row.language);
+    }
+
+    async function summarize() {
+        const status = deps.$("summaryStatus");
+        status.textContent = "Summarizing finalized lines…";
+        try {
+            const lines = state.rows.filter(row => row.isFinal !== false).map(row => ({ speaker: row.speakerName || "Participant", text: row.text || "" }));
+            const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(deps.getCallId())}/summary`, {
+                method: "POST",
+                body: JSON.stringify({ lines })
+            });
+            state.summary = result.summary;
+            showSummary(result.summary, result.summary?.text ? "Summary ready. Save only if you want it kept with the call." : "There is not enough finalized conversation yet.");
+        } catch (error) {
+            status.textContent = error.message;
+        }
+    }
+
+    function showSummary(summary, message) {
+        state.summary = summary;
+        deps.$("summaryText").textContent = summary?.text || "Summarize the finalized conversation to see key points. Nothing is stored until you confirm Save.";
+        fillList(deps.$("summaryPoints"), summary?.points || []);
+        fillList(deps.$("summaryActions"), summary?.actions || []);
+        deps.$("summaryStatus").textContent = message || "";
+    }
+
+    function fillList(list, values) {
+        list.innerHTML = "";
+        for (const value of values) {
+            const item = document.createElement("li");
+            item.textContent = value;
+            list.appendChild(item);
+        }
+    }
+
+    async function copySummary() {
+        const text = summaryPlainText();
+        if (!text) {
+            deps.$("summaryStatus").textContent = "Summarize the conversation before copying it.";
+            return;
+        }
+        await navigator.clipboard.writeText(text);
+        deps.$("summaryStatus").textContent = "Summary copied. It was not saved to the call.";
+    }
+
+    async function saveSummary() {
+        if (!deps.$("summaryConsent").checked) {
+            deps.$("summaryStatus").textContent = "Confirm the checkbox before saving this summary with the call.";
+            return;
+        }
+        const lines = state.rows.filter(row => row.isFinal !== false).map(row => ({ speaker: row.speakerName || "Participant", text: row.text || "" }));
+        try {
+            await postExperience("save-summary", { consent: true, lines });
+            deps.$("summaryStatus").textContent = "Summary saved with this call for participants.";
+        } catch (error) {
+            deps.$("summaryStatus").textContent = error.message;
+        }
+    }
+
+    function summaryPlainText() {
+        if (!state.summary?.text) return "";
+        return [state.summary.text, "", "Key points:", ...(state.summary.points || []), "", "Action items:", ...(state.summary.actions || [])].join("\n");
+    }
+
+    function currentDocuments() {
+        return Array.isArray(state.call?.documents) ? state.call.documents : [];
+    }
+
+    function createDocument(text = "") {
+        const documentId = `doc-${crypto.randomUUID()}`;
+        state.activeDocumentId = documentId;
+        state.documentDirty = true;
+        state.documentRevision += 1;
+        const revision = state.documentRevision;
+        const documentRecord = {
+            id: documentId,
+            title: "Untitled document",
+            originalText: text,
+            translatedText: "",
+            sourceLanguage: deps.$("documentSourceLang").value,
+            targetLanguage: deps.$("documentTargetLang").value,
+            permission: "edit",
+            collaboratorIds: [],
+            collaboratorEmails: []
+        };
+        deps.$("documentTitle").value = documentRecord.title;
+        deps.$("documentOriginal").value = text;
+        deps.$("documentTranslated").value = "";
+        window.clearTimeout(state.saveTimer);
+        state.saveChain = state.saveChain.catch(() => {}).then(async () => {
+            if (revision !== state.documentRevision) return;
+            try {
+                await postExperience("upsert-document", { document: documentRecord });
+                if (revision !== state.documentRevision) return;
+                state.documentDirty = false;
+            } catch (error) {
+                showDocumentError(error);
+            }
+        });
+        return state.saveChain;
+    }
+
+    async function uploadDocument(event) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        if (file.size > 8 * 1024 * 1024) {
+            showDocumentError(new Error("Upload a document under 8 MB."));
+            return;
+        }
+        const extension = file.name.split(".").pop()?.toLowerCase();
+        let text = "";
+        let title = file.name.replace(/\.[^.]+$/, "");
+        try {
+            if (["pdf", "doc", "docx"].includes(extension)) {
+                const body = new FormData();
+                body.append("file", file);
+                const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(deps.getCallId())}/documents/extract`, { method: "POST", body });
+                text = result.text || "";
+                title = result.title || title;
+                if (result.truncated) deps.$("documentStatus").textContent = "Only the first part of that document was imported.";
+            } else {
+                text = await file.text();
+            }
+        } catch (error) {
+            showDocumentError(error);
+            return;
+        }
+        await createDocument(text);
+        deps.$("documentTitle").value = title;
+        scheduleDocumentSave();
+    }
+
+    function noteDocumentEdit() {
+        state.preserveDocumentStatus = false;
+        scheduleDocumentSave();
+    }
+
+    function scheduleDocumentSave() {
+        state.documentDirty = true;
+        state.documentRevision += 1;
+        const revision = state.documentRevision;
+        window.clearTimeout(state.saveTimer);
+        state.saveTimer = window.setTimeout(() => queueDocumentSave(revision), 700);
+    }
+
+    function queueDocumentSave(revision) {
+        state.saveChain = state.saveChain.catch(() => {}).then(() => saveActiveDocument(revision));
+        return state.saveChain;
+    }
+
+    async function saveActiveDocument(revision) {
+        if (!state.activeDocumentId || revision !== state.documentRevision) return;
+        const existing = currentDocuments().find(document => document.id === state.activeDocumentId) || {};
+        const documentRecord = {
+            ...existing,
+            id: state.activeDocumentId,
+            title: deps.$("documentTitle").value,
+            originalText: deps.$("documentOriginal").value,
+            translatedText: deps.$("documentTranslated").value,
+            sourceLanguage: deps.$("documentSourceLang").value,
+            targetLanguage: deps.$("documentTargetLang").value,
+            permission: deps.$("documentPermission").value
+        };
+        try {
+            await postExperience("upsert-document", { document: documentRecord });
+            if (revision !== state.documentRevision) return;
+            state.documentDirty = false;
+            if (!state.preserveDocumentStatus) {
+                deps.$("documentStatus").textContent = "Document saved for everyone on the call.";
+            }
+        } catch (error) {
+            if (revision === state.documentRevision) showDocumentError(error);
+        }
+    }
+
+    function renderDocuments(documents) {
+        const list = deps.$("documentList");
+        list.innerHTML = "";
+        for (const documentRecord of documents) {
+            const item = document.createElement("li");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "secondary";
+            const title = documentRecord.title || "Untitled document";
+            button.textContent = title;
+            button.title = title;
+            button.onclick = () => selectDocument(documentRecord.id);
+            item.appendChild(button);
+            list.appendChild(item);
+        }
+        if (!state.documentDirty) {
+            const active = documents.find(documentRecord => documentRecord.id === state.activeDocumentId) || documents[0];
+            if (active) populateDocument(active);
+        }
+    }
+
+    function selectDocument(id) {
+        state.documentDirty = false;
+        const documentRecord = currentDocuments().find(item => item.id === id);
+        if (documentRecord) populateDocument(documentRecord);
+    }
+
+    function populateDocument(documentRecord) {
+        state.activeDocumentId = documentRecord.id;
+        if (document.activeElement === deps.$("documentOriginal") || document.activeElement === deps.$("documentTranslated") || document.activeElement === deps.$("documentTitle")) return;
+        deps.$("documentTitle").value = documentRecord.title || "";
+        deps.$("documentOriginal").value = documentRecord.originalText || "";
+        deps.$("documentTranslated").value = documentRecord.translatedText || "";
+        deps.$("documentSourceLang").value = documentRecord.sourceLanguage || "en";
+        deps.$("documentTargetLang").value = documentRecord.targetLanguage || state.viewerLanguage;
+        deps.$("documentPermission").value = documentRecord.permission || "edit";
+        const editable = documentRecord.permission !== "view" || documentRecord.ownerId === deps.getUser()?.uid;
+        deps.$("documentOriginal").disabled = !editable;
+        deps.$("documentTranslated").disabled = !editable;
+    }
+
+    function translationStatusMessage(result) {
+        if (result?.message) return result.message;
+        if (result?.status === "empty") return "Enter text to translate.";
+        if (result?.status === "unchanged") return "Choose a different translation language. The text was not translated.";
+        if (result?.status === "translated" && result.provider === "glossary") return "The translation provider was unavailable. Glossary matches were applied.";
+        if (result?.status === "translated") return "Translation updated.";
+        return "The translation provider was unavailable, and no glossary match was found.";
+    }
+
+    function protectDocumentFromRefresh() {
+        state.documentDirty = true;
+        state.documentRevision += 1;
+        window.clearTimeout(state.saveTimer);
+    }
+
+    async function translateDocument() {
+        if (!deps.getCallId()) {
+            deps.$("documentStatus").textContent = "Join a call before translating a document.";
+            return;
+        }
+        if (!state.activeDocumentId) await createDocument(deps.$("documentOriginal").value);
+        const text = deps.$("documentOriginal").value;
+        const source = deps.$("documentSourceLang").value;
+        const target = deps.$("documentTargetLang").value;
+        if (!text.trim()) {
+            deps.$("documentTranslated").value = "";
+            state.preserveDocumentStatus = true;
+            deps.$("documentStatus").textContent = "Enter text to translate.";
+            scheduleDocumentSave();
+            return;
+        }
+        if (!source || !target) {
+            deps.$("documentStatus").textContent = "Choose the original and translation languages.";
+            return;
+        }
+        if (source === target) {
+            deps.$("documentTranslated").value = text;
+            state.preserveDocumentStatus = true;
+            deps.$("documentStatus").textContent = "Choose a different translation language. The text was not translated.";
+            scheduleDocumentSave();
+            return;
+        }
+        protectDocumentFromRefresh();
+        deps.$("documentStatus").textContent = "Translating document…";
+        try {
+            const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(deps.getCallId())}/translate`, {
+                method: "POST",
+                body: JSON.stringify({ text, source, target })
+            });
+            const unchangedFields = deps.$("documentOriginal").value !== text
+                || deps.$("documentSourceLang").value !== source
+                || deps.$("documentTargetLang").value !== target;
+            if (unchangedFields) {
+                state.preserveDocumentStatus = false;
+                deps.$("documentStatus").textContent = "The document changed while translating. Click Translate again.";
+                scheduleDocumentSave();
+                return;
+            }
+            deps.$("documentTranslated").value = typeof result.text === "string" ? result.text : "";
+            state.preserveDocumentStatus = true;
+            deps.$("documentStatus").textContent = translationStatusMessage(result);
+            scheduleDocumentSave();
+        } catch (error) {
+            state.preserveDocumentStatus = false;
+            showDocumentError(error);
+        }
+    }
+
+    function rememberDocumentField(event) {
+        if (event.target?.id === "documentOriginal" || event.target?.id === "documentTranslated") {
+            state.documentFieldId = event.target.id;
+        }
+    }
+
+    function wordAround(value, index) {
+        if (!value) return "";
+        const word = /[\p{L}\p{M}\p{N}'’-]/u;
+        let start = Math.max(0, Math.min(index, value.length));
+        if (start > 0 && (start === value.length || !word.test(value[start] || "")) && word.test(value[start - 1])) start -= 1;
+        while (start > 0 && word.test(value[start - 1])) start -= 1;
+        let end = start;
+        while (end < value.length && word.test(value[end])) end += 1;
+        return value.slice(start, end).trim();
+    }
+
+    function selectedDocumentText(field, allowCaret = true) {
+        if (!field) return "";
+        const value = field.value || "";
+        let start = field.selectionStart ?? 0;
+        let end = field.selectionEnd ?? start;
+        if (start > end) [start, end] = [end, start];
+        if (start !== end) return value.slice(start, end).replace(/\s+/g, " ").trim();
+        return allowCaret ? wordAround(value, start) : "";
+    }
+
+    function setTermExplanationOpen(open) {
+        const section = deps.$("termExplanation");
+        const body = deps.$("termExplanationBody");
+        const toggle = deps.$("toggleTermExplanation");
+        if (!section || !body || !toggle) return;
+        section.hidden = false;
+        body.hidden = !open;
+        toggle.setAttribute("aria-expanded", String(open));
+        const hint = deps.$("termExplanationToggleHint");
+        if (hint) hint.textContent = open ? "Hide" : "Show";
+    }
+
+    function showTermExplanation(text, detail) {
+        const body = deps.$("termExplanationBody");
+        const label = deps.$("termExplanationLabel");
+        body.replaceChildren();
+        label.textContent = detail?.term ? `Explanation · ${detail.term}` : "Explanation";
+        if (detail) {
+            const term = document.createElement("strong");
+            term.textContent = detail.term || "";
+            const meaning = document.createElement("p");
+            const translation = (detail.translation || "").trim();
+            const same = translation.localeCompare(detail.term || "", undefined, { sensitivity: "accent" }) === 0;
+            meaning.textContent = same ? "No different translation was found." : `${languageName(detail.target)}: ${translation}`;
+            const note = document.createElement("p");
+            note.textContent = detail.definition || "";
+            body.append(term, meaning, note);
+        } else {
+            const note = document.createElement("p");
+            note.textContent = text;
+            body.append(note);
+        }
+        setTermExplanationOpen(true);
+        deps.$("termExplanation").scrollIntoView({ block: "nearest" });
+    }
+
+    async function explainSelection() {
+        const original = deps.$("documentOriginal");
+        const translated = deps.$("documentTranslated");
+        const field = state.documentFieldId === "documentTranslated" ? translated : original;
+        const other = field === translated ? original : translated;
+        const selected = selectedDocumentText(field) || selectedDocumentText(other, false);
+        if (!selected) {
+            showTermExplanation("Select a word in the original or translated text first.");
+            return;
+        }
+        const fromTranslated = field === translated && Boolean(selectedDocumentText(field));
+        const source = fromTranslated ? deps.$("documentTargetLang").value : deps.$("documentSourceLang").value;
+        const target = fromTranslated ? deps.$("documentSourceLang").value : deps.$("documentTargetLang").value;
+        if (!deps.getCallId()) {
+            showTermExplanation("Join a call before explaining a selection.");
+            return;
+        }
+        const button = deps.$("explainSelection");
+        button.disabled = true;
+        showTermExplanation(`Explaining “${selected}”…`);
+        try {
+            const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(deps.getCallId())}/terminology`, {
+                method: "POST",
+                body: JSON.stringify({ term: selected, source, target })
+            });
+            showTermExplanation("", result);
+        } catch (error) {
+            showTermExplanation(error.message);
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    function showCallError(error) { deps.setCallStatus?.(error.message); }
+    function showDocumentError(error) { deps.$("documentStatus").textContent = error.message; }
+
+    function resizeCanvases() {
+        for (const canvas of document.querySelectorAll("#callView .video-card canvas")) {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const width = Math.max(1, Math.round(rect.width));
+            const height = Math.max(1, Math.round(rect.height));
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+            }
+        }
+    }
+
+    const waveShape = [0.05, 0.08, 0.16, 0.07, 0.22, 0.1, 0.18, 0.42, 0.12, 0.28, 0.62, 0.2, 0.08, 0.16, 0.34, 0.72, 1, 0.78, 0.36, 0.14, 0.06];
+
+    function waveEnvelope(progress) {
+        const t = Math.min(1, Math.max(0, progress)) * (waveShape.length - 1);
+        const index = Math.floor(t);
+        const next = Math.min(waveShape.length - 1, index + 1);
+        const mix = t - index;
+        return waveShape[index] * (1 - mix) + waveShape[next] * mix;
+    }
+
+    function drawSmartWave(canvas, level, time, speaking, reducedMotion) {
+        if (!canvas || canvas.tagName !== "CANVAS") return;
+        const width = Math.max(1, canvas.clientWidth);
+        const height = Math.max(1, canvas.clientHeight);
+        const dpr = window.devicePixelRatio || 1;
+        const pixelWidth = Math.round(width * dpr);
+        const pixelHeight = Math.round(height * dpr);
+        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+            canvas.width = pixelWidth;
+            canvas.height = pixelHeight;
+        }
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        const background = ctx.createLinearGradient(0, 0, width, height);
+        background.addColorStop(0, "#ddd0ff");
+        background.addColorStop(0.55, "#c4b0fb");
+        background.addColorStop(1, "#a78bfa");
+        ctx.fillStyle = background;
+        ctx.beginPath();
+        ctx.roundRect?.(0, 0, width, height, 14);
+        if (!ctx.roundRect) ctx.rect(0, 0, width, height);
+        ctx.fill();
+        const energy = speaking ? 0.85 + Math.min(1, level * 6) * 0.7 : 0.95;
+        const drift = reducedMotion ? 0 : time / 900;
+        const mid = height * 0.52;
+        const steps = 96;
+        const upper = [];
+        const lower = [];
+        for (let index = 0; index <= steps; index += 1) {
+            const progress = index / steps;
+            const wobble = reducedMotion ? 0 : Math.sin(drift + progress * 18) * 0.05 * (speaking ? 1 : 0.35);
+            const amplitude = (waveEnvelope(progress) + wobble) * energy * height * 0.42;
+            upper.push([progress * width, mid - amplitude]);
+            lower.push([progress * width, mid + amplitude * 0.92]);
+        }
+        ctx.beginPath();
+        upper.forEach(([x, y], index) => index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+        for (let index = lower.length - 1; index >= 0; index -= 1) ctx.lineTo(lower[index][0], lower[index][1]);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.shadowColor = "rgba(255,255,255,0.7)";
+        ctx.shadowBlur = 16;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        upper.forEach(([x, y], index) => index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+    }
+
+    function startLoop() {
+        cancelAnimationFrame(state.raf);
+        const samples = new Uint8Array(128);
+        const tick = (time) => {
+            state.raf = requestAnimationFrame(tick);
+            if (state.analyser) {
+                state.analyser.getByteTimeDomainData(samples);
+                let energy = 0;
+                for (const value of samples) {
+                    const normalized = (value - 128) / 128;
+                    energy += normalized * normalized;
+                }
+                state.level = Math.min(1, Math.sqrt(energy / samples.length) * 4);
+            } else state.level = 0;
+            const speakingNow = state.speaking ? state.level > 0.045 : state.level > 0.1;
+            if (speakingNow !== state.speaking) {
+                state.speaking = speakingNow;
+                document.querySelector('.video-card[data-role="local"]')?.classList.toggle("is-speaking", state.speaking);
+            }
+            drawSmartWave(deps.$("smartInterpreterWave"), state.level, time, state.speaking, state.reducedMotion);
+            const pose = {
+                mouth: state.speaking ? Math.min(1, state.level * 2.4) : 0.08,
+                blink: state.reducedMotion ? 1 : (Math.sin(time / 1800) > 0.97 ? 0.1 : 1),
+                breath: state.reducedMotion ? 0 : Math.sin(time / 900) * 2,
+                head: state.reducedMotion ? 0 : Math.sin(time / 1400) * 0.08
+            };
+            if (state.mediaMode === "avatar" && !state.screenTrack) drawAvatar(deps.$("localAvatarCanvas"), avatarById(state.avatarId), pose);
+            if (state.call) updateClock(state.call);
+        };
+        state.raf = requestAnimationFrame(tick);
+    }
+
+    function cleanup() {
+        cancelAnimationFrame(state.raf);
+        state.gridObserver?.disconnect();
+        state.gridObserver = null;
+        state.layoutSignature = "";
+        window.speechSynthesis?.cancel();
+        stopScreenShare(false);
+        state.avatarTrack?.stop();
+        state.avatarStream = null;
+        state.avatarTrack = null;
+        state.audioContext?.close().catch(() => {});
+        state.audioContext = null;
+        state.analyser = null;
+        state.partial = "";
+        state.remotePartials.clear();
+        state.spoken.clear();
+        state.translationRequests.clear();
+        state.call = null;
+        document.querySelector('.video-card[data-role="ai"]')?.remove();
+        const local = document.querySelector('.video-card[data-role="local"]');
+        if (local && deps.$("videoGrid")) deps.$("videoGrid").appendChild(local);
+        deps.$("documentsPanel").hidden = true;
+        setNotesOpen(false);
+        state.notesDirty = false;
+        window.clearTimeout(state.notesTimer);
+        if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
+        deps.$("videoFilmstrip").hidden = true;
+        setCallDetailsCollapsed(true);
+        setTranscriptCollapsed(true);
+    }
+
+    return {
+        bind, onJoined, sync, updateSubtitles, onPartial, onRemotePartial, viewerLanguage, outgoingVideoTrack,
+        noteConnection, attachLocalStream, requestTranslations, ensureTranslation, maybeSpeak, layout, cleanup, persistPresence,
+        noteLanguages: refreshInterpreterLanguages,
+        isAvatar: () => state.mediaMode === "avatar" && !state.screenTrack,
+        activateCamera: useCamera,
+        markCamera: markCameraMode
+    };
+}
+
+function shadeColor(hex, amount) {
+    const value = String(hex || "#888888").replace("#", "");
+    const color = parseInt(value.length === 3 ? value.split("").map(part => part + part).join("") : value, 16);
+    const channel = (shift) => Math.max(0, Math.min(255, ((color >> shift) & 255) + amount));
+    return `rgb(${channel(16)}, ${channel(8)}, ${channel(0)})`;
+}
+
+function drawEye(context, x, y, blink) {
+    context.save();
+    context.translate(x, y);
+    context.scale(1, Math.max(0.08, blink));
+    context.fillStyle = "#f8fafc";
+    context.beginPath();
+    context.ellipse(0, 0, 9, 6.2, 0, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#1e293b";
+    context.beginPath();
+    context.arc(1, 0.5, 3.8, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#ffffff";
+    context.beginPath();
+    context.arc(-0.6, -1.2, 1.3, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+}
+
+function drawHair(context, avatar) {
+    context.fillStyle = avatar.hair;
+    context.beginPath();
+    if (avatar.style === "long") {
+        context.moveTo(-80, -70);
+        context.quadraticCurveTo(-90, -112, 0, -112);
+        context.quadraticCurveTo(90, -112, 80, -70);
+        context.lineTo(76, 128);
+        context.lineTo(54, 128);
+        context.lineTo(60, 8);
+        context.lineTo(-60, 8);
+        context.lineTo(-54, 128);
+        context.lineTo(-76, 128);
+        context.closePath();
+    } else if (avatar.style === "bob") {
+        context.moveTo(-78, -8);
+        context.quadraticCurveTo(-86, -106, 0, -106);
+        context.quadraticCurveTo(86, -106, 78, -8);
+        context.lineTo(72, 52);
+        context.quadraticCurveTo(48, 28, 0, 24);
+        context.quadraticCurveTo(-48, 28, -72, 52);
+        context.closePath();
+    } else if (avatar.style === "curly") {
+        for (const [x, y, radius] of [[0, -78, 30], [-34, -70, 22], [34, -70, 22], [-72, -16, 22], [72, -16, 22], [-58, 24, 18], [58, 24, 18]]) {
+            context.moveTo(x + radius, y);
+            context.arc(x, y, radius, 0, Math.PI * 2);
+        }
+    } else if (avatar.style === "ai") {
+        context.ellipse(0, -42, 78, 54, 0, Math.PI, Math.PI * 2);
+    } else if (avatar.style === "crop" || avatar.style === "short") {
+        context.ellipse(0, -58, 74, 46, 0, Math.PI, Math.PI * 2);
+    } else {
+        context.ellipse(0, -50, 80, 58, 0, Math.PI, Math.PI * 2);
+    }
+    context.fill();
+    if (avatar.style === "ai") {
+        context.fillStyle = avatar.accent;
+        context.fillRect(-16, -96, 32, 6);
+    }
+}
+
+function drawAvatar(canvas, avatar, pose) {
+    if (!canvas || !avatar) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const width = canvas.width || 180;
+    const height = canvas.height || 180;
+    const mouth = Math.max(0, Math.min(1, pose?.mouth || 0));
+    const blink = pose?.blink == null ? 1 : pose.blink;
+    context.clearRect(0, 0, width, height);
+    const backdrop = context.createLinearGradient(0, 0, 0, height);
+    backdrop.addColorStop(0, "#314053");
+    backdrop.addColorStop(1, "#121820");
+    context.fillStyle = backdrop;
+    context.fillRect(0, 0, width, height);
+    const glow = context.createRadialGradient(width * 0.5, height * 0.36, width * 0.04, width * 0.5, height * 0.4, width * 0.46);
+    glow.addColorStop(0, shadeColor(avatar.accent, 40).replace("rgb", "rgba").replace(")", ", 0.28)"));
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    context.fillStyle = glow;
+    context.fillRect(0, 0, width, height);
+
+    context.save();
+    context.translate(width / 2 + (pose?.head || 0) * width * 0.02, height * 0.56 + (pose?.breath || 0));
+    context.scale(Math.min(width / 300, height / 360), Math.min(width / 300, height / 360));
+
+    context.fillStyle = shadeColor(avatar.accent, -24);
+    context.beginPath();
+    context.ellipse(0, 128, 138, 86, 0, Math.PI, 0, true);
+    context.lineTo(138, 210);
+    context.lineTo(-138, 210);
+    context.closePath();
+    context.fill();
+    context.fillStyle = avatar.accent;
+    context.beginPath();
+    context.moveTo(-26, 72);
+    context.quadraticCurveTo(0, 112, 26, 72);
+    context.lineTo(16, 168);
+    context.quadraticCurveTo(0, 146, -16, 168);
+    context.closePath();
+    context.fill();
+
+    context.fillStyle = shadeColor(avatar.skin, -16);
+    context.beginPath();
+    if (context.roundRect) context.roundRect(-20, 48, 40, 42, 12);
+    else context.rect(-20, 48, 40, 42);
+    context.fill();
+    drawHair(context, avatar);
+    context.fillStyle = avatar.skin;
+    context.beginPath();
+    context.ellipse(-62, -4, 11, 16, 0, 0, Math.PI * 2);
+    context.ellipse(62, -4, 11, 16, 0, 0, Math.PI * 2);
+    context.fill();
+    context.beginPath();
+    context.ellipse(0, -10, 66, 78, 0, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = avatar.hair;
+    context.beginPath();
+    context.ellipse(0, -52, 70, avatar.style === "crop" ? 34 : 46, 0, Math.PI, Math.PI * 2);
+    context.fill();
+
+    context.strokeStyle = shadeColor(avatar.hair, 20);
+    context.lineWidth = 3.2;
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(-36, -30);
+    context.quadraticCurveTo(-22, -38, -10, -30);
+    context.moveTo(10, -30);
+    context.quadraticCurveTo(22, -38, 36, -30);
+    context.stroke();
+    drawEye(context, -20, -6, blink);
+    drawEye(context, 20, -6, blink);
+    context.strokeStyle = shadeColor(avatar.skin, -35);
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(2, -2);
+    context.quadraticCurveTo(8, 12, 1, 16);
+    context.stroke();
+    context.fillStyle = "#7a3038";
+    context.beginPath();
+    context.ellipse(0, 34, 16, 3.2 + mouth * 9, 0, 0, Math.PI * 2);
+    context.fill();
+    if (mouth > 0.2) {
+        context.fillStyle = "#3c1519";
+        context.beginPath();
+        context.ellipse(0, 36, 9, mouth * 7, 0, 0, Math.PI * 2);
+        context.fill();
+    }
+    context.restore();
+}
+
+function drawWave(canvas, level, time) {
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const width = canvas.width;
+    const height = canvas.height;
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#10151d";
+    context.fillRect(0, 0, width, height);
+    const bars = 28;
+    for (let index = 0; index < bars; index += 1) {
+        const wave = Math.abs(Math.sin(time / 180 + index * 0.45));
+        const bar = Math.max(4, (0.15 + level) * wave * (height - 12));
+        context.fillStyle = index % 4 === 0 ? "#f5a65b" : "#7eb6ff";
+        context.fillRect(8 + index * ((width - 16) / bars), (height - bar) / 2, 6, bar);
+    }
+}

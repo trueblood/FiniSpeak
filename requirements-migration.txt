@@ -1,0 +1,4 @@
+-r requirements.txt
+# Offline Firestore/Storage import and rollback tooling only. The running app
+# does not import or require Firebase Admin when all repositories use MySQL.
+firebase-admin>=6.5,<8.0
