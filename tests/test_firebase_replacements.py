@@ -23,7 +23,7 @@ from models.sql_models import (
 from repositories.provider import EXTENSION_KEY
 from repositories.mysql import MySqlCallRepository
 from services.file_storage_service import file_path
-from services.signaling_service import _load_current_call as load_current_signaling_call, _store_event, _validate_join
+from services.signaling_service import HEARTBEAT_SECONDS as SIGNALING_HEARTBEAT_SECONDS, _load_current_call as load_current_signaling_call, _store_event, _validate_join
 from scripts.migrate_firebase_storage import migrate
 from scripts.check_account_activation_readiness import readiness_report
 from scripts.finalize_test_deployment import update_environment
@@ -44,6 +44,9 @@ TABLES = (
 
 
 class FirebaseReplacementTests(unittest.TestCase):
+    def test_signaling_heartbeat_stays_below_the_proxy_idle_timeout(self):
+        self.assertLess(SIGNALING_HEARTBEAT_SECONDS, 75)
+
     def setUp(self):
         self.storage = tempfile.TemporaryDirectory()
         self.app = create_app()

@@ -1,5 +1,5 @@
 import { createCallExperience } from "./call-experience.js?v=20261018-layout";
-import { createCameraRelay } from "./camera-relay.js?v=20261018-relay";
+import { createCameraRelay } from "./camera-relay.js?v=20261018-membership-refresh";
 import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 
 const $ = (id) => document.getElementById(id);
@@ -16,6 +16,7 @@ let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = 
 let cameraRelay = null, cameraRelayOpen = false, cameraRestart = null, lastCameraRestart = 0;
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
+let callMembershipKey = "";
 let rtcConfiguration = normalizeIceConfiguration(null);
 let transcriptionSocket = null, transcriptionAudioContext = null, transcriptionSource = null, transcriptionNode = null, transcriptionGain = null, transcriptionCaptureRate = 16000, currentCallRole = null;
 let selectedProcessingMode = "streaming", processingModesEnabled = false, transcriptionGeneration = Date.now();
@@ -2360,6 +2361,12 @@ function watchCall(callId) {
         }
         const ids = new Set();
         rosterParticipants = peopleInCall(call, participantRows);
+        const nextMembershipKey = rosterParticipants.map(person => person?.id).filter(Boolean).sort().join("|");
+        if (callMembershipKey && nextMembershipKey !== callMembershipKey) {
+            connectSignaling(callId);
+            cameraRelay?.reconnect?.();
+        }
+        callMembershipKey = nextMembershipKey;
         for (const participant of rosterParticipants) {
             if (!participant?.id || participant.id === currentUser.uid) continue;
             ids.add(participant.id);
@@ -2398,13 +2405,9 @@ function peerSnapshot(pc) {
 
 function peopleInCall(call, participants) {
     const people = new Map();
-    const left = new Set();
     for (const participant of participants || []) {
         if (!participant?.id) continue;
-        if (participant.leftAt) {
-            left.add(participant.id);
-            continue;
-        }
+        if (participant.leftAt) continue;
         people.set(participant.id, participant);
     }
     const roles = [
@@ -2414,11 +2417,11 @@ function peopleInCall(call, participants) {
     ];
     for (const [idKey, nameKey, role] of roles) {
         const id = call?.[idKey];
-        if (!id || left.has(id) || people.has(id)) continue;
+        if (!id || people.has(id)) continue;
         people.set(id, { id, displayName: call[nameKey] || "Guest", role });
     }
     for (const id of call?.guestIds || []) {
-        if (id && !left.has(id) && !people.has(id)) people.set(id, { id, displayName: "Guest", role: "guest" });
+        if (id && !people.has(id)) people.set(id, { id, displayName: "Guest", role: "guest" });
     }
     return [...people.values()];
 }
@@ -3494,7 +3497,7 @@ function cleanupCall(stopMedia = true) {
         for (const uid of peerConnections.keys()) try { sendSignal("hangup", uid, {}); } catch (_) { /* best effort */ }
     }
     if (signalingSocket) { signalingSocket.onclose = null; signalingSocket.close(); signalingSocket = null; }
-    signalingReady = null; signalingCursor = 0; pendingSignals.clear(); pendingIceCandidates.clear(); peerJobs.clear();
+    signalingReady = null; signalingCursor = 0; callMembershipKey = ""; pendingSignals.clear(); pendingIceCandidates.clear(); peerJobs.clear();
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
     peerProfiles.clear();
     peerDebug.clear();

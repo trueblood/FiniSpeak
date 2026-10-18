@@ -22,6 +22,7 @@ from repositories.provider import get_repository
 MAX_FRAME_BYTES = 120_000
 FRAME_TTL_SECONDS = 2.5
 MIN_FRAME_INTERVAL = 0.07
+HEARTBEAT_SECONDS = 20
 
 
 def pack_frame(uid, jpeg):
@@ -137,6 +138,7 @@ def handle_camera_socket(ws, hub=None, authenticate=None, load_call=None):
         _send(ws, {"type": "ready", "callId": call_id})
         cursors = {}
         last_check = time.monotonic()
+        last_heartbeat = time.monotonic()
         while getattr(ws, "connected", True):
             incoming = ws.receive(timeout=0.08)
             if isinstance(incoming, (bytes, bytearray)):
@@ -150,6 +152,9 @@ def handle_camera_socket(ws, hub=None, authenticate=None, load_call=None):
                     break
                 last_check = time.monotonic()
             _fanout(ws, hub, call_id, identity["uid"], participant_ids(call), cursors)
+            if time.monotonic() - last_heartbeat >= HEARTBEAT_SECONDS:
+                _send(ws, {"type": "ping"})
+                last_heartbeat = time.monotonic()
             if incoming is None and not getattr(ws, "connected", True):
                 break
     except Exception as exc:

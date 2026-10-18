@@ -100,8 +100,19 @@ export function createCameraRelay({ callId, url, getSource, onFrame, onState, on
         try { current?.close(); } catch (_) {}
     }
 
+    function reconnectNow() {
+        if (closed) return;
+        window.clearTimeout(reconnect);
+        reconnect = 0;
+        setOpen(false);
+        const current = socket;
+        socket = null;
+        try { current?.close(); } catch (_) {}
+        connect();
+    }
+
     connect();
     timer = window.setInterval(tick, 125);
     if (closed) window.clearInterval(timer);
-    return { stop };
+    return { stop, reconnect: reconnectNow };
 }

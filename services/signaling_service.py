@@ -1,6 +1,7 @@
 """Authenticated MySQL-backed WebRTC signaling shared across workers."""
 
 import json
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +17,7 @@ from services.call_access import participant_ids
 
 
 ALLOWED_EVENTS = {"offer", "answer", "ice", "hangup", "reconnect"}
+HEARTBEAT_SECONDS = 20
 
 
 def _now(): return datetime.now(timezone.utc)
@@ -87,6 +89,7 @@ def handle_signaling_socket(ws):
         db.session.commit()
         _send(ws, {"type": "ready", "callId": call_id, "cursor": cursor})
         last_call_check = now
+        last_heartbeat = time.monotonic()
         while getattr(ws, "connected", True):
             message = ws.receive(timeout=.35)
             if isinstance(message, str):
@@ -111,6 +114,9 @@ def handle_signaling_socket(ws):
                 cursor = max(cursor, row.id)
                 _send(ws, {"type": row.event_type, "from": row.sender_id, "to": row.recipient_id,
                     "payload": row.payload, "eventId": row.id, "clientEventId": row.client_event_id})
+            if time.monotonic() - last_heartbeat >= HEARTBEAT_SECONDS:
+                _send(ws, {"type": "ping"})
+                last_heartbeat = time.monotonic()
             if (_now() - last_call_check).total_seconds() >= 10:
                 call = _load_current_call(call_id)
                 if not call or call.get("status") in {"ended", "declined", "cancelled"}:
