@@ -221,6 +221,7 @@ export function createCallExperience(deps) {
         state.joinedAt = Date.now();
         startLoop();
         state.call = call;
+        setTranscriptCollapsed(true);
         const name = deps.getProfile()?.displayName || "You";
         deps.$("localParticipantName").textContent = name;
         deps.$("localVideoName").textContent = name;
@@ -1399,7 +1400,7 @@ export function createCallExperience(deps) {
         window.clearTimeout(state.notesTimer);
         if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
         deps.$("videoFilmstrip").hidden = true;
-        setTranscriptCollapsed(false);
+        setTranscriptCollapsed(true);
     }
 
     return {

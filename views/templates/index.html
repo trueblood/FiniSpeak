@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-layout">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-camera-first">
 </head>
 <body>
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -405,7 +405,7 @@
 
     <section id="callView" class="call-view hidden">
         <video id="localCapture" class="local-capture" autoplay muted playsinline webkit-playsinline aria-hidden="true"></video>
-        <div id="callShell" class="call-shell subs-both" data-pane="video">
+        <div id="callShell" class="call-shell subs-both is-transcript-collapsed" data-pane="video">
             <div class="call-frame">
                 <section id="smartInterpreter" class="smart-interpreter" aria-label="Smart Interpreter">
                     <div class="smart-interpreter-copy">
@@ -451,7 +451,7 @@
                         <section class="transcript-card" aria-live="polite">
                             <div class="transcript-header">
                                 <div><span class="eyebrow">Live transcript</span><h3>Conversation</h3></div>
-                                <button id="collapseTranscript" class="secondary" type="button" aria-expanded="true" title="Collapse transcript panel">Collapse</button>
+                                <button id="collapseTranscript" class="secondary" type="button" aria-expanded="false" title="Collapse transcript panel">Close</button>
                             </div>
                             <div id="transcriptList" class="transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live call transcript"><p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p></div>
                             <p id="partialTranscript" class="partial-transcript hidden" role="status" aria-live="polite"></p>
@@ -535,20 +535,27 @@
                 <div id="callControls" class="call-controls floating-controls" role="toolbar" aria-label="Call controls">
                     <button id="toggleCallControls" class="secondary" type="button" aria-expanded="true" aria-controls="callControls" title="Hide call controls" aria-label="Hide call controls"><span class="tool-label">Hide</span></button>
                     <div class="call-control-tools">
-                    <button id="muteButton" class="secondary" type="button" aria-pressed="false" title="Mute microphone" aria-label="Mute microphone"><span class="tool-label">Mute</span></button>
-                    <button id="cameraButton" class="secondary" type="button" aria-pressed="false" title="Turn camera off" aria-label="Turn camera off"><span class="tool-label">Camera</span></button>
-                    <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
-                    <button id="inviteParticipantButton" class="secondary" type="button" title="Invite participant" aria-label="Invite participant">Invite</button>
-                    <button id="requestTranslatorButton" class="secondary" type="button" title="Request a translator" aria-label="Request Translator">Request Translator</button>
-                    <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
-                    <button id="notesButton" class="secondary" type="button" aria-pressed="false" title="Open call notes" aria-label="Open call notes">Notes</button>
-                    <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
-                    <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
-                    <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
+                        <div class="call-control-primary">
+                            <button id="muteButton" class="secondary" type="button" aria-pressed="false" title="Mute microphone" aria-label="Mute microphone"><span class="tool-label">Mute</span></button>
+                            <button id="cameraButton" class="secondary" type="button" aria-pressed="false" title="Turn camera off" aria-label="Turn camera off"><span class="tool-label">Camera</span></button>
+                            <button id="inviteParticipantButton" class="secondary" type="button" title="Invite participant" aria-label="Invite participant">Invite</button>
+                            <button id="requestTranslatorButton" class="secondary" type="button" title="Request a translator" aria-label="Request Translator">Translator</button>
+                        </div>
+                        <details class="call-control-more">
+                            <summary>More</summary>
+                            <div class="call-control-more-menu">
+                                <button id="avatarButton" class="secondary" type="button" title="Switch between camera and avatar" aria-label="Switch between camera and avatar">Avatar</button>
+                                <button id="documentsButton" class="secondary" type="button" aria-pressed="false" title="Open collaborative documents" aria-label="Open collaborative documents">Documents</button>
+                                <button id="notesButton" class="secondary" type="button" aria-pressed="false" title="Open call notes" aria-label="Open call notes">Notes</button>
+                                <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
+                                <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
+                                <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
+                            </div>
+                        </details>
                     </div>
                     <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>
                 </div>
-                <button id="expandTranscript" class="secondary expand-transcript" type="button" hidden>Show transcript</button>
+                <button id="expandTranscript" class="secondary expand-transcript" type="button">Transcript</button>
                 <nav class="call-mobile-switch" aria-label="Call sections">
                     <button type="button" data-call-pane="video" aria-pressed="true">Video</button>
                     <button type="button" data-call-pane="interpreter" aria-pressed="false">Interpreter</button>
@@ -752,6 +759,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-membership-refresh"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-camera-first"></script>
 </body>
 </html>
