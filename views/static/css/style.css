@@ -62,7 +62,7 @@ input,select { width:100%; padding:13px 14px; border:1px solid #cbd5e1; border-r
 .partial-transcript { margin:8px 0; padding:10px 12px; border-left:3px solid #60a5fa; background:#eff6ff; color:#334155; font-style:italic; }
 .centered { text-align:center; }
 code { background:#e2e8f0; padding:3px 6px; border-radius:6px; }
-@media (max-width:800px) { .dashboard-grid,.video-grid { grid-template-columns:1fr; } .call-topbar { align-items:flex-start; flex-direction:column; } .site-header { padding:0 4%; } .panel,.call-view { padding:36px 4%; } .phone-input-group { grid-template-columns:112px minmax(0,1fr); } }
+@media (max-width:800px) { .dashboard-grid,body:not(.in-call) .video-grid { grid-template-columns:1fr; } .call-topbar { align-items:flex-start; flex-direction:column; } .site-header { padding:0 4%; } .panel,.call-view { padding:36px 4%; } .phone-input-group { grid-template-columns:112px minmax(0,1fr); } }
 
 /* Public landing page */
 .landing-view { overflow:hidden; }

@@ -56,8 +56,9 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="cameraButton" class="secondary" type="button" aria-pressed="false"', self.html)
 
     def test_call_stage_keeps_interpreter_and_participant_grid(self):
-        self.assertNotIn('id="smartInterpreter"', self.html)
-        self.assertNotIn("Smart Interpreter", self.html)
+        self.assertLess(self.html.index('id="smartInterpreter"'), self.html.index('class="call-nav"'))
+        self.assertIn('id="smartInterpreterWave"', self.html)
+        self.assertIn("Smart Interpreter", self.html)
         self.assertIn('id="participantGrid" class="participant-grid" hidden', self.html)
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
         script = (Path(__file__).parents[1] / "views/static/js/call-experience.js").read_text()
@@ -76,7 +77,8 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="toggleCallControls"', self.html)
         self.assertIn('id="callControls" class="call-controls floating-controls"', self.html)
         self.assertIn("is-mobile-pair", layout)
-        self.assertIn("is-zoom-speaker", layout)
+        self.assertIn("gridTemplateColumns", layout)
+        self.assertNotIn("is-zoom-speaker", layout)
         self.assertIn("is-controls-collapsed", styles)
         self.assertIn(".is-mobile-pair", styles)
         self.assertIn('id="callRoster"', self.html)

@@ -207,12 +207,19 @@ export function createCallExperience(deps) {
             syncControlsForViewport();
             layout();
         });
+        const videoGrid = deps.$("videoGrid");
+        if (videoGrid && window.ResizeObserver) {
+            const observer = new ResizeObserver(() => layout());
+            observer.observe(videoGrid);
+            state.gridObserver = observer;
+        }
         refreshInterpreterLanguages();
         startLoop();
     }
 
     function onJoined(call) {
         state.joinedAt = Date.now();
+        startLoop();
         state.call = call;
         const name = deps.getProfile()?.displayName || "You";
         deps.$("localParticipantName").textContent = name;
@@ -740,28 +747,54 @@ export function createCallExperience(deps) {
     }
 
     function cameraGridShape(count, width, height) {
-        if (count <= 1 || width <= 0 || height <= 0) return { columns: 1, rows: Math.max(1, count) };
+        if (count <= 1) return { columns: 1, rows: 1 };
+        const wide = width >= 720;
+        const usableHeight = height >= 80 ? height : (wide ? Math.max(280, width * 0.46) : Math.max(220, width * 0.9));
+        const minWidth = wide ? 160 : 108;
+        const minHeight = wide ? 120 : 88;
+        const maxColumns = wide ? Math.min(count, 3) : Math.min(count, 2);
         let best = null;
-        for (let columns = 1; columns <= count; columns += 1) {
+        for (let columns = 1; columns <= maxColumns; columns += 1) {
             const rows = Math.ceil(count / columns);
-            const tileWidth = (width - 10 * (columns - 1)) / columns;
-            const tileHeight = (height - 10 * (rows - 1)) / rows;
-            if (tileWidth < 140 || tileHeight < 120) continue;
+            const tileWidth = (Math.max(width, 1) - 10 * (columns - 1)) / columns;
+            const tileHeight = (usableHeight - 10 * (rows - 1)) / rows;
+            if (tileWidth < minWidth || tileHeight < minHeight) continue;
             const aspect = tileWidth / tileHeight;
-            const target = width >= height ? 3 / 4 : 4 / 3;
+            const target = wide ? 16 / 10 : 4 / 5;
             const empty = columns * rows - count;
-            const score = Math.abs(Math.log(aspect / target)) + empty * 0.9;
+            const stackedPenalty = columns === 1 && count > 1 ? 1.6 : 0;
+            const score = Math.abs(Math.log(aspect / target)) + empty * 0.35 + stackedPenalty;
             if (!best || score < best.score) best = { columns, rows, score };
         }
         if (best) return best;
-        const columns = width >= height ? Math.min(3, count) : 1;
+        const columns = wide ? Math.min(3, count) : Math.min(2, count);
         return { columns, rows: Math.ceil(count / columns) };
+    }
+
+    function applyCameraGrid(stage, cards, columns, rows) {
+        stage.style.setProperty("--camera-columns", String(columns));
+        stage.style.setProperty("--camera-rows", String(rows));
+        // Inline templates keep Safari from dropping repeat(var(...)).
+        stage.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
+        stage.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+        cards.forEach((card, index) => {
+            const column = (index % columns) + 1;
+            const row = Math.floor(index / columns) + 1;
+            const lastAlone = index === cards.length - 1 && cards.length % columns !== 0;
+            card.style.gridColumn = lastAlone ? "1 / -1" : String(column);
+            card.style.gridRow = String(row);
+        });
     }
 
     function layout() {
         const cards = [...document.querySelectorAll("#callView .video-card")];
         const stage = deps.$("videoGrid");
         if (!stage || !cards.length) return;
+        const frame = stage.getBoundingClientRect();
+        const signature = `${cards.length}:${Math.round(frame.width)}:${Math.round(frame.height)}:${callLayoutIsMobile()}`;
+        const parked = cards.some(card => card.parentElement !== stage);
+        if (!parked && state.layoutSignature === signature) return;
+        state.layoutSignature = signature;
         for (const card of cards) {
             card.classList.add("is-stage");
             card.classList.remove("is-self-pip", "is-main", "is-thumb", "is-pair-remote", "is-pair-self");
@@ -770,10 +803,10 @@ export function createCallExperience(deps) {
             // Moving a live video element restarts it and flashes the camera.
             if (card.parentElement !== stage) stage.appendChild(card);
         }
-        stage.classList.remove("is-zoom-pip", "is-zoom-speaker", "is-mobile-pair");
+        stage.classList.remove("is-zoom-pip", "is-mobile-pair");
         const mobile = callLayoutIsMobile();
-        let counted = cards;
-        if (mobile && cards.length === 2) {
+        const counted = cards;
+        if (mobile && counted.length === 2 && frame.height >= frame.width) {
             const local = cards.find(card => card.dataset.role === "local") || cards[0];
             const remote = cards.find(card => card !== local);
             stage.classList.add("is-mobile-pair");
@@ -781,45 +814,16 @@ export function createCallExperience(deps) {
             local.classList.add("is-pair-self");
             stage.style.setProperty("--camera-columns", "1");
             stage.style.setProperty("--camera-rows", "2");
+            stage.style.gridTemplateColumns = "minmax(0, 1fr)";
+            stage.style.gridTemplateRows = "repeat(2, minmax(0, 1fr))";
             remote.style.gridColumn = "1";
             remote.style.gridRow = "1";
             local.style.gridColumn = "1";
             local.style.gridRow = "2";
-            stage.dataset.count = "2";
-            if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
-            if (deps.$("videoFilmstrip")) deps.$("videoFilmstrip").hidden = true;
-            if (deps.$("participantCount")) deps.$("participantCount").textContent = "2";
-            return;
-        } else if (mobile && cards.length > 2) {
-            const speaker = cards.find(card => card.classList.contains("is-speaking") && card.dataset.role !== "local")
-                || cards.find(card => card.dataset.role !== "local")
-                || cards[0];
-            stage.classList.add("is-zoom-speaker");
-            let thumbs = 0;
-            for (const card of cards) {
-                if (card === speaker) card.classList.add("is-main");
-                else {
-                    card.classList.add("is-thumb");
-                    thumbs += 1;
-                }
-            }
-            stage.style.setProperty("--thumb-count", String(Math.max(1, thumbs)));
-            stage.style.setProperty("--camera-columns", "1");
-            stage.style.setProperty("--camera-rows", "1");
-            stage.dataset.count = String(cards.length);
-            if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
-            if (deps.$("videoFilmstrip")) deps.$("videoFilmstrip").hidden = true;
-            if (deps.$("participantCount")) deps.$("participantCount").textContent = String(cards.length);
-            return;
+        } else {
+            const shape = cameraGridShape(counted.length, frame.width, frame.height);
+            applyCameraGrid(stage, counted, shape.columns, shape.rows);
         }
-        const frame = stage.getBoundingClientRect();
-        const shape = cameraGridShape(counted.length, frame.width, frame.height);
-        stage.style.setProperty("--camera-columns", String(shape.columns));
-        stage.style.setProperty("--camera-rows", String(shape.rows));
-        counted.forEach((card, index) => {
-            card.style.gridColumn = String((index % shape.columns) + 1);
-            card.style.gridRow = String(Math.floor(index / shape.columns) + 1);
-        });
         stage.dataset.count = String(cards.length);
         if (deps.$("participantGrid")) deps.$("participantGrid").hidden = true;
         if (deps.$("videoFilmstrip")) deps.$("videoFilmstrip").hidden = true;
@@ -1274,6 +1278,69 @@ export function createCallExperience(deps) {
         }
     }
 
+    const waveShape = [0.05, 0.08, 0.16, 0.07, 0.22, 0.1, 0.18, 0.42, 0.12, 0.28, 0.62, 0.2, 0.08, 0.16, 0.34, 0.72, 1, 0.78, 0.36, 0.14, 0.06];
+
+    function waveEnvelope(progress) {
+        const t = Math.min(1, Math.max(0, progress)) * (waveShape.length - 1);
+        const index = Math.floor(t);
+        const next = Math.min(waveShape.length - 1, index + 1);
+        const mix = t - index;
+        return waveShape[index] * (1 - mix) + waveShape[next] * mix;
+    }
+
+    function drawSmartWave(canvas, level, time, speaking, reducedMotion) {
+        if (!canvas || canvas.tagName !== "CANVAS") return;
+        const width = Math.max(1, canvas.clientWidth);
+        const height = Math.max(1, canvas.clientHeight);
+        const dpr = window.devicePixelRatio || 1;
+        const pixelWidth = Math.round(width * dpr);
+        const pixelHeight = Math.round(height * dpr);
+        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+            canvas.width = pixelWidth;
+            canvas.height = pixelHeight;
+        }
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        const background = ctx.createLinearGradient(0, 0, width, height);
+        background.addColorStop(0, "#ddd0ff");
+        background.addColorStop(0.55, "#c4b0fb");
+        background.addColorStop(1, "#a78bfa");
+        ctx.fillStyle = background;
+        ctx.beginPath();
+        ctx.roundRect?.(0, 0, width, height, 14);
+        if (!ctx.roundRect) ctx.rect(0, 0, width, height);
+        ctx.fill();
+        const energy = speaking ? 0.85 + Math.min(1, level * 6) * 0.7 : 0.95;
+        const drift = reducedMotion ? 0 : time / 900;
+        const mid = height * 0.52;
+        const steps = 96;
+        const upper = [];
+        const lower = [];
+        for (let index = 0; index <= steps; index += 1) {
+            const progress = index / steps;
+            const wobble = reducedMotion ? 0 : Math.sin(drift + progress * 18) * 0.05 * (speaking ? 1 : 0.35);
+            const amplitude = (waveEnvelope(progress) + wobble) * energy * height * 0.42;
+            upper.push([progress * width, mid - amplitude]);
+            lower.push([progress * width, mid + amplitude * 0.92]);
+        }
+        ctx.beginPath();
+        upper.forEach(([x, y], index) => index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+        for (let index = lower.length - 1; index >= 0; index -= 1) ctx.lineTo(lower[index][0], lower[index][1]);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.shadowColor = "rgba(255,255,255,0.7)";
+        ctx.shadowBlur = 16;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        upper.forEach(([x, y], index) => index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+    }
+
     function startLoop() {
         cancelAnimationFrame(state.raf);
         const samples = new Uint8Array(128);
@@ -1293,13 +1360,7 @@ export function createCallExperience(deps) {
                 state.speaking = speakingNow;
                 document.querySelector('.video-card[data-role="local"]')?.classList.toggle("is-speaking", state.speaking);
             }
-            const bars = deps.$("smartInterpreterWave")?.children || [];
-            for (let index = 0; index < bars.length; index += 1) {
-                const idle = state.reducedMotion ? 0.35 : 0.18 + Math.abs(Math.sin(time / 170 + index * 0.85)) * 0.82;
-                const live = state.speaking ? Math.min(1, state.level * 5) : 0;
-                const amount = state.speaking ? Math.max(0.2, live * (0.35 + ((index * 17) % 10) / 14)) : idle;
-                bars[index].style.height = `${Math.round(6 + amount * 28)}px`;
-            }
+            drawSmartWave(deps.$("smartInterpreterWave"), state.level, time, state.speaking, state.reducedMotion);
             const pose = {
                 mouth: state.speaking ? Math.min(1, state.level * 2.4) : 0.08,
                 blink: state.reducedMotion ? 1 : (Math.sin(time / 1800) > 0.97 ? 0.1 : 1),
@@ -1314,6 +1375,9 @@ export function createCallExperience(deps) {
 
     function cleanup() {
         cancelAnimationFrame(state.raf);
+        state.gridObserver?.disconnect();
+        state.gridObserver = null;
+        state.layoutSignature = "";
         window.speechSynthesis?.cancel();
         stopScreenShare(false);
         state.avatarTrack?.stop();
