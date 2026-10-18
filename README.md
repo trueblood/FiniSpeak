@@ -38,7 +38,7 @@ python -m unittest discover -s tests
 - Browser camera/microphone access
 - Three-person WebRTC mesh signaling through the authenticated Flask signaling service
 - Mute, camera, request translator, copy Call ID, and end-call controls
-- STUN configured for development; TURN is intentionally deferred
+- STUN for development plus self-hosted TURN support for reliable production calls
 - Private DigitalOcean-hosted storage for interpreter profile photos
 - Interpreter onboarding with draft, profile-complete, submitted, changes-requested, rejected, and verified states
 - Private credential evidence uploads with interpreter view/remove controls and administrator review
@@ -119,7 +119,7 @@ The `deployment-ready` branch includes the current web MVP plus the production c
 - Administrators can create and update organization records, alongside account, interpreter, session, and review oversight.
 - `/api/openapi.json`, security response headers, Firestore indexes, and a deployment regression-test gate are included.
 
-Before enabling production traffic, complete the Firebase Emulator/rules acceptance pass, browser acceptance testing with three real accounts, transcript consent/retention review, and the DigitalOcean networking/TURN work when that infrastructure is available. Billing, push notifications, abuse controls, and native mobile incoming-call behavior remain intentionally outside this branch's infrastructure scope.
+Before enabling production traffic, complete browser acceptance testing with three real accounts, transcript consent/retention review, and the DigitalOcean networking/TURN work described in [`docs/SELF_HOSTED_TURN.md`](docs/SELF_HOSTED_TURN.md). Billing, push notifications, abuse controls, and native mobile incoming-call behavior remain intentionally outside this branch's infrastructure scope.
 
 For Google Cloud Run, build and deploy the existing container, then publish Firestore rules and indexes:
 

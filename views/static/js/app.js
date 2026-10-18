@@ -1,6 +1,6 @@
 import { createCallExperience } from "./call-experience.js?v=20261018-relay";
 import { createCameraRelay } from "./camera-relay.js?v=20261018-relay";
-import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-relay";
+import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 
 const $ = (id) => document.getElementById(id);
 let callExperience;
@@ -2423,7 +2423,8 @@ async function refreshRtcConfiguration() {
 }
 
 function relayNote(pc) {
-    if (rtcConfiguration.relay) return "";
+    if (pc?._forceRelay) return "turn relay";
+    if (rtcConfiguration.relay) return "turn ready";
     if (pc?.iceConnectionState === "failed") return "relay required";
     return "stun only";
 }
@@ -2532,17 +2533,24 @@ function peerSender(remoteUid) {
     };
 }
 
-function openPeer(remoteUid, profile, offerer) {
+function openPeer(remoteUid, profile, offerer, { forceRelay = false } = {}) {
     const send = peerSender(remoteUid);
-    const pc = new RTCPeerConnection({ iceServers: rtcConfiguration.iceServers, bundlePolicy: "max-bundle" });
+    const pc = new RTCPeerConnection({
+        iceServers: rtcConfiguration.iceServers,
+        iceTransportPolicy: forceRelay ? "relay" : "all",
+        bundlePolicy: "max-bundle"
+    });
     pc._iceKey = iceKey();
     pc._offerer = offerer;
+    pc._forceRelay = forceRelay;
     pc._suppressOffer = true;
     pc._waitStarted = Date.now();
     peerConnections.set(remoteUid, pc);
     peerProfiles.set(remoteUid, profile || null);
     const publishState = () => {
         const failed = pc.connectionState === "failed" || pc.iceConnectionState === "failed";
+        if (pc.iceConnectionState === "disconnected") pc._disconnectedAt ||= Date.now();
+        else pc._disconnectedAt = 0;
         recordPeer(remoteUid, {
             error: failed ? (peerDebug.get(remoteUid)?.error || "") : "",
             note: relayNote(pc),
@@ -2605,11 +2613,19 @@ async function ensurePeer(callId, remoteUid, profile) {
     peerProfiles.set(remoteUid, profile || null);
     const offerer = isOfferer(currentUser.uid, remoteUid);
     let existing = peerConnections.get(remoteUid);
+    const relayTimedOut = shouldForceRelay({
+        relayAvailable: rtcConfiguration.relay,
+        forceRelay: Boolean(existing?._forceRelay),
+        connected: peerIsConnected(existing),
+        waitedMs: existing ? Date.now() - (existing._waitStarted || Date.now()) : 0,
+        disconnectedMs: existing?._disconnectedAt ? Date.now() - existing._disconnectedAt : 0
+    });
     const stale = existing && (existing.connectionState === "failed" || existing.connectionState === "closed" || existing.signalingState === "closed" || existing.iceConnectionState === "failed");
     const wrongNetwork = existing && existing._iceKey !== iceKey() && existing.connectionState !== "connected";
     const offerStuck = existing && existing.signalingState === "have-local-offer" && existing.iceConnectionState === "new" && existing._offerStarted && Date.now() - existing._offerStarted > 8000;
     const makingStuck = existing && existing._makingOffer && existing.signalingState === "stable" && !existing.currentRemoteDescription && Date.now() - (existing._waitStarted || 0) > 8000;
-    if (stale || wrongNetwork || offerStuck || makingStuck) {
+    const replaceWithRelay = Boolean(existing?._forceRelay || (rtcConfiguration.relay && existing && (stale || offerStuck || makingStuck || relayTimedOut)));
+    if (stale || wrongNetwork || offerStuck || makingStuck || relayTimedOut) {
         existing.close();
         peerConnections.delete(remoteUid);
         existing = null;
@@ -2640,7 +2656,7 @@ async function ensurePeer(callId, remoteUid, profile) {
     }
     if (!localStream) throw new Error("Local camera is not ready.");
     const queued = pendingSignals.get(remoteUid) || [];
-    const pc = openPeer(remoteUid, profile, offerer);
+    const pc = openPeer(remoteUid, profile, offerer, { forceRelay: replaceWithRelay });
     await attachLocalTracks(pc);
     for (const message of queued) await applySignal(message);
     pendingSignals.delete(remoteUid);
@@ -2716,10 +2732,11 @@ async function applySignal(message) {
                 return;
             }
             message.restarted = true;
+            const forceRelay = Boolean(pc._forceRelay);
             pc.close();
             peerConnections.delete(message.from);
             if (!localStream) throw new Error("Local camera is not ready.");
-            const restarted = openPeer(message.from, peerProfiles.get(message.from), false);
+            const restarted = openPeer(message.from, peerProfiles.get(message.from), false, { forceRelay });
             await attachLocalTracks(restarted);
             await applySignal(message);
             if (peerConnections.get(message.from) === restarted) restarted._suppressOffer = false;

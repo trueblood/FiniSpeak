@@ -44,6 +44,14 @@ export function shouldSendOffer({ offerer = false, signalingState = "", hasRemot
     return "wait";
 }
 
+export function shouldForceRelay({ relayAvailable = false, forceRelay = false, connected = false, waitedMs = 0, disconnectedMs = 0 } = {}) {
+    if (!relayAvailable || forceRelay || connected) return false;
+    // Some mobile and corporate networks leave ICE in "new", "checking", or
+    // "disconnected" indefinitely instead of reporting a clean failure. Give
+    // the direct path a short chance, then rebuild with TURN-only candidates.
+    return waitedMs >= 10000 || disconnectedMs >= 5000;
+}
+
 function enqueue(pc, task) {
     const previous = pc._signalQueue || Promise.resolve();
     const next = previous.then(task, task);

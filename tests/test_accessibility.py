@@ -98,7 +98,7 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("function offerResponse", mesh)
         negotiated = subprocess.run(
             ["node", "--input-type=module", "-e", """
-                import { isOfferer, offerResponse, shouldSendOffer } from './views/static/js/webrtc-mesh.js';
+                import { isOfferer, offerResponse, shouldForceRelay, shouldSendOffer } from './views/static/js/webrtc-mesh.js';
                 if (!isOfferer('a', 'b') || isOfferer('b', 'a')) throw new Error('offerer');
                 if (offerResponse('have-local-offer', { offerer: true }) !== 'ignore') throw new Error('offerer waits');
                 if (offerResponse('have-local-offer', { offerer: false }) !== 'rollback') throw new Error('answerer yields');
@@ -111,6 +111,11 @@ class AccessibilityRegressionTests(unittest.TestCase):
                 if (shouldSendOffer({ offerer: false, signalingState: 'have-local-offer' }) !== 'wait') throw new Error('answerer does not glare');
                 if (shouldSendOffer({ offerer: true, signalingState: 'stable', hasRemote: true }) !== 'wait') throw new Error('settled waits');
                 if (shouldSendOffer({ offerer: true, signalingState: 'stable', connected: true }) !== 'wait') throw new Error('connected waits');
+                if (!shouldForceRelay({ relayAvailable: true, waitedMs: 10000 })) throw new Error('stalled peer uses turn');
+                if (!shouldForceRelay({ relayAvailable: true, disconnectedMs: 5000 })) throw new Error('disconnected peer uses turn');
+                if (shouldForceRelay({ relayAvailable: false, waitedMs: 20000 })) throw new Error('turn must exist');
+                if (shouldForceRelay({ relayAvailable: true, forceRelay: true, waitedMs: 20000 })) throw new Error('relay retries stay bounded');
+                if (shouldForceRelay({ relayAvailable: true, connected: true, waitedMs: 20000 })) throw new Error('connected peer stays put');
             """],
             cwd=Path(__file__).parents[1],
             capture_output=True,
