@@ -62,6 +62,16 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn("separate from group classrooms", html)
         self.assertIn("only with the student's permission", html)
 
+    def test_interpreter_profile_offers_direct_chat_and_customer_call_flows(self):
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="profileChatTranslator"', html)
+        self.assertIn("Chat with translator", html)
+        self.assertIn('id="profileStartCall"', html)
+        self.assertIn("Start a call with another person", html)
+        script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        self.assertIn('purpose: "translator_chat"', script)
+        self.assertIn('$("profileChatTranslator").onclick = startDirectTranslatorChat', script)
+
     def test_phone_call_prototype_exposes_signup_profile_and_call_fields(self):
         response = self.client.get("/")
         html = response.get_data(as_text=True)
@@ -116,6 +126,34 @@ class MvcRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.get_json()["callId"], "call-123")
         create_call.assert_called_once()
+
+    @patch("controllers.calls_controller.identity_or_response")
+    @patch("controllers.calls_controller.CallModel.create")
+    @patch("controllers.calls_controller.AccountModel.get")
+    @patch("controllers.calls_controller.TranslatorModel.get")
+    def test_direct_translator_chat_resolves_verified_profile_account(self, get_translator, get_account, create_call, identity):
+        identity.return_value = ({"uid": "customer-a", "role": "customer"}, None)
+        get_translator.side_effect = [
+            {"id": "profile-9", "displayName": "Interpreter Nine"},
+            {"id": "profile-9", "uid": "translator-9", "displayName": "Interpreter Nine"},
+        ]
+        get_account.return_value = {
+            "uid": "translator-9", "role": "translator", "status": "active", "displayName": "Interpreter Nine"
+        }
+        create_call.return_value = {"id": "call-direct", "status": "ringing", "purpose": "translator_chat"}
+
+        response = self.client.post(
+            "/api/calls/",
+            json={"receiverId": "profile-9", "purpose": "translator_chat"},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["callId"], "call-direct")
+        get_account.assert_called_once_with("translator-9")
+        args, kwargs = create_call.call_args
+        self.assertEqual(args[1]["uid"], "translator-9")
+        self.assertEqual(kwargs["purpose"], "translator_chat")
+        self.assertIsNone(kwargs["translator"])
 
     @patch("controllers.translators_controller.TranslatorModel.all_public")
     def test_translator_controller_uses_model(self, all_public):
@@ -239,6 +277,8 @@ class MvcRouteTests(unittest.TestCase):
     @patch("controllers.calls_controller.identity_or_response")
     def test_pending_listener_shows_a_direct_invite_only_to_that_translator(self, identity, all_calls, _get_translator):
         calls = [
+            {"id": "direct-chat", "purpose": "translator_chat", "status": "ringing",
+             "receiverId": "translator-9", "callerName": "Grace"},
             {"id": "direct", "translationStatus": "requested", "status": "connected", "translatorId": None,
              "invitedTranslatorId": "translator-9", "callerName": "Ada"},
             {"id": "other-person", "translationStatus": "requested", "status": "connected", "translatorId": None,
@@ -249,7 +289,7 @@ class MvcRouteTests(unittest.TestCase):
         identity.return_value = ({"uid": "translator-9", "role": "translator"}, None)
         chosen = self.client.get("/api/calls/pending")
         self.assertEqual(chosen.status_code, 200)
-        self.assertEqual([call["id"] for call in chosen.get_json()["calls"]], ["direct"])
+        self.assertEqual([call["id"] for call in chosen.get_json()["calls"]], ["direct-chat", "direct"])
         identity.return_value = ({"uid": "translator-2", "role": "translator"}, None)
         other = self.client.get("/api/calls/pending")
         self.assertEqual([call["id"] for call in other.get_json()["calls"]], ["other-person"])

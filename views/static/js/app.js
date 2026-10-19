@@ -314,6 +314,7 @@ function bindUI() {
         openDashboardPanel("home");
         $("receiverEmail")?.focus();
     };
+    $("profileChatTranslator").onclick = startDirectTranslatorChat;
 }
 
 function openModal(id) {
@@ -2070,6 +2071,43 @@ async function createCall(e) {
     }
 }
 
+async function startDirectTranslatorChat() {
+    const profile = activeDirectoryProfile;
+    const button = $("profileChatTranslator");
+    const status = $("profileCallStatus");
+    if (!profile?.id) return;
+    if (!currentUser) {
+        selectInterpreterForCall(profile);
+        openAuth(false, "customer");
+        $("authStatus").textContent = "Log in, then open this interpreter's profile to start a direct chat.";
+        return;
+    }
+    const attemptId = `translator-chat-${Date.now().toString(36)}-${++callAttemptSequence}`;
+    const originalButtonText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Starting chat…";
+    status.textContent = `Calling ${profile.displayName || "the translator"}…`;
+    try {
+        requireMediaCapture();
+        const created = await apiFetch("/api/calls/", {
+            method: "POST",
+            headers: { "Idempotency-Key": attemptId },
+            body: JSON.stringify({
+                receiverId: profile.id,
+                purpose: "translator_chat",
+                processingMode: selectedProcessingMode
+            })
+        });
+        await joinCall(created.callId, attemptId);
+        if (activeCallId) status.textContent = "";
+    } catch (error) {
+        status.textContent = error.message || "Could not start the chat. Please try again.";
+    } finally {
+        button.disabled = false;
+        button.textContent = originalButtonText;
+    }
+}
+
 async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
     let stage = "call-document-read";
     callLog(attemptId, stage, { callId });
@@ -2080,6 +2118,7 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
         const role = currentProfile.role;
         const guest = Array.isArray(call.guestIds) && call.guestIds.includes(currentUser.uid);
         const allowedCustomer = [call.callerId, call.receiverId].includes(currentUser.uid) || guest;
+        const directTranslatorChat = call.purpose === "translator_chat";
         stage = "participant-validation";
         callLog(attemptId, stage, {
             callId,
@@ -2087,8 +2126,8 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
             allowedCustomer,
             translatorAssigned: Boolean(call.translatorId)
         });
-        if (role !== "translator" && !allowedCustomer) throw new Error("You are not a participant in this call.");
-        if (role === "translator" && !guest) {
+        if ((role !== "translator" || directTranslatorChat) && !allowedCustomer) throw new Error("You are not a participant in this call.");
+        if (role === "translator" && !guest && !directTranslatorChat) {
             if (call.translatorId && call.translatorId !== currentUser.uid) throw new Error("Another translator has already joined.");
             stage = "translator-connect-update";
             await apiFetch(`/api/calls/${encodeURIComponent(callId)}/translator-claim`, { method: "POST", body: "{}" });
@@ -2106,7 +2145,7 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
             audioTracks: localStream?.getAudioTracks().length || 0,
             videoTracks: localStream?.getVideoTracks().length || 0
         });
-        currentCallRole = role === "translator" && !guest ? "translator" : (currentUser.uid === call.callerId ? "caller" : currentUser.uid === call.receiverId ? "receiver" : "guest");
+        currentCallRole = role === "translator" && !guest && !directTranslatorChat ? "translator" : (currentUser.uid === call.callerId ? "caller" : currentUser.uid === call.receiverId ? "receiver" : "guest");
         callExperience?.onJoined(call);
         if (processingModesEnabled && !storedMode && selectedProcessingMode !== "baseline") await apiFetch(`/api/calls/${encodeURIComponent(callId)}/processing-mode`, {method:"PATCH", body:JSON.stringify({processingMode:selectedProcessingMode})});
         stage = "participant-document-write";
@@ -3672,6 +3711,16 @@ function startDashboardListeners() {
             $("acceptIncomingCall").textContent = "Accept";
             openModal("incomingCallModal");
         } else if (currentProfile.role === "translator") {
+            const directChat = pending.purpose === "translator_chat" && pending.receiverId === currentUser.uid;
+            if (directChat) {
+                pendingIncomingCall = { ...pending, kind: "direct-translator" };
+                $("incomingCallEyebrow").textContent = "Incoming translator chat";
+                $("incomingCallTitle").textContent = `${pending.callerName || "Someone"} is calling you`;
+                $("incomingCallDetails").textContent = "Accept to chat directly. No other customer is included in this call.";
+                $("acceptIncomingCall").textContent = "Accept";
+                openModal("incomingCallModal");
+                return;
+            }
             const directInvite = pending.invitedTranslatorId && pending.invitedTranslatorId === currentUser.uid;
             if (!directInvite) {
                 clearPendingIncomingCall();
@@ -3706,7 +3755,7 @@ async function acceptIncomingCall() {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/experience`, {
                 method: "POST", body: JSON.stringify({ action: "accept-invite" })
             });
-        } else if (pending.kind === "customer") {
+        } else if (["customer", "direct-translator"].includes(pending.kind)) {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
                 method: "PATCH", body: JSON.stringify({ state: "connected" })
             });
@@ -3727,7 +3776,7 @@ async function declineIncomingCall() {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/experience`, {
                 method: "POST", body: JSON.stringify({ action: "decline-invite" })
             });
-        } else if (pending.kind === "customer") {
+        } else if (["customer", "direct-translator"].includes(pending.kind)) {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
                 method: "PATCH", body: JSON.stringify({ state: "declined" })
             });

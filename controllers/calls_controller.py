@@ -27,6 +27,8 @@ TranscriptModel = repository_proxy("transcripts")
 def create():
     data = json_body()
     receiver_id = data.get("receiverId")
+    purpose = str(data.get("purpose") or "").strip()
+    direct_translator_chat = purpose == "translator_chat"
 
     if not receiver_id:
         return jsonify({"error": "receiverId is required"}), 400
@@ -37,9 +39,20 @@ def create():
         return error
     if identity["uid"] == receiver_id:
         return jsonify({"error": "You cannot call yourself."}), 400
-    receiver = AccountModel.get(receiver_id)
-    if not receiver or receiver.get("status", "active") != "active" or receiver.get("role") not in {"customer", "admin"}:
-        return jsonify({"error": "The receiving customer account is unavailable."}), 404
+    if direct_translator_chat:
+        public_translator = TranslatorModel.get(receiver_id)
+        translator_record = TranslatorModel.get(receiver_id, public=False) if public_translator else None
+        receiver_id = (translator_record or {}).get("uid") or receiver_id
+        if identity["uid"] == receiver_id:
+            return jsonify({"error": "You cannot call yourself."}), 400
+        receiver = AccountModel.get(receiver_id)
+        if (not public_translator or not receiver or receiver.get("status", "active") != "active"
+                or receiver.get("role") not in {"translator", "admin"}):
+            return jsonify({"error": "That translator is unavailable."}), 404
+    else:
+        receiver = AccountModel.get(receiver_id)
+        if not receiver or receiver.get("status", "active") != "active" or receiver.get("role") not in {"customer", "admin"}:
+            return jsonify({"error": "The receiving customer account is unavailable."}), 404
 
     translator = None
     translator_id = data.get("translatorId")
@@ -60,7 +73,7 @@ def create():
             language=data.get("language"),
             dialect=data.get("dialect"),
             specialty=data.get("specialty"),
-            purpose=str(data.get("purpose") or "").strip(),
+            purpose=purpose,
             scheduled_at=data.get("scheduledAt"),
             idempotency_key=idempotency_key,
             processing_mode=processing_mode,
@@ -164,6 +177,12 @@ def _translator_request_visible(call, uid):
         return False
     invited = str(call.get("invitedTranslatorId") or "").strip()
     return bool(invited) and invited == uid
+
+
+def _direct_translator_chat_visible(call, uid):
+    return (call.get("purpose") == "translator_chat"
+            and call.get("receiverId") == uid
+            and call.get("status") == "ringing")
 
 
 def request_translator(call_id):
@@ -368,6 +387,7 @@ def pending_requests():
     if identity.get("role") != "admin" and not TranslatorModel.get(identity["uid"]):
         return jsonify({"error": "Only a verified interpreter can view requests."}), 403
     uid = identity["uid"]
-    calls = [call for call in CallModel.all() if _translator_request_visible(call, uid)]
-    calls.sort(key=lambda call: 0 if str(call.get("invitedTranslatorId") or "") == uid else 1)
+    calls = [call for call in CallModel.all()
+             if _direct_translator_chat_visible(call, uid) or _translator_request_visible(call, uid)]
+    calls.sort(key=lambda call: 0 if _direct_translator_chat_visible(call, uid) else 1)
     return jsonify({"calls": calls})
