@@ -618,8 +618,9 @@ async function loadAdminDashboard() {
         $("adminSessions").textContent = metrics.sessions ?? 0;
         $("adminActiveSessions").textContent = `${metrics.activeSessions ?? 0} active`;
         $("adminOrganizations").textContent = metrics.organizations ?? 0;
-        renderAdminVerificationQueue(queue.interpreters || []);
-        renderAdminAccounts(activity.accounts || []);
+        const pendingInterpreters = queue.interpreters || [];
+        renderAdminVerificationQueue(pendingInterpreters);
+        renderAdminAccounts(activity.accounts || [], pendingInterpreters);
         renderAdminSessions(activity.sessions || []);
         renderAdminReviews(activity.reviews || []);
         renderAdminOrganizations(activity.organizations || []);
@@ -634,14 +635,18 @@ function adminEmpty(message) {
     return `<p class="admin-empty">${escapeHtml(message)}</p>`;
 }
 
-function renderAdminAccounts(accounts) {
+function renderAdminAccounts(accounts, pendingInterpreters = []) {
     const container = $("adminAccountList");
     if (!accounts.length) { container.innerHTML = adminEmpty("No accounts found."); return; }
+    const pendingIds = new Set(pendingInterpreters.flatMap(profile => [profile.id, profile.uid].filter(Boolean)));
     container.innerHTML = accounts.map(account => {
         const isCurrentAdmin = account.uid === currentUser?.uid;
         const deleted = account.status === "deleted" || Boolean(account.deletedAt);
-        return `<article class="admin-account-editor" data-admin-account="${escapeHtml(account.uid || "")}"><div class="admin-account-heading"><strong>${escapeHtml(account.displayName || account.email || "User")}</strong><span class="status-badge">${escapeHtml(deleted ? "deleted" : account.status || "active")}</span></div><div class="admin-account-fields"><label>Name<input data-account-field="displayName" value="${escapeHtml(account.displayName || "")}"${deleted ? " disabled" : ""}></label><label>Email<input data-account-field="email" type="email" value="${escapeHtml(account.email || "")}"${deleted ? " disabled" : ""}></label><label>Phone<input data-account-field="phone" type="tel" value="${escapeHtml(account.phone || "")}"${deleted ? " disabled" : ""}></label><label>Role<select data-account-field="role"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="customer"${account.role === "customer" ? " selected" : ""}>Customer</option><option value="translator_applicant"${account.role === "translator_applicant" ? " selected" : ""}>Translator applicant</option><option value="translator"${account.role === "translator" ? " selected" : ""}>Translator</option><option value="admin"${account.role === "admin" ? " selected" : ""}>Administrator</option></select></label><label>Status<select data-account-field="status"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="active"${account.status === "active" || !account.status ? " selected" : ""}>Active</option><option value="pending"${account.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${account.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></div><div class="admin-account-actions"><button type="button" data-save-account${deleted ? " disabled" : ""}>Save profile</button><button class="secondary reject-action" type="button" data-delete-account${deleted || isCurrentAdmin ? " disabled" : ""}>${deleted ? "Deleted" : "Delete account"}</button></div></article>`;
+        const awaitingApproval = !deleted && pendingIds.has(account.uid);
+        const approveButton = awaitingApproval ? `<button type="button" data-approve-interpreter>Approve interpreter</button>` : "";
+        return `<article class="admin-account-editor" data-admin-account="${escapeHtml(account.uid || "")}"><div class="admin-account-heading"><strong>${escapeHtml(account.displayName || account.email || "User")}</strong><span class="status-badge">${escapeHtml(awaitingApproval ? "awaiting approval" : deleted ? "deleted" : account.status || "active")}</span></div><div class="admin-account-fields"><label>Name<input data-account-field="displayName" value="${escapeHtml(account.displayName || "")}"${deleted ? " disabled" : ""}></label><label>Email<input data-account-field="email" type="email" value="${escapeHtml(account.email || "")}"${deleted ? " disabled" : ""}></label><label>Phone<input data-account-field="phone" type="tel" value="${escapeHtml(account.phone || "")}"${deleted ? " disabled" : ""}></label><label>Role<select data-account-field="role"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="customer"${account.role === "customer" ? " selected" : ""}>Customer</option><option value="translator_applicant"${account.role === "translator_applicant" ? " selected" : ""}>Translator applicant</option><option value="translator"${account.role === "translator" ? " selected" : ""}>Translator</option><option value="admin"${account.role === "admin" ? " selected" : ""}>Administrator</option></select></label><label>Status<select data-account-field="status"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="active"${account.status === "active" || !account.status ? " selected" : ""}>Active</option><option value="pending"${account.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${account.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></div><div class="admin-account-actions">${approveButton}<button type="button" data-save-account${deleted ? " disabled" : ""}>Save profile</button><button class="secondary reject-action" type="button" data-delete-account${deleted || isCurrentAdmin ? " disabled" : ""}>${deleted ? "Deleted" : "Delete account"}</button></div></article>`;
     }).join("");
+    container.querySelectorAll("[data-approve-interpreter]").forEach(button => button.onclick = () => reviewInterpreter(button.closest("[data-admin-account]").dataset.adminAccount, "verified"));
     container.querySelectorAll("[data-save-account]").forEach(button => button.onclick = () => saveAdminAccount(button.closest("[data-admin-account]")));
     container.querySelectorAll("[data-delete-account]").forEach(button => button.onclick = () => deleteAdminAccount(button.closest("[data-admin-account]")));
 }
