@@ -135,7 +135,9 @@ class FirestoreCallRepository(_ModelAdapter):
         now = datetime.now(timezone.utc)
         data = {"callerId": caller["uid"], "callerName": caller.get("displayName") or caller.get("email") or "FiniSpeak customer",
                 "receiverId": receiver["uid"], "receiverName": receiver.get("displayName") or receiver.get("email") or "FiniSpeak customer",
-                "translatorId": translator.get("id") if translator else None, "translatorName": translator.get("displayName") if translator else None,
+                "translatorId": None, "translatorName": None,
+                "invitedTranslatorId": translator.get("id") if translator else None,
+                "invitedTranslatorName": translator.get("displayName") if translator else None,
                 "status": "ringing", "translationStatus": "requested" if translator and translator.get("id") else "not_requested",
                 "language": language, "dialect": dialect, "specialty": specialty, "purpose": purpose,
                 "scheduledAt": scheduled_at, "createdAt": now, "updatedAt": now, "startedAt": None, "endedAt": None}

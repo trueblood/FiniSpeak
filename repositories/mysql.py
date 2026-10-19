@@ -631,10 +631,16 @@ class MySqlCallRepository:
         existing = self.session.get(SqlCall, call_id)
         if existing:
             return _document(existing, CALL_FIELDS)
+        invited_translator_id = translator.get("id") if translator else None
+        invited_translator_name = translator.get("displayName") if translator else None
         data = {"callerId": caller["uid"], "callerName": caller.get("displayName") or caller.get("email") or "FiniSpeak customer",
             "receiverId": receiver["uid"], "receiverName": receiver.get("displayName") or receiver.get("email") or "FiniSpeak customer",
-            "translatorId": translator.get("id") if translator else None, "translatorName": translator.get("displayName") if translator else None,
-            "status": "ringing", "translationStatus": "requested" if translator and translator.get("id") else "not_requested", "language": language,
+            # A selected interpreter is an invitee until they accept. Marking
+            # them connected here prevents existing browsers from detecting
+            # the real late join and rebuilding the camera mesh.
+            "translatorId": None, "translatorName": None,
+            "invitedTranslatorId": invited_translator_id, "invitedTranslatorName": invited_translator_name,
+            "status": "ringing", "translationStatus": "requested" if invited_translator_id else "not_requested", "language": language,
             "dialect": dialect, "specialty": specialty, "purpose": purpose, "scheduledAt": scheduled_at,
             "createdAt": now, "updatedAt": now, "startedAt": None, "endedAt": None,
             "processingModes": {caller["uid"]: processing_mode}}

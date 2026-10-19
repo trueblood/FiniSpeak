@@ -117,6 +117,7 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("onRemotePartial", script)
         self.assertIn("function attachRemoteTrack", app)
         self.assertIn("function peopleInCall", app)
+        self.assertIn('call?.translationStatus !== "connected"', app)
         self.assertIn("nextMembershipKey !== callMembershipKey", app)
         self.assertIn("cameraRelay?.reconnect?.()", app)
         self.assertIn('callMembershipKey = ""', app)

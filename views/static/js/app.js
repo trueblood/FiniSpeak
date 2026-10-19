@@ -2523,6 +2523,7 @@ function peopleInCall(call, participants) {
     ];
     for (const [idKey, nameKey, role] of roles) {
         const id = call?.[idKey];
+        if (role === "translator" && call?.translationStatus !== "connected" && !people.has(id)) continue;
         if (!id || people.has(id)) continue;
         people.set(id, { id, displayName: call[nameKey] || "Guest", role });
     }

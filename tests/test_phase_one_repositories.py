@@ -108,6 +108,19 @@ class MySqlAccountRepositoryTests(unittest.TestCase):
 
 
 class MySqlAuthorizationTests(unittest.TestCase):
+    def test_selected_interpreter_stays_invited_until_they_accept(self):
+        session = FakeSession()
+        result = MySqlCallRepository(session).create(
+            {"uid": "customer-1", "displayName": "Caller"},
+            {"uid": "customer-2", "displayName": "Receiver"},
+            translator={"id": "translator-9", "displayName": "Marcus Johnson"},
+        )
+        self.assertIsNone(result["translatorId"])
+        self.assertIsNone(result["translatorName"])
+        self.assertEqual(result["invitedTranslatorId"], "translator-9")
+        self.assertEqual(result["invitedTranslatorName"], "Marcus Johnson")
+        self.assertEqual(result["translationStatus"], "requested")
+
     def test_duplicate_call_request_returns_existing_record(self):
         caller = {"uid": "customer-1", "displayName": "Caller"}
         key = "same-request"
