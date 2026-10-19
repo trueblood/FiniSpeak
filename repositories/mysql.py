@@ -77,10 +77,15 @@ def _json_safe(value):
 
 
 def _document(row, fields, identifier=None):
+    """Merge a typed row over its stored document.
+
+    A null column means that field was not copied during the MySQL move.
+    Keep the document value instead of erasing it.
+    """
     data = _raw(row)
     for api_name, column_name in fields.items():
         value = getattr(row, column_name)
-        if value is not None or api_name in data:
+        if value is not None:
             data[api_name] = value
     data[identifier or "id"] = row.id
     return data
@@ -248,6 +253,14 @@ class MySqlAccountRepository:
             changes["status"] = status
         changes["updatedAt"] = _now()
         _touch(row, changes, ACCOUNT_FIELDS)
+        if changes.get("role") == "translator" and MySqlTranslatorRepository(self.session).submission_pending(uid):
+            # Saving Translator on a submitted profile is the approval the
+            # admin account list is used for. The profile publish and the
+            # account edit commit together.
+            approved = MySqlTranslatorRepository(self.session).set_verification(
+                uid, "verified", actor_id, "Approved from the account record.")
+            if approved is not None:
+                return self.get(uid)
         _commit(self.session)
         return _document(row, ACCOUNT_FIELDS, "uid")
 
@@ -370,35 +383,87 @@ class MySqlTranslatorRepository:
         results.sort(key=lambda item: (bool((item.get("availability") or {}).get("availableNow")), float(item.get("rating") or 0), int(item.get("ratingCount") or 0)), reverse=True)
         return results[:max(1, min(int(limit), 100))]
 
+    def _awaiting_review(self, row):
+        """True when a profile was submitted and has not been verified.
+
+        Submission can live on the typed columns or only inside the stored
+        document. The MySQL move left some submitted profiles with a null
+        credential column, so both places have to count.
+        """
+        raw = _raw(row)
+        data = _document(row, TRANSLATOR_FIELDS)
+        verification = str(data.get("verificationStatus") or raw.get("verificationStatus") or "")
+        if verification == "verified":
+            return False
+        statuses = {
+            str(data.get("credentialStatus") or ""),
+            str(raw.get("credentialStatus") or ""),
+            str(data.get("onboardingStatus") or ""),
+            str(raw.get("onboardingStatus") or ""),
+        }
+        return "submitted" in statuses
+
+    def submission_pending(self, translator_id):
+        row = self.session.get(SqlTranslator, translator_id)
+        if not row and translator_id:
+            row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.uid == translator_id).limit(1))
+        return bool(row and self._awaiting_review(row))
+
     def pending_verification(self):
-        rows = self.session.scalars(select(SqlTranslator).where(
+        rows = self.session.scalars(select(SqlTranslator).where(or_(
+            SqlTranslator.verification_status.is_(None),
+            SqlTranslator.verification_status != "verified",
             SqlTranslator.credential_status == "submitted",
-            or_(SqlTranslator.verification_status != "verified", SqlTranslator.verification_status.is_(None)))).all()
+            SqlTranslator.onboarding_status == "submitted",
+        ))).all()
         result = []
         for row in rows:
+            if not self._awaiting_review(row):
+                continue
+            raw = _raw(row)
             data = _document(row, TRANSLATOR_FIELDS)
+            if str(raw.get("credentialStatus") or data.get("credentialStatus") or "") == "submitted":
+                data["credentialStatus"] = "submitted"
+            if str(raw.get("onboardingStatus") or data.get("onboardingStatus") or "") == "submitted":
+                data["onboardingStatus"] = "submitted"
             private = self.get_private(row.id)
-            data["credentialDocuments"] = private.get("credentialDocuments", data.get("credentialDocuments", []))
+            documents = private.get("credentialDocuments")
+            if not documents:
+                documents = data.get("credentialDocuments") or []
+            data["credentialDocuments"] = documents if isinstance(documents, list) else []
+            if not data.get("email"):
+                data["email"] = private.get("email")
             result.append(data)
         return result
+
+    def _account_for_translator(self, translator_id, translator_uid):
+        account = self.session.scalar(select(SqlUser).where(SqlUser.id == translator_id).with_for_update())
+        if account:
+            return account
+        keys = list(dict.fromkeys(value for value in (translator_id, translator_uid) if value))
+        if not keys:
+            return None
+        return self.session.scalar(select(SqlUser).where(or_(
+            SqlUser.id.in_(keys), SqlUser.uid.in_(keys)
+        )).with_for_update())
 
     def set_verification(self, translator_id, status, reviewer_id, notes=""):
         if status not in {"verified", "rejected", "needs_changes"}: raise ValueError("Invalid verification status.")
         row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.id == translator_id).with_for_update())
+        if not row and translator_id:
+            row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.uid == translator_id).with_for_update())
         if not row: return None
         now = _now()
         _touch(row, {"verificationStatus": status, "credentialStatus": "approved" if status == "verified" else status,
                      "onboardingStatus": status, "verifiedBy": reviewer_id, "verifiedAt": now, "updatedAt": now}, TRANSLATOR_FIELDS)
-        private = self.session.get(SqlInterpreterPrivate, translator_id)
+        private = self.session.get(SqlInterpreterPrivate, row.id)
         if private:
             fields = {"verificationNotes": "verification_notes", "verifiedBy": "verified_by", "verifiedAt": "verified_at"}
             _touch(private, {"verificationNotes": notes, "verifiedBy": reviewer_id, "verifiedAt": now}, fields)
         if status == "verified":
-            account = self.session.scalar(select(SqlUser).where(SqlUser.id == translator_id).with_for_update())
-            if not account:
-                self.session.rollback()
-                raise ValueError("Interpreter account not found.")
-            _touch(account, {"role": "translator", "updatedAt": now}, ACCOUNT_FIELDS)
+            account = self._account_for_translator(row.id, row.uid)
+            if account and account.role != "admin":
+                _touch(account, {"role": "translator", "updatedAt": now}, ACCOUNT_FIELDS)
         _commit(self.session)
         return _document(row, TRANSLATOR_FIELDS)
 
@@ -444,9 +509,19 @@ class MySqlTranslatorRepository:
         existing = self.session.get(SqlTranslator, uid)
         if existing:
             account = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
-            if account:
-                _touch(account, {"role": "translator" if existing.verification_status == "verified" else "translator_applicant", "updatedAt": _now()}, ACCOUNT_FIELDS)
-                _commit(self.session)
+            if account and account.role != "admin":
+                # Do not demote someone an administrator already approved.
+                # Re-enrollment used to force every unverified profile back to
+                # translator_applicant, which undid that approval.
+                if existing.verification_status == "verified":
+                    next_role = "translator"
+                elif account.role == "translator":
+                    next_role = "translator"
+                else:
+                    next_role = "translator_applicant"
+                if account.role != next_role:
+                    _touch(account, {"role": next_role, "updatedAt": _now()}, ACCOUNT_FIELDS)
+                    _commit(self.session)
             return _document(existing, TRANSLATOR_FIELDS)
         account = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
         if not account:
