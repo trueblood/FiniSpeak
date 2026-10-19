@@ -151,7 +151,7 @@ class InterpreterApprovalTests(unittest.TestCase):
         self.assertEqual(profile["credentialStatus"], "approved")
         self.assertEqual(self.translators.pending_verification(), [])
 
-    def test_saving_translator_role_does_not_verify_a_draft(self):
+    def test_saving_translator_role_approves_a_draft(self):
         self._user("admin-1", role="admin")
         self._user("draft-user", role="customer")
         self._translator("draft-user", credential_status="unsubmitted", onboarding_status="draft",
@@ -161,8 +161,24 @@ class InterpreterApprovalTests(unittest.TestCase):
 
         self.assertEqual(account["role"], "translator")
         profile = self.translators.get("draft-user", public=False)
-        self.assertEqual(profile["verificationStatus"], "unverified")
-        self.assertEqual(profile["credentialStatus"], "unsubmitted")
+        self.assertEqual(profile["verificationStatus"], "verified")
+        self.assertEqual(profile["credentialStatus"], "approved")
+        self.assertEqual(profile["onboardingStatus"], "verified")
+        self.assertIsNotNone(self.translators.get("draft-user", public=True))
+
+    def test_saving_translator_role_creates_and_approves_a_missing_profile(self):
+        self._user("admin-1", role="admin")
+        self._user("customer-only", role="customer")
+
+        account = self.accounts.admin_update("customer-only", {"role": "translator"}, "admin-1")
+
+        self.assertEqual(account["role"], "translator")
+        profile = self.translators.get("customer-only", public=False)
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile["verificationStatus"], "verified")
+        self.assertEqual(profile["credentialStatus"], "approved")
+        self.assertEqual(profile["displayName"], "customer-only")
+        self.assertIsNotNone(db.session.get(SqlInterpreterPrivate, "customer-only"))
 
     def test_reenroll_keeps_an_approved_translator_role(self):
         self._user("kept", role="translator")

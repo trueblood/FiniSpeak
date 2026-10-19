@@ -253,14 +253,14 @@ class MySqlAccountRepository:
             changes["status"] = status
         changes["updatedAt"] = _now()
         _touch(row, changes, ACCOUNT_FIELDS)
-        if changes.get("role") == "translator" and MySqlTranslatorRepository(self.session).submission_pending(uid):
-            # Saving Translator on a submitted profile is the approval the
-            # admin account list is used for. The profile publish and the
-            # account edit commit together.
-            approved = MySqlTranslatorRepository(self.session).set_verification(
-                uid, "verified", actor_id, "Approved from the account record.")
-            if approved is not None:
-                return self.get(uid)
+        if changes.get("role") == "translator":
+            # An administrator explicitly assigning the Translator role is an
+            # approval decision. Publish an existing profile regardless of its
+            # draft/submission state, or create the minimum profile needed for
+            # a user who has not started interpreter onboarding yet.
+            MySqlTranslatorRepository(self.session).approve_account(
+                row, actor_id, "Approved by assigning the Translator role.")
+            return self.get(uid)
         _commit(self.session)
         return _document(row, ACCOUNT_FIELDS, "uid")
 
@@ -408,6 +408,47 @@ class MySqlTranslatorRepository:
         if not row and translator_id:
             row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.uid == translator_id).limit(1))
         return bool(row and self._awaiting_review(row))
+
+    def approve_account(self, account, reviewer_id, notes=""):
+        """Make an administrator-assigned translator fully verified.
+
+        Admins manage roles from the account list, so the Translator selection
+        must work for submitted profiles, drafts, and accounts that do not yet
+        have a translator row.
+        """
+        keys = list(dict.fromkeys(value for value in (account.id, account.uid) if value))
+        row = self.session.scalar(select(SqlTranslator).where(or_(
+            SqlTranslator.id.in_(keys), SqlTranslator.uid.in_(keys)
+        )).with_for_update()) if keys else None
+        if not row:
+            now = _now()
+            translator_id = account.id
+            public = {
+                "uid": account.uid or translator_id,
+                "displayName": account.display_name or account.email or "Interpreter",
+                "onboardingStatus": "draft",
+                "verificationStatus": "unverified",
+                "languages": [], "dialects": [], "specialties": [], "credentials": [],
+                "credentialStatus": "unsubmitted", "yearsExperience": 0,
+                "availability": {"days": [], "start": "", "end": "", "availableNow": False},
+                "rating": None, "ratingCount": 0, "createdAt": now, "updatedAt": now,
+            }
+            private = {
+                "uid": account.uid or translator_id,
+                "email": normalize_email(account.email), "phone": account.phone,
+                "credentialDocuments": [], "createdAt": now, "updatedAt": now,
+            }
+            row = SqlTranslator(
+                id=translator_id, raw_document=_json_safe(public), migrated_at=now, mutation_version=1,
+                **{column: public.get(api) for api, column in TRANSLATOR_FIELDS.items()})
+            self.session.add(row)
+            _enqueue_pending_mutations(self.session)
+            self.session.flush()
+            self.session.add(SqlInterpreterPrivate(
+                id=translator_id, raw_document=_json_safe(private), migrated_at=now, mutation_version=1,
+                uid=private["uid"], email=private["email"], phone=private["phone"],
+                credential_documents=[], created_at=now, updated_at=now))
+        return self.set_verification(row.id, "verified", reviewer_id, notes)
 
     def pending_verification(self):
         rows = self.session.scalars(select(SqlTranslator).where(or_(

@@ -656,7 +656,7 @@ async function saveAdminAccount(editor) {
     const values = Object.fromEntries([...editor.querySelectorAll("[data-account-field]")].filter(field => !field.disabled).map(field => [field.dataset.accountField, field.value.trim()]));
     try {
         await apiFetch(`/api/admin/accounts/${encodeURIComponent(editor.dataset.adminAccount)}`, { method: "PATCH", body: JSON.stringify(values) });
-        $("adminStatus").textContent = "Account profile updated.";
+        $("adminStatus").textContent = values.role === "translator" ? "Account updated and translator approved." : "Account profile updated.";
         await loadAdminDashboard();
     } catch (error) {
         $("adminStatus").textContent = `Could not update account: ${error.message}`;
