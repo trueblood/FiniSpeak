@@ -504,7 +504,7 @@
                             <div class="documents-list">
                                 <button id="uploadDocument" type="button">Upload document</button>
                                 <p class="documents-hint">PDF, Word, or text</p>
-                                <input id="documentFile" type="file" accept=".txt,.md,.csv,.text,.json,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+                                <input id="documentFile" class="sr-only" type="file" accept=".txt,.md,.csv,.text,.json,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" tabindex="-1" aria-label="Choose a document to upload">
                                 <ul id="documentList"></ul>
                             </div>
                             <div class="documents-editor">
@@ -761,6 +761,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261019-late-camera-join"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261019-document-upload"></script>
 </body>
 </html>

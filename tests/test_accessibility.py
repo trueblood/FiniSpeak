@@ -55,6 +55,14 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="muteButton" class="secondary" type="button" aria-pressed="false"', self.html)
         self.assertIn('id="cameraButton" class="secondary" type="button" aria-pressed="false"', self.html)
 
+    def test_call_document_upload_uses_mobile_picker_and_resets_between_calls(self):
+        self.assertIn('id="documentFile" class="sr-only" type="file"', self.html)
+        self.assertNotIn('id="documentFile" type="file"', self.html)
+        script = (Path(__file__).parents[1] / "views/static/js/call-experience.js").read_text()
+        self.assertIn('typeof input.showPicker === "function"', script)
+        self.assertIn('deps.$("uploadDocument").onclick = openDocumentPicker', script)
+        self.assertIn('state.activeDocumentId = null', script[script.index("function cleanup()"):])
+
     def test_call_stage_keeps_interpreter_and_participant_grid(self):
         self.assertLess(self.html.index('id="smartInterpreter"'), self.html.index('class="call-nav"'))
         self.assertIn('id="smartInterpreterWave"', self.html)

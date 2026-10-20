@@ -182,7 +182,7 @@ export function createCallExperience(deps) {
         deps.$("summarizeButton").onclick = summarize;
         deps.$("copySummary").onclick = copySummary;
         deps.$("saveSummary").onclick = saveSummary;
-        deps.$("uploadDocument").onclick = () => deps.$("documentFile").click();
+        deps.$("uploadDocument").onclick = openDocumentPicker;
         deps.$("documentFile").onchange = uploadDocument;
         deps.$("translateDocument").onclick = translateDocument;
         deps.$("explainSelection").addEventListener("mousedown", event => event.preventDefault());
@@ -987,7 +987,22 @@ export function createCallExperience(deps) {
         return Array.isArray(state.call?.documents) ? state.call.documents : [];
     }
 
-    function createDocument(text = "") {
+    function openDocumentPicker() {
+        if (!deps.getCallId()) {
+            deps.$("documentStatus").textContent = "Join a call before uploading a document.";
+            return;
+        }
+        const input = deps.$("documentFile");
+        input.value = "";
+        try {
+            if (typeof input.showPicker === "function") input.showPicker();
+            else input.click();
+        } catch (error) {
+            input.click();
+        }
+    }
+
+    function createDocument(text = "", title = "Untitled document") {
         const documentId = `doc-${crypto.randomUUID()}`;
         state.activeDocumentId = documentId;
         state.documentDirty = true;
@@ -995,7 +1010,7 @@ export function createCallExperience(deps) {
         const revision = state.documentRevision;
         const documentRecord = {
             id: documentId,
-            title: "Untitled document",
+            title: String(title || "Untitled document").trim().slice(0, 160) || "Untitled document",
             originalText: text,
             translatedText: "",
             sourceLanguage: deps.$("documentSourceLang").value,
@@ -1014,8 +1029,10 @@ export function createCallExperience(deps) {
                 await postExperience("upsert-document", { document: documentRecord });
                 if (revision !== state.documentRevision) return;
                 state.documentDirty = false;
+                return true;
             } catch (error) {
                 showDocumentError(error);
+                return false;
             }
         });
         return state.saveChain;
@@ -1025,10 +1042,19 @@ export function createCallExperience(deps) {
         const file = event.target.files?.[0];
         event.target.value = "";
         if (!file) return;
+        const callId = deps.getCallId();
+        if (!callId) {
+            showDocumentError(new Error("Join a call before uploading a document."));
+            return;
+        }
         if (file.size > 8 * 1024 * 1024) {
             showDocumentError(new Error("Upload a document under 8 MB."));
             return;
         }
+        const uploadButton = deps.$("uploadDocument");
+        uploadButton.disabled = true;
+        uploadButton.textContent = "Uploading…";
+        deps.$("documentStatus").textContent = `Uploading ${file.name}…`;
         const extension = file.name.split(".").pop()?.toLowerCase();
         let text = "";
         let title = file.name.replace(/\.[^.]+$/, "");
@@ -1036,20 +1062,29 @@ export function createCallExperience(deps) {
             if (["pdf", "doc", "docx"].includes(extension)) {
                 const body = new FormData();
                 body.append("file", file);
-                const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(deps.getCallId())}/documents/extract`, { method: "POST", body });
+                const result = await deps.apiFetch(`/api/calls/${encodeURIComponent(callId)}/documents/extract`, { method: "POST", body });
                 text = result.text || "";
                 title = result.title || title;
-                if (result.truncated) deps.$("documentStatus").textContent = "Only the first part of that document was imported.";
             } else {
                 text = await file.text();
             }
+            const saved = await createDocument(text, title);
+            if (saved) {
+                deps.$("documentStatus").textContent = resultMessage(file.name, text, extension);
+            }
         } catch (error) {
             showDocumentError(error);
-            return;
+        } finally {
+            uploadButton.disabled = false;
+            uploadButton.textContent = "Upload document";
         }
-        await createDocument(text);
-        deps.$("documentTitle").value = title;
-        scheduleDocumentSave();
+    }
+
+    function resultMessage(filename, text, extension) {
+        if (["pdf", "doc", "docx"].includes(extension) && text.length >= 20000) {
+            return `${filename} uploaded. Only the first part was imported.`;
+        }
+        return `${filename} uploaded and shared with everyone on the call.`;
     }
 
     function noteDocumentEdit() {
@@ -1428,10 +1463,24 @@ export function createCallExperience(deps) {
         state.spoken.clear();
         state.translationRequests.clear();
         state.call = null;
+        state.documentsOpen = false;
+        state.activeDocumentId = null;
+        state.documentDirty = false;
+        state.documentRevision += 1;
+        state.preserveDocumentStatus = false;
+        window.clearTimeout(state.saveTimer);
+        state.saveChain = Promise.resolve();
         document.querySelector('.video-card[data-role="ai"]')?.remove();
         const local = document.querySelector('.video-card[data-role="local"]');
         if (local && deps.$("videoGrid")) deps.$("videoGrid").appendChild(local);
         deps.$("documentsPanel").hidden = true;
+        deps.$("documentsButton").setAttribute("aria-pressed", "false");
+        deps.$("documentFile").value = "";
+        deps.$("documentList").innerHTML = "";
+        deps.$("documentTitle").value = "";
+        deps.$("documentOriginal").value = "";
+        deps.$("documentTranslated").value = "";
+        deps.$("documentStatus").textContent = "";
         setNotesOpen(false);
         state.notesDirty = false;
         window.clearTimeout(state.notesTimer);
