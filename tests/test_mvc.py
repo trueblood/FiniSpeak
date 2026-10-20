@@ -234,36 +234,51 @@ class MvcRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         request_translator.assert_not_called()
 
+    @patch("controllers.calls_controller.CallModel.release_member")
     @patch("controllers.calls_controller.CallModel.transition")
     @patch("controllers.calls_controller.ParticipantModel.mark_left")
+    @patch("controllers.calls_controller.ParticipantModel.for_call")
     @patch("controllers.calls_controller.CallModel.is_participant", return_value=True)
     @patch("controllers.calls_controller.CallModel.get")
     @patch("controllers.calls_controller.identity_or_response")
-    def test_receiver_end_call_ends_the_call_for_every_recipient(self, identity, get_call, _participant, mark_left, transition):
+    def test_receiver_end_call_only_disconnects_that_receiver(self, identity, get_call, _participant, for_call, mark_left, transition, release_member):
         identity.return_value = ({"uid": "customer-2", "role": "customer"}, None)
         get_call.return_value = {
             "id": "call-1", "callerId": "customer-1", "receiverId": "customer-2",
             "translatorId": "translator-9", "status": "connected",
         }
-        transition.return_value = {"id": "call-1", "status": "ended"}
+        for_call.return_value = [
+            {"uid": "customer-1", "leftAt": None},
+            {"uid": "customer-2", "leftAt": "now"},
+            {"uid": "translator-9", "leftAt": None},
+        ]
+        release_member.return_value = {"id": "call-1", "status": "connected", "translatorId": "translator-9"}
         response = self.client.post("/api/calls/call-1/leave")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["call"]["status"], "ended")
+        self.assertEqual(response.get_json()["call"]["status"], "connected")
+        self.assertTrue(response.get_json()["left"])
         mark_left.assert_called_once_with("call-1", "customer-2")
-        transition.assert_called_once_with("call-1", "ended")
+        release_member.assert_called_once_with("call-1", "customer-2")
+        transition.assert_not_called()
 
     @patch("controllers.calls_controller.CallModel.release_member")
     @patch("controllers.calls_controller.CallModel.transition")
     @patch("controllers.calls_controller.ParticipantModel.mark_left")
+    @patch("controllers.calls_controller.ParticipantModel.for_call")
     @patch("controllers.calls_controller.CallModel.is_participant", return_value=True)
     @patch("controllers.calls_controller.CallModel.get")
     @patch("controllers.calls_controller.identity_or_response")
-    def test_translator_end_call_removes_only_that_translator(self, identity, get_call, _participant, mark_left, transition, release_member):
+    def test_translator_end_call_removes_only_that_translator(self, identity, get_call, _participant, for_call, mark_left, transition, release_member):
         identity.return_value = ({"uid": "translator-9", "role": "translator"}, None)
         get_call.return_value = {
             "id": "call-1", "callerId": "customer-1", "receiverId": "customer-2",
             "translatorId": "translator-9", "status": "connected",
         }
+        for_call.return_value = [
+            {"uid": "customer-1", "leftAt": None},
+            {"uid": "customer-2", "leftAt": None},
+            {"uid": "translator-9", "leftAt": "now"},
+        ]
         release_member.return_value = {"id": "call-1", "status": "connected", "translatorId": None}
         response = self.client.post("/api/calls/call-1/leave")
         self.assertEqual(response.status_code, 200)
@@ -271,6 +286,30 @@ class MvcRouteTests(unittest.TestCase):
         mark_left.assert_called_once_with("call-1", "translator-9")
         release_member.assert_called_once_with("call-1", "translator-9")
         transition.assert_not_called()
+
+    @patch("controllers.calls_controller.CallModel.release_member")
+    @patch("controllers.calls_controller.CallModel.transition")
+    @patch("controllers.calls_controller.ParticipantModel.mark_left")
+    @patch("controllers.calls_controller.ParticipantModel.for_call", return_value=[
+        {"uid": "customer-1", "leftAt": "now"},
+        {"uid": "customer-2", "leftAt": "earlier"},
+    ])
+    @patch("controllers.calls_controller.CallModel.is_participant", return_value=True)
+    @patch("controllers.calls_controller.CallModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_final_participant_leaving_ends_the_stored_call(self, identity, get_call, _participant, _for_call, mark_left, transition, release_member):
+        identity.return_value = ({"uid": "customer-1", "role": "customer"}, None)
+        get_call.return_value = {
+            "id": "call-1", "callerId": "customer-1", "receiverId": "customer-2",
+            "translatorId": None, "status": "connected",
+        }
+        release_member.return_value = get_call.return_value
+        transition.return_value = {"id": "call-1", "status": "ended"}
+        response = self.client.post("/api/calls/call-1/leave")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["call"]["status"], "ended")
+        mark_left.assert_called_once_with("call-1", "customer-1")
+        transition.assert_called_once_with("call-1", "ended")
 
     @patch("controllers.calls_controller.TranslatorModel.get", return_value={"id": "translator-9"})
     @patch("controllers.calls_controller.CallModel.all")

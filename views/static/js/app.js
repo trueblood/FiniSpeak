@@ -3596,14 +3596,15 @@ async function toggleCamera() {
 }
 async function endCall() {
     const callId = activeCallId;
+    cleanupCall(); show("dashboardView");
     if (callId) {
         try {
             await apiFetch(`/api/calls/${encodeURIComponent(callId)}/leave`, { method: "POST", body: "{}" });
         } catch (error) {
-            console.warn("Ending the call on the server failed", error);
+            console.warn("Leaving the call on the server failed", error);
         }
     }
-    cleanupCall(); show("dashboardView"); loadConversationHistory();
+    loadConversationHistory();
 }
 function cleanupListeners() { callUnsubs.forEach(u => u()); callUnsubs = []; }
 function cleanupCall(stopMedia = true) {

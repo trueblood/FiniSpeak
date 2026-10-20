@@ -124,8 +124,8 @@ def detail(call_id):
 def leave(call_id):
     """Hang up for the person who pressed End Call.
 
-    The caller or the person they called ends the conversation for everyone
-    still connected. A guest or interpreter leaves on their own.
+    Every participant leaves independently. The stored call is ended only
+    after the final active participant has left.
     """
     identity, error = identity_or_response()
     if error:
@@ -137,13 +137,15 @@ def leave(call_id):
     if identity.get("role") != "admin" and not CallModel.is_participant(call, uid):
         return jsonify({"error": "You cannot make this call-state change."}), 403
     ParticipantModel.mark_left(call_id, uid)
-    ends_for_everyone = uid in {call.get("callerId"), call.get("receiverId")}
     try:
-        if ends_for_everyone:
+        updated = CallModel.release_member(call_id, uid) or call
+        active_participants = [
+            participant for participant in ParticipantModel.for_call(call_id)
+            if participant.get("uid") != uid and not participant.get("leftAt")
+        ]
+        if not active_participants:
             updated = CallModel.transition(call_id, "ended")
-        else:
-            updated = CallModel.release_member(call_id, uid)
-        return jsonify({"call": updated or call})
+        return jsonify({"call": updated or call, "left": True})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
 
