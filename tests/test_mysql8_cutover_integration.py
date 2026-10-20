@@ -170,6 +170,9 @@ class MySql8CutoverIntegrationTests(unittest.TestCase):
         self.ids["call"] = call["id"]
         duplicate = calls.create(caller, receiver, translator=public, language="Integration Language", idempotency_key=self.prefix)
         self.assertEqual(duplicate["id"], call["id"])
+        call = calls.claim_translator(call["id"], interpreter_account)
+        self.assertEqual(call["translatorId"], interpreter_account["uid"])
+        self.assertEqual(call["translationStatus"], "connected")
         for account, role in ((caller, "caller"), (receiver, "receiver"), (interpreter_account, "translator")):
             participants.add(call["id"], account["uid"], role, account["displayName"])
         self.assertEqual(len(participants.for_call(call["id"])), 3)
