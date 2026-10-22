@@ -84,6 +84,12 @@ class MapUiContractTests(unittest.TestCase):
         self.assertIn("Service location", self.html)
         self.assertIn('id="publicProfileLocation"', self.html)
 
+    def test_map_visibility_uses_its_own_explicit_consent(self):
+        save_profile = self.javascript[self.javascript.index("async function saveInterpreterProfile"):
+            self.javascript.index("async function createCall")]
+        self.assertIn("showOnMap: Boolean(data.showOnMap)", save_profile)
+        self.assertNotIn("data.showOnMap && data.serviceOptions.inPerson", save_profile)
+
 
 if __name__ == "__main__":
     unittest.main()

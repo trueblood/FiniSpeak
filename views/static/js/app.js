@@ -1955,7 +1955,11 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
             if (!geocodeResponse.ok) throw new Error(geocodePayload.error || "Could not locate the public service area.");
             serviceLocation = geocodePayload.location;
         }
-        serviceLocation = data.serviceArea ? { ...serviceLocation, showOnMap: Boolean(data.showOnMap && data.serviceOptions.inPerson) } : {};
+        // Publishing an approximate service area is controlled by its own
+        // explicit consent checkbox. Remote interpreters may also choose to
+        // appear on the map; requiring in-person service silently discarded
+        // that consent and left otherwise valid coordinates invisible.
+        serviceLocation = data.serviceArea ? { ...serviceLocation, showOnMap: Boolean(data.showOnMap) } : {};
         const { phone, serviceArea, showOnMap, ...publicData } = data;
         const payload = {
             ...publicData, serviceLocation, uid: currentUser.uid, photoUrl,
