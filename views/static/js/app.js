@@ -283,6 +283,7 @@ function bindUI() {
     $("directoryListView").onclick = () => setDirectoryView("list");
     $("directoryMapView").onclick = () => setDirectoryView("map");
     $("directorySplitView").onclick = () => setDirectoryView("split");
+    $("showAllMapped").onclick = showAllMappedTranslators;
     $("searchMapArea").onclick = searchCurrentMapArea;
     $("featuredSearch").addEventListener("input", filterFeaturedProfiles);
     $("featuredLanguage").addEventListener("change", filterFeaturedProfiles);
@@ -542,6 +543,9 @@ function hydrateDashboardProfile() {
     $("profileDisplayName").value = currentProfile.displayName || "";
     $("profileEmail").value = currentProfile.email || currentUser?.email || "";
     setPhoneFieldValue("profilePhone", currentProfile.phone || "");
+    const profileLocation = currentProfile.profileLocation || currentInterpreterProfile?.serviceLocation || {};
+    $("profileServiceArea").value = [profileLocation.city, profileLocation.state, profileLocation.country].filter(Boolean).join(", ");
+    $("profileShowOnMap").checked = Boolean(profileLocation.showOnMap);
     $("profileRole").value = roleLabel;
     $("settingsEmail").textContent = currentProfile.email || currentUser?.email || "";
 }
@@ -1167,7 +1171,7 @@ function setDirectoryView(view) {
     });
     if (view !== "list") {
         initializeDirectoryMap();
-        window.setTimeout(() => { directoryMap.invalidateSize(); renderDirectoryMap(filteredDirectoryProfiles); }, 0);
+        window.setTimeout(() => { directoryMap.invalidateSize(); renderDirectoryMap(filteredDirectoryProfiles, true); }, 0);
     }
 }
 
@@ -1183,7 +1187,7 @@ function initializeDirectoryMap() {
     requestAnimationFrame(() => directoryMap?.invalidateSize({ pan: false }));
 }
 
-function renderDirectoryMap(profiles) {
+function renderDirectoryMap(profiles, fitToResults = false) {
     if (!directoryMap || !directoryMarkerLayer) return;
     directoryMap.invalidateSize({ pan: false });
     directoryMarkerLayer.clearLayers(); directoryMarkers.clear();
@@ -1206,12 +1210,29 @@ function renderDirectoryMap(profiles) {
         });
         directoryMarkers.set(profile.id, marker); directoryMarkerLayer.addLayer(marker); bounds.push([location.latitude, location.longitude]);
     });
+    const mappedCount = directoryMarkers.size;
+    $("interpreterMapStatus").textContent = mappedCount
+        ? `${mappedCount} mapped interpreter${mappedCount === 1 ? "" : "s"}. Zoom or pan to explore other areas.`
+        : "No matching interpreters have shared an approximate public area yet.";
+    if (directoryUserMarker) {
+        directoryMap.removeLayer(directoryUserMarker);
+        directoryUserMarker = null;
+    }
     if (directoryOrigin) {
-        if (directoryUserMarker) directoryMap.removeLayer(directoryUserMarker);
         directoryUserMarker = L.circleMarker([directoryOrigin.latitude, directoryOrigin.longitude], { radius: 8, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }).addTo(directoryMap).bindTooltip("Your approximate location");
         bounds.push([directoryOrigin.latitude, directoryOrigin.longitude]);
     }
-    if (bounds.length) directoryMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 11 });
+    if (fitToResults && bounds.length) directoryMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 11 });
+}
+
+async function showAllMappedTranslators() {
+    directoryOrigin = null;
+    $("directoryMode").value = "both";
+    $("directoryRadius").value = "anywhere";
+    $("directoryLocationStatus").textContent = "Showing every interpreter who shared an approximate public area.";
+    await refreshInterpreterDirectory();
+    setDirectoryView("map");
+    renderDirectoryMap(filteredDirectoryProfiles, true);
 }
 
 function useDirectoryLocation() {
@@ -1267,8 +1288,8 @@ async function openPublicProfile(profile) {
     $("publicProfileCredentials").textContent = (profile.credentials || []).join(", ") || "Not listed";
     const serviceLocation = profile.serviceLocation || {};
     const publicArea = [serviceLocation.city, serviceLocation.state, serviceLocation.country].filter(Boolean).join(", ");
-    $("publicProfileLocation").textContent = profile.serviceOptions?.inPerson && publicArea
-        ? `${publicArea} · within ${Number(profile.serviceOptions.radiusMiles || 25)} miles`
+    $("publicProfileLocation").textContent = publicArea
+        ? `${publicArea}${profile.serviceOptions?.inPerson ? ` · within ${Number(profile.serviceOptions.radiusMiles || 25)} miles` : " · Remote service"}`
         : "Remote video";
     $("publicProfileVerification").textContent = profileVerificationLabel(profile);
     $("publicProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
@@ -1418,8 +1439,19 @@ async function saveProfile(e) {
     status.textContent = "Saving…";
     try {
         const phoneNormalized = normalizePhoneNumber(phone);
-        const result = await apiFetch("/api/accounts/me", { method: "PATCH", body: JSON.stringify({ displayName, phone }) });
-        currentProfile = { ...currentProfile, ...(result.account || {}), displayName, phone, phoneNormalized };
+        const serviceArea = $("profileServiceArea").value.trim();
+        const existingLocation = currentProfile.profileLocation || currentInterpreterProfile?.serviceLocation || {};
+        const savedArea = [existingLocation.city, existingLocation.state, existingLocation.country].filter(Boolean).join(", ");
+        let profileLocation = serviceArea ? existingLocation : {};
+        if (serviceArea && (serviceArea !== savedArea || !existingLocation.geohash)) {
+            const geocodeResponse = await fetch(`/api/discovery/geocode?q=${encodeURIComponent(serviceArea)}`);
+            const geocodePayload = await geocodeResponse.json().catch(() => ({}));
+            if (!geocodeResponse.ok) throw new Error(geocodePayload.error || "Could not locate that public area.");
+            profileLocation = geocodePayload.location;
+        }
+        if (serviceArea) profileLocation = { ...profileLocation, showOnMap: $("profileShowOnMap").checked };
+        const result = await apiFetch("/api/accounts/me", { method: "PATCH", body: JSON.stringify({ displayName, phone, profileLocation }) });
+        currentProfile = { ...currentProfile, ...(result.account || {}), displayName, phone, phoneNormalized, profileLocation };
         hydrateDashboardProfile();
         status.textContent = "Profile saved.";
     } catch (error) { status.textContent = `Could not save profile: ${error.message}`; }
@@ -1603,6 +1635,7 @@ function hydrateInterpreterProfile(profile = {}) {
     setInterpreterPhoto(p.photoUrl || "");
     updateInterpreterCompletion();
     renderInterpreterLifecycle(p);
+    hydrateDashboardProfile();
     renderTranslatorDashboard();
 }
 

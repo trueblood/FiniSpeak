@@ -117,6 +117,31 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn("countryFlag(iso)", script)
         self.assertIn('option.textContent = `${countryFlag(iso)} ${iso} ${code}`', script)
 
+    @patch("controllers.accounts_controller.AccountModel.update_profile")
+    @patch("controllers.accounts_controller.identity_or_response")
+    def test_profile_saves_sanitized_public_map_location(self, identity, update_profile):
+        identity.return_value = ({"uid": "translator-1", "role": "translator"}, None)
+        update_profile.return_value = {"uid": "translator-1", "displayName": "Interpreter"}
+        response = self.client.patch("/api/accounts/me", json={
+            "displayName": "Interpreter",
+            "phone": "+13175550123",
+            "profileLocation": {
+                "label": "Indianapolis, Indiana, United States",
+                "city": "Indianapolis",
+                "state": "Indiana",
+                "country": "United States",
+                "latitude": 39.7684,
+                "longitude": -86.1581,
+                "showOnMap": True,
+            },
+        })
+        self.assertEqual(response.status_code, 200)
+        saved = update_profile.call_args.args[1]["profileLocation"]
+        self.assertEqual(saved["latitude"], 39.768)
+        self.assertEqual(saved["longitude"], -86.158)
+        self.assertTrue(saved["showOnMap"])
+        self.assertEqual(saved["geohash"], "dp4dprted")
+
     def test_call_media_fails_safely_before_creating_a_call_on_http(self):
         script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
         create_call = script[script.index("async function createCall"):

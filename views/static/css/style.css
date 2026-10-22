@@ -443,7 +443,8 @@ button:disabled { cursor:wait; opacity:.72; }
 #interpreterMap .leaflet-map-pane { z-index:1; } #interpreterMap .leaflet-tile-pane { z-index:2; } #interpreterMap .leaflet-overlay-pane { z-index:4; } #interpreterMap .leaflet-shadow-pane { z-index:5; } #interpreterMap .leaflet-marker-pane { z-index:6; } #interpreterMap .leaflet-tooltip-pane { z-index:7; } #interpreterMap .leaflet-popup-pane { z-index:8; }
 #interpreterMap .leaflet-tile { width:256px; height:256px; max-width:none!important; max-height:none!important; user-select:none; pointer-events:none; }
 #interpreterMap .leaflet-tile-loaded { visibility:inherit; } #interpreterMap .leaflet-zoom-animated { transform-origin:0 0; } #interpreterMap .leaflet-control { position:relative; z-index:10; pointer-events:auto; } #interpreterMap .leaflet-top,#interpreterMap .leaflet-bottom { position:absolute; z-index:10; pointer-events:none; } #interpreterMap .leaflet-top { top:0; } #interpreterMap .leaflet-right { right:0; } #interpreterMap .leaflet-bottom { bottom:0; } #interpreterMap .leaflet-left { left:0; }
-.map-privacy-note { margin:8px 4px 0; color:var(--muted); font-size:.78rem; }
+.map-status { margin:10px 4px 0; color:var(--dark); font-size:.88rem; font-weight:700; }
+.map-privacy-note { margin:6px 4px 0; color:var(--muted); font-size:.78rem; }
 .interpreter-map-marker-wrap { background:transparent; border:0; }
 .interpreter-map-marker { display:block; width:26px; height:34px; border:3px solid #fff; border-radius:50% 50% 50% 0; transform:rotate(-45deg); background:#94a3b8; box-shadow:0 3px 10px rgba(15,23,42,.35); }
 .interpreter-map-marker.available { background:#22c55e; }
@@ -458,6 +459,7 @@ button:disabled { cursor:wait; opacity:.72; }
 .directory-available { display:flex; align-items:center; min-height:48px; gap:9px; padding:0 12px; border:1px solid var(--border); border-radius:10px; color:var(--dark)!important; white-space:nowrap; }
 .directory-available input { width:auto; margin:0; accent-color:var(--primary); }
 .directory-results-heading { display:flex; justify-content:space-between; align-items:center; margin:22px 2px 12px; }.directory-results-heading p { margin:0; font-weight:700; }
+.directory-map-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 .interpreter-directory { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
 .featured-interpreter-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .featured-interpreter-card { cursor:pointer; }

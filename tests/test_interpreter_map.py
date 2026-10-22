@@ -60,6 +60,11 @@ class MapUiContractTests(unittest.TestCase):
         self.assertIn('data-interpreter-id="${CSS.escape(profile.id)}"', self.javascript)
         self.assertIn("marker.openPopup()", self.javascript)
 
+    def test_profile_can_save_a_public_area_for_interpreter_discovery(self):
+        self.assertIn('id="profileServiceArea"', self.html)
+        self.assertIn('id="profileShowOnMap"', self.html)
+        self.assertIn("profileLocation", self.javascript)
+
     def test_remote_profiles_do_not_require_map_coordinates(self):
         self.assertIn('option value="remote">Remote video', self.html)
         self.assertIn("if (!location?.showOnMap", self.javascript)
@@ -89,6 +94,12 @@ class MapUiContractTests(unittest.TestCase):
             self.javascript.index("async function createCall")]
         self.assertIn("showOnMap: Boolean(data.showOnMap)", save_profile)
         self.assertNotIn("data.showOnMap && data.serviceOptions.inPerson", save_profile)
+
+    def test_map_can_fit_every_shared_location_without_locking_user_zoom(self):
+        self.assertIn('id="showAllMapped"', self.html)
+        self.assertIn("async function showAllMappedTranslators", self.javascript)
+        self.assertIn("function renderDirectoryMap(profiles, fitToResults = false)", self.javascript)
+        self.assertIn("if (fitToResults && bounds.length)", self.javascript)
 
 
 if __name__ == "__main__":

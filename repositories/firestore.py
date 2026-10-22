@@ -53,7 +53,7 @@ class FirestoreAccountRepository(_ModelAdapter):
         current = ref.get()
         if not current.exists:
             return None
-        changes = {key: data[key] for key in ("displayName", "phone", "phoneNormalized") if key in data}
+        changes = {key: data[key] for key in ("displayName", "phone", "phoneNormalized", "profileLocation") if key in data}
         changes["updatedAt"] = datetime.now(timezone.utc)
         ref.set(changes, merge=True)
         stored = current.to_dict()

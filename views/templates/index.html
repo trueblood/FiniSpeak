@@ -203,6 +203,8 @@
                             <div class="profile-field"><label for="profileDisplayName">Display name</label><input id="profileDisplayName" autocomplete="name" required></div>
                             <div class="profile-field"><label for="profileEmail">Email</label><input id="profileEmail" type="email" disabled aria-describedby="emailHelp"><p id="emailHelp" class="field-help">Your sign-in email cannot be changed here yet.</p></div>
                             <div class="profile-field"><label for="profilePhone">Phone number for in-app calls</label><div class="phone-input-group"><select id="profilePhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="profilePhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="317 555 0123" aria-describedby="profilePhoneHelp"></div><p id="profilePhoneHelp" class="field-help">Other FiniSpeak users can enter this number to reach you inside the app. FiniSpeak does not place telephone-network calls.</p></div>
+                            <div class="profile-field"><label for="profileServiceArea">Approximate public area</label><input id="profileServiceArea" placeholder="Indianapolis, IN" autocomplete="address-level2" aria-describedby="profileServiceAreaHelp"><p id="profileServiceAreaHelp" class="field-help">Add a city, state/province, or ZIP—not a street address. For verified interpreters, this can place an approximate marker on the directory map.</p></div>
+                            <label class="inline-check"><input id="profileShowOnMap" type="checkbox"> Show my approximate public area on the interpreter map</label>
                             <div class="profile-field"><label for="profileRole">Account type</label><input id="profileRole" disabled></div>
                             <button type="submit">Save profile</button>
                         </form>
@@ -225,10 +227,10 @@
                         <label class="directory-available"><input id="directoryVerified" type="checkbox"> Verified only</label>
                     </div>
                     <div class="directory-location-bar card"><button id="useMyLocation" type="button">Use my location</button><form id="manualLocationForm"><label for="manualLocation">Or enter a city, state, or ZIP<span class="location-entry"><input id="manualLocation" placeholder="Indianapolis, IN"><button class="secondary" type="submit">Search</button></span></label></form><span id="directoryLocationStatus" role="status" aria-live="polite">Location is optional for remote search.</span></div>
-                    <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p><button id="searchMapArea" class="secondary hidden" type="button">Search this area</button></div>
+                    <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p><div class="directory-map-actions"><button id="showAllMapped" class="secondary" type="button">Show all mapped translators</button><button id="searchMapArea" class="secondary hidden" type="button">Search this area</button></div></div>
                     <div id="directoryResultsLayout" class="directory-results-layout list-view">
                         <div id="interpreterDirectory" class="interpreter-directory" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div></div>
-                        <div id="interpreterMapPanel" class="interpreter-map-panel hidden"><div id="interpreterMap" aria-label="Map of interpreter service areas" role="application"></div><p class="map-privacy-note">Locations are approximate public service areas. Your precise location is never shared.</p></div>
+                        <div id="interpreterMapPanel" class="interpreter-map-panel hidden"><div id="interpreterMap" aria-label="Map of interpreter service areas" role="application"></div><p id="interpreterMapStatus" class="map-status" role="status" aria-live="polite"></p><p class="map-privacy-note">Locations are approximate public service areas. Your precise location is never shared.</p></div>
                     </div>
                 </div>
 
@@ -761,6 +763,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261022-map-visibility-consent"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261022-profile-map-location"></script>
 </body>
 </html>

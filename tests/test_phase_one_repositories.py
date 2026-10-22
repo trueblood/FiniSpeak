@@ -3,7 +3,7 @@ import hmac
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from models.sql_models import SqlApiKey, SqlCall, SqlUser
+from models.sql_models import SqlApiKey, SqlCall, SqlTranslator, SqlUser
 from repositories.config import REPOSITORY_DOMAINS, repository_backends
 from repositories.mysql import (
     MySqlAccountRepository, MySqlApiAccessRepository, MySqlCallRepository,
@@ -105,6 +105,30 @@ class MySqlAccountRepositoryTests(unittest.TestCase):
             MySqlAccountRepository(session).update_status("user-1", "suspended")
         self.assertEqual(session.rollbacks, 1)
         self.assertEqual(row.mutation_version, 2)
+
+    def test_profile_location_is_preserved_without_a_schema_column(self):
+        row = sql_user(raw_document={"profileLocation": {"city": "Indianapolis", "showOnMap": True}})
+        session = FakeSession({(SqlUser, "user-1"): row}, scalar=row)
+        result = MySqlAccountRepository(session).update_profile("user-1", {
+            "displayName": "Ada", "profileLocation": {"city": "Carmel", "showOnMap": True}
+        })
+        self.assertEqual(result["profileLocation"], {"city": "Carmel", "showOnMap": True})
+
+
+class MySqlTranslatorMapLocationTests(unittest.TestCase):
+    def test_public_profile_falls_back_to_account_map_location(self):
+        now = datetime.now(timezone.utc)
+        translator = SqlTranslator(id="translator-1", uid="translator-1", display_name="Interpreter",
+            languages=[], dialects=[], specialties=[], credentials=[], availability={}, verification_status="verified",
+            raw_document={"serviceLocation": {"showOnMap": False}}, migrated_at=now, mutation_version=1)
+        account = sql_user("translator-1", raw_document={"profileLocation": {
+            "city": "Indianapolis", "state": "Indiana", "country": "United States",
+            "latitude": 39.768, "longitude": -86.158, "geohash": "dp4dpr08e", "showOnMap": True,
+        }})
+        session = FakeSession({(SqlUser, "translator-1"): account}, scalar_rows=[])
+        result = MySqlTranslatorRepository(session)._public(translator)
+        self.assertEqual(result["serviceLocation"]["city"], "Indianapolis")
+        self.assertTrue(result["serviceLocation"]["showOnMap"])
 
 
 class MySqlAuthorizationTests(unittest.TestCase):

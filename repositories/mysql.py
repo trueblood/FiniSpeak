@@ -168,7 +168,7 @@ TRANSLATOR_FIELDS = {
 
 
 class MySqlAccountRepository:
-    public_fields = {"uid", "displayName", "email", "phone", "role", "status", "createdAt", "updatedAt", "deletedAt", "deletedBy"}
+    public_fields = {"uid", "displayName", "email", "phone", "profileLocation", "role", "status", "createdAt", "updatedAt", "deletedAt", "deletedBy"}
 
     def __init__(self, session): self.session = session
 
@@ -301,7 +301,7 @@ class MySqlAccountRepository:
     def update_profile(self, uid, data):
         row = self.session.scalar(select(SqlUser).where(SqlUser.uid == uid).with_for_update())
         if not row: return None
-        changes = {key: data[key] for key in ("displayName", "phone") if key in data}
+        changes = {key: data[key] for key in ("displayName", "phone", "profileLocation") if key in data}
         if "phone" in changes:
             supplied_phone = str(changes["phone"] or "").strip()
             changes["phone"] = canonicalize_phone(supplied_phone)
@@ -321,6 +321,19 @@ class MySqlTranslatorRepository:
                      "yearsExperience"}
 
     def __init__(self, session): self.session = session
+
+    def _map_location(self, row, data):
+        """Prefer interpreter settings, then the account's public map area."""
+        interpreter_location = data.get("serviceLocation") or {}
+        if interpreter_location.get("showOnMap"):
+            return interpreter_location
+        account = self.session.get(SqlUser, row.id)
+        if not account and row.uid and row.uid != row.id:
+            account = self.session.scalar(select(SqlUser).where(SqlUser.uid == row.uid).limit(1))
+        account_location = (_raw(account).get("profileLocation") if account else None) or {}
+        if account_location.get("showOnMap"):
+            return account_location
+        return interpreter_location
 
     def all_public(self):
         rows = self.session.scalars(select(SqlTranslator).where(SqlTranslator.verification_status == "verified")).all()
@@ -367,7 +380,7 @@ class MySqlTranslatorRepository:
             if specialty and specialty not in {str(x).casefold() for x in data.get("specialties", [])}: continue
             if available_now and not (data.get("availability") or {}).get("availableNow"): continue
             if float(data.get("rating") or 0) < float(minimum_rating or 0): continue
-            options, location = data.get("serviceOptions") or {}, data.get("serviceLocation") or {}
+            options, location = data.get("serviceOptions") or {}, self._map_location(row, data)
             distance = None
             if has_origin and location.get("showOnMap") and location.get("latitude") is not None and location.get("longitude") is not None:
                 distance = haversine_miles(latitude, longitude, location["latitude"], location["longitude"])
@@ -590,7 +603,7 @@ class MySqlTranslatorRepository:
         profile["availability"] = {"availableNow": bool(availability.get("availableNow", False)),
             "days": availability.get("days", []) if isinstance(availability.get("days", []), list) else [],
             "start": availability.get("start", ""), "end": availability.get("end", "")}
-        location = data.get("serviceLocation") or {}
+        location = self._map_location(row, data)
         if location.get("showOnMap"):
             profile["serviceLocation"] = {key: location.get(key) for key in ("city", "state", "country", "latitude", "longitude", "geohash", "showOnMap")}
         else: profile.pop("serviceLocation", None)
