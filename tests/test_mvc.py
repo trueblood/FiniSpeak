@@ -47,6 +47,21 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('id="interpreterWizardBack"', html)
         self.assertNotIn('<select id="interpreterCredentialStatus">', html)
 
+    def test_interpreter_taxonomy_multiselects_survive_partial_mysql_profiles(self):
+        html = self.client.get("/").get_data(as_text=True)
+        script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+
+        for field_id in ("interpreterLanguages", "interpreterDialects", "interpreterSpecialties"):
+            self.assertIn(f'id="{field_id}"', html)
+        for tags_id in ("interpreterLanguagesTags", "interpreterDialectsTags", "interpreterSpecialtiesTags"):
+            self.assertIn(f'id="{tags_id}"', html)
+        self.assertIn('const languages = Array.isArray(data?.languages) ? data.languages : [];', script)
+        self.assertIn('const availabilityDays = Array.isArray(availability.days) ? availability.days : [];', script)
+        self.assertIn('const serviceOptions = data?.serviceOptions', script)
+
+        translator_block = script[script.index("if (isTranslator) {"):script.index("try { startDashboardListeners()")]
+        self.assertGreater(translator_block.index("await loadTaxonomy();"), translator_block.index('console.error("Interpreter profile load failed:", error);'))
+
     def test_dashboard_exposes_mobile_app_navigation_and_actions(self):
         response = self.client.get("/")
         html = response.get_data(as_text=True)

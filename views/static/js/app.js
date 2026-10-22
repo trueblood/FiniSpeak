@@ -491,14 +491,16 @@ async function handleAuthState(user) {
             try {
                 if (currentInterpreterProfile) hydrateInterpreterProfile(currentInterpreterProfile);
                 else await loadInterpreterProfile();
-                try {
-                    await loadTaxonomy();
-                } catch (taxonomyError) {
-                    console.warn("Interpreter taxonomy load failed; saved profile remains available:", taxonomyError);
-                }
             } catch (error) {
                 console.error("Interpreter profile load failed:", error);
                 $("translatorRequestStatus").textContent = `Dashboard loaded, but the interpreter profile could not be loaded: ${error.message}`;
+            }
+            // Taxonomy powers three independent multi-selects. A migrated or
+            // partially populated profile must not prevent their initialization.
+            try {
+                await loadTaxonomy();
+            } catch (taxonomyError) {
+                console.warn("Interpreter taxonomy load failed; saved profile remains available:", taxonomyError);
             }
         }
 
@@ -1802,15 +1804,24 @@ function interpreterFormData() {
 }
 
 function interpreterWizardSteps(data = interpreterFormData()) {
+    // MySQL migration rows can legitimately omit nested values that Firestore
+    // used to materialize. Normalize them here because this calculator is used
+    // both with complete form data and with lightweight dashboard summaries.
+    const languages = Array.isArray(data?.languages) ? data.languages : [];
+    const specialties = Array.isArray(data?.specialties) ? data.specialties : [];
+    const credentials = Array.isArray(data?.credentials) ? data.credentials : [];
+    const availability = data?.availability && typeof data.availability === "object" ? data.availability : {};
+    const availabilityDays = Array.isArray(availability.days) ? availability.days : [];
+    const serviceOptions = data?.serviceOptions && typeof data.serviceOptions === "object" ? data.serviceOptions : {};
     const hasValidExperience = Number.isFinite(data.yearsExperience) && data.yearsExperience >= 0 && data.yearsExperience <= 80;
-    const hasValidSchedule = data.availability.days.length && data.availability.start && data.availability.end && data.availability.start < data.availability.end;
+    const hasValidSchedule = availabilityDays.length && availability.start && availability.end && availability.start < availability.end;
     const existingDocuments = (currentInterpreterProfile?.credentialDocuments || []).filter(document => !pendingCredentialRemovalPaths.has(document.path));
     const selectedDocuments = [...($("interpreterCredentialFiles").files || [])];
     return [
         { label: "Personal info", complete: Boolean(data.displayName && data.bio), message: "Add your full name and professional bio before continuing." },
-        { label: "Languages", complete: Boolean(data.languages.length && data.specialties.length), message: "Add at least one language and one specialty before continuing." },
-        { label: "Credentials", complete: Boolean(hasValidExperience && data.credentials.length && (existingDocuments.length || selectedDocuments.length)), message: "Add your years of experience, at least one credential, and a supporting document before continuing." },
-        { label: "Service location", complete: Boolean(data.serviceOptions.remote || (data.serviceOptions.inPerson && data.serviceArea)), message: "Choose remote or in-person service. In-person service requires a public city, state/province, or ZIP." },
+        { label: "Languages", complete: Boolean(languages.length && specialties.length), message: "Add at least one language and one specialty before continuing." },
+        { label: "Credentials", complete: Boolean(hasValidExperience && credentials.length && (existingDocuments.length || selectedDocuments.length)), message: "Add your years of experience, at least one credential, and a supporting document before continuing." },
+        { label: "Service location", complete: Boolean(serviceOptions.remote || (serviceOptions.inPerson && data.serviceArea)), message: "Choose remote or in-person service. In-person service requires a public city, state/province, or ZIP." },
         { label: "Availability", complete: Boolean(hasValidSchedule), message: "Choose at least one day and a valid start and end time." }
     ];
 }
