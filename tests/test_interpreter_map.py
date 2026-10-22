@@ -60,12 +60,13 @@ class MapUiContractTests(unittest.TestCase):
         self.assertIn('data-interpreter-id="${CSS.escape(profile.id)}"', self.javascript)
         self.assertIn("marker.openPopup()", self.javascript)
 
-    def test_popup_actions_are_bound_directly_to_stable_content(self):
+    def test_popup_has_only_a_direct_view_profile_action(self):
         map_renderer = self.javascript[self.javascript.index("function renderDirectoryMap"):
             self.javascript.index("async function showAllMappedTranslators")]
         self.assertIn('const popupContent = document.createElement("article")', map_renderer)
         self.assertIn('popupContent.querySelector("[data-map-profile]").onclick', map_renderer)
-        self.assertIn('popupContent.querySelector("[data-map-request]").onclick', map_renderer)
+        self.assertNotIn("data-map-request", map_renderer)
+        self.assertNotIn("Request interpreter", map_renderer)
         self.assertIn("marker.bindPopup(popupContent)", map_renderer)
         self.assertNotIn('marker.on("popupopen"', map_renderer)
 
