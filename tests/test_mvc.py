@@ -62,6 +62,15 @@ class MvcRouteTests(unittest.TestCase):
         translator_block = script[script.index("if (isTranslator) {"):script.index("try { startDashboardListeners()")]
         self.assertGreater(translator_block.index("await loadTaxonomy();"), translator_block.index('console.error("Interpreter profile load failed:", error);'))
 
+    def test_credential_document_renderer_does_not_shadow_browser_document(self):
+        script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        renderer = script[script.index("function renderCredentialDocuments"):
+            script.index("function renderCredentialReviewStatus")]
+
+        self.assertIn("visibleDocuments.map(credentialDocument =>", renderer)
+        self.assertIn('const row = document.createElement("span");', renderer)
+        self.assertNotIn("visibleDocuments.map(document =>", renderer)
+
     def test_dashboard_exposes_mobile_app_navigation_and_actions(self):
         response = self.client.get("/")
         html = response.get_data(as_text=True)

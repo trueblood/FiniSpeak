@@ -1608,41 +1608,41 @@ function hydrateInterpreterProfile(profile = {}) {
 
 function renderCredentialDocuments(documents = []) {
     const container = $("credentialDocumentList");
-    const visibleDocuments = documents.filter(document => !pendingCredentialRemovalPaths.has(document.path));
+    const visibleDocuments = documents.filter(credentialDocument => !pendingCredentialRemovalPaths.has(credentialDocument.path));
     if (!visibleDocuments.length) {
         container.innerHTML = "<p>No credential documents uploaded yet.</p>";
         return;
     }
-    container.replaceChildren(...visibleDocuments.map(document => {
+    container.replaceChildren(...visibleDocuments.map(credentialDocument => {
         const row = document.createElement("span");
         row.className = "credential-document";
         const name = document.createElement("span");
-        name.textContent = document.name || "Credential document";
+        name.textContent = credentialDocument.name || "Credential document";
         const view = document.createElement("button");
         view.className = "text-button";
         view.type = "button";
         view.textContent = "View";
-        view.onclick = () => openInterpreterCredentialDocument(document, view);
+        view.onclick = () => openInterpreterCredentialDocument(credentialDocument, view);
         const remove = document.createElement("button");
         remove.className = "text-button reject-action";
         remove.type = "button";
         remove.textContent = "Remove";
         remove.onclick = () => {
-            if (document.path) pendingCredentialRemovalPaths.add(document.path);
+            if (credentialDocument.path) pendingCredentialRemovalPaths.add(credentialDocument.path);
             renderCredentialDocuments(documents);
             updateInterpreterCompletion();
-            $("interpreterProfileStatus").textContent = `${document.name || "Credential document"} will be removed when you save.`;
+            $("interpreterProfileStatus").textContent = `${credentialDocument.name || "Credential document"} will be removed when you save.`;
         };
         row.append(name, view, remove);
         return row;
     }));
 }
 
-async function openInterpreterCredentialDocument(document, button) {
-    if (!document.path) return;
+async function openInterpreterCredentialDocument(credentialDocument, button) {
+    if (!credentialDocument.path) return;
     button.disabled = true;
     try {
-        window.open(document.path, "_blank", "noopener");
+        window.open(credentialDocument.path, "_blank", "noopener");
     } catch (error) {
         $("interpreterProfileStatus").textContent = `Could not open credential document: ${error.message}`;
     } finally { button.disabled = false; }
