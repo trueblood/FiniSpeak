@@ -1201,13 +1201,22 @@ function renderDirectoryMap(profiles, fitToResults = false) {
         }) });
         const distance = profile.distanceMiles != null ? `${Number(profile.distanceMiles).toFixed(1)} miles away` : "Distance available after choosing your location";
         const photo = profile.photoUrl ? `<img src="${escapeHtml(profile.photoUrl)}" alt="">` : `<span class="map-popup-avatar" aria-hidden="true">${escapeHtml(profileInitials(profile.displayName))}</span>`;
-        marker.bindPopup(`<article class="map-profile-popup"><header>${photo}<strong>${escapeHtml(profile.displayName)}</strong></header><span>${escapeHtml([...(profile.languages || []), ...(profile.dialects || [])].slice(0,3).join(" · "))}</span><span>${escapeHtml((profile.specialties || []).slice(0,2).join(" · "))}</span><span>${Number(profile.yearsExperience || 0)} years · ${Number(profile.rating || 0).toFixed(1)} ★ (${Number(profile.ratingCount || 0)})</span><span>${escapeHtml(profile.verificationStatus === "verified" ? "Verified" : "")}${available ? " · Available now" : ""}</span><span>${escapeHtml(distance)}</span><div><button type="button" data-map-profile="${escapeHtml(profile.id)}">View profile</button><button type="button" data-map-request="${escapeHtml(profile.id)}">Request interpreter</button></div></article>`);
+        const popupContent = document.createElement("article");
+        popupContent.className = "map-profile-popup";
+        popupContent.innerHTML = `<header>${photo}<strong>${escapeHtml(profile.displayName)}</strong></header><span>${escapeHtml([...(profile.languages || []), ...(profile.dialects || [])].slice(0,3).join(" · "))}</span><span>${escapeHtml((profile.specialties || []).slice(0,2).join(" · "))}</span><span>${Number(profile.yearsExperience || 0)} years · ${Number(profile.rating || 0).toFixed(1)} ★ (${Number(profile.ratingCount || 0)})</span><span>${escapeHtml(profile.verificationStatus === "verified" ? "Verified" : "")}${available ? " · Available now" : ""}</span><span>${escapeHtml(distance)}</span><div><button type="button" data-map-profile="${escapeHtml(profile.id)}">View profile</button><button type="button" data-map-request="${escapeHtml(profile.id)}">Request interpreter</button></div>`;
+        popupContent.querySelector("[data-map-profile]").onclick = event => {
+            event.preventDefault(); event.stopPropagation();
+            marker.closePopup();
+            openPublicProfile(profile);
+        };
+        popupContent.querySelector("[data-map-request]").onclick = event => {
+            event.preventDefault(); event.stopPropagation();
+            marker.closePopup();
+            selectInterpreterForCall(profile);
+            openDashboardPanel("home");
+        };
+        marker.bindPopup(popupContent);
         marker.on("click", () => selectDirectoryProfile(profile));
-        marker.on("popupopen", event => {
-            const popup = event.popup.getElement();
-            popup?.querySelector("[data-map-profile]")?.addEventListener("click", () => openPublicProfile(profile));
-            popup?.querySelector("[data-map-request]")?.addEventListener("click", () => { selectInterpreterForCall(profile); openDashboardPanel("home"); });
-        });
         directoryMarkers.set(profile.id, marker); directoryMarkerLayer.addLayer(marker); bounds.push([location.latitude, location.longitude]);
     });
     const mappedCount = directoryMarkers.size;
