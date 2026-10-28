@@ -55,10 +55,15 @@ def configure_optional_mysql(app):
         app.config["MYSQL_CONFIGURED"] = False
         if os.getenv("FINISPEAK_ENV", "development").lower() == "production":
             raise RuntimeError("All MYSQL_* settings are required in production.")
-        app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
+        database_uri = os.getenv(
             "FINISPEAK_DEVELOPMENT_DATABASE_URL", "sqlite:///:memory:"
         )
+        app.config["SQLALCHEMY_DATABASE_URI"] = database_uri
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+        if database_uri.startswith("sqlite") and ":memory:" not in database_uri:
+            app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+                "connect_args": {"check_same_thread": False, "timeout": 30},
+            }
         db.init_app(app)
         app.config["DATABASE_CONFIGURED"] = True
         return
@@ -175,8 +180,69 @@ def create_app(repository_overrides=None):
     return app
 
 
+def configure_local_development_runtime():
+    """Use a file database and a stable signing key when `python app.py` has no MySQL."""
+    if os.getenv("FINISPEAK_ENV", "development").strip().lower() != "development":
+        return
+    if all(os.environ.get(name) for name in MYSQL_ENVIRONMENT_VARIABLES):
+        return
+    instance_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instance")
+    os.makedirs(instance_dir, exist_ok=True)
+    os.environ.setdefault(
+        "FINISPEAK_DEVELOPMENT_DATABASE_URL",
+        "sqlite:///" + os.path.join(instance_dir, "finispeak-dev.sqlite"),
+    )
+    if len(os.getenv("FINISPEAK_JWT_SECRET", "").strip()) >= 32:
+        return
+    secret_path = os.path.join(instance_dir, "jwt-secret")
+    secret = ""
+    if os.path.exists(secret_path):
+        with open(secret_path, encoding="utf-8") as handle:
+            secret = handle.read().strip()
+    if len(secret) < 32:
+        secret = secrets.token_urlsafe(48)
+        with open(secret_path, "w", encoding="utf-8") as handle:
+            handle.write(secret)
+        os.chmod(secret_path, 0o600)
+    os.environ["FINISPEAK_JWT_SECRET"] = secret
+
+
+def create_local_sqlite_schema(app):
+    """Create application tables for the local SQLite file.
+
+    Translator discovery columns are generated with MySQL JSON functions.
+    SQLite stores those as ordinary columns so local sign-in and discovery
+    can run without a MySQL server.
+    """
+    uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+    if not str(uri).startswith("sqlite"):
+        return
+    import models.sql_models  # noqa: F401
+
+    replaced = []
+    for table in db.metadata.tables.values():
+        for column in table.columns:
+            if column.computed is not None:
+                replaced.append((column, column.computed))
+                column.computed = None
+    try:
+        with app.app_context():
+            db.create_all()
+    finally:
+        for column, computed in replaced:
+            column.computed = computed
+
+
 if __name__ == "__main__":
+    configure_local_development_runtime()
     app = create_app()
+    create_local_sqlite_schema(app)
+    if str(app.config.get("SQLALCHEMY_DATABASE_URI", "")).startswith("sqlite"):
+        print(
+            "Local sign-in is enabled. Create an account, then sign in. "
+            "Email verification is skipped on this development database.",
+            flush=True,
+        )
     app.run(
         host="0.0.0.0",
         port=int(os.environ.get("PORT", 8080)),

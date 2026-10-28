@@ -4,8 +4,8 @@ from flask_jwt_extended import set_access_cookies, unset_jwt_cookies
 from controllers.controller_utils import identity_or_response, json_body
 from services.auth_service import (
     AuthenticationError, AuthorizationError, RateLimitError, authenticate_password, authenticate_request,
-    consume_action_token, enforce_rate_limit, register_account, request_password_reset, revoke_current_session,
-    test_email_verification_bypass_enabled,
+    consume_action_token, enforce_rate_limit, local_development_sign_in_enabled, register_account,
+    request_password_reset, revoke_current_session, test_email_verification_bypass_enabled,
 )
 from services.email_service import send_account_link
 from repositories.provider import get_repository
@@ -25,7 +25,7 @@ def register():
             data.get("displayName"), data.get("phone"), data.get("role"))
         if data.get("role") == "translator":
             get_repository("translators").enroll(user, str(data.get("phone") or "").strip())
-        if test_email_verification_bypass_enabled():
+        if test_email_verification_bypass_enabled() or local_development_sign_in_enabled():
             consume_action_token(verification_token, "verify_email")
             return jsonify({
                 "message": "Account created. You can sign in now.",
