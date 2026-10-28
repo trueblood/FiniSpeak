@@ -8,6 +8,7 @@ const views = ["heroView", "authView", "dashboardView", "profileView", "callView
 const show = (id) => {
     views.forEach(v => $(v)?.classList.toggle("hidden", v !== id));
     document.body.classList.toggle("dashboard-mode", id === "dashboardView");
+    document.body.classList.toggle("profile-mode", id === "profileView");
     document.body.classList.toggle("in-call", id === "callView");
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
@@ -293,16 +294,39 @@ function bindUI() {
     $("backToDirectory").onclick = openInterpreterDirectory;
     $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
     $("openStartCall").onclick = () => {
+        const more = $("conceptMoreTools");
+        if (more) more.open = true;
         $("callStartCard").scrollIntoView({ behavior: "smooth", block: "start" });
         window.setTimeout(() => $("receiverEmail")?.focus(), 250);
     };
     document.querySelectorAll("[data-discovery-category]").forEach(button => {
+        button.onclick = () => openConceptCategory(button.dataset.discoveryCategory);
+    });
+    document.querySelectorAll("[data-concept-category]").forEach(button => {
+        button.onclick = () => openConceptCategory(button.dataset.conceptCategory);
+    });
+    $("conceptMenuButton").onclick = () => {
+        const open = document.body.classList.toggle("nav-open");
+        $("conceptMenuButton").setAttribute("aria-expanded", String(open));
+    };
+    $("conceptSearchButton").onclick = () => {
+        show("dashboardView");
+        openDashboardPanel("directory");
+        window.setTimeout(() => $("directorySearch")?.focus(), 50);
+    };
+    document.querySelectorAll("[data-concept-chip]").forEach(button => {
         button.onclick = () => {
-            openDashboardPanel("directory");
-            $("directorySearch").value = button.dataset.discoveryCategory;
+            const active = !button.classList.contains("active");
+            document.querySelectorAll("[data-concept-chip]").forEach(chip => chip.classList.toggle("active", active && chip === button));
+            $("directorySearch").value = active ? button.dataset.conceptChip : "";
             filterInterpreterDirectory();
         };
     });
+    $("conceptViewProfile").onclick = () => {
+        const profile = directoryProfiles.find(item => item.id === $("conceptMapSheet")?.dataset.profileId) || filteredDirectoryProfiles[0];
+        if (profile) openPublicProfile(profile);
+    };
+    bindConceptScreens();
     $("profileStartCall").onclick = () => {
         if (!currentUser) {
             selectInterpreterForCall(activeDirectoryProfile);
@@ -440,6 +464,8 @@ async function localSignOut() {
 
 async function handleAuthState(user) {
     currentUser = user;
+    document.body.classList.toggle("signed-in", Boolean(user));
+    if (!user) document.body.classList.remove("nav-open");
     $("authNav").textContent = user ? "Log out" : "Log in";
     if (!user) {
         currentProfile = null;
@@ -551,17 +577,26 @@ function hydrateDashboardProfile() {
 }
 
 function openDashboardPanel(panel) {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings" };
+    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", intelligence: "dashboardIntelligence" };
     Object.entries(ids).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== panel));
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => {
         const active = button.dataset.dashboardPanel === panel;
         button.classList.toggle("active", active);
         if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
     });
-    window.scrollTo({ top: 0, behavior: "auto" });
-    if (panel === "directory") loadInterpreterDirectory();
+    document.body.classList.remove("nav-open");
+    $("conceptMenuButton")?.setAttribute("aria-expanded", "false");
+    $("dashboardView")?.querySelector(".dashboard-content")?.scrollTo({ top: 0, behavior: "auto" });
+    if (panel === "directory") { setDirectoryView("map"); loadInterpreterDirectory(); }
     if (panel === "friends") loadFriends();
     if (panel === "admin") loadAdminDashboard();
+    if (panel === "lesson") renderLessonScreen();
+    if (panel === "schedule") renderScheduleScreen();
+    if (panel === "goal") renderGoalScreen();
+    if (panel === "match") renderAutoMatchScreen();
+    if (panel === "live") renderLiveScreen();
+    if (panel === "summary") renderSummaryScreen();
+    if (panel === "classroom") renderEducationScreen();
 }
 
 async function apiFetch(path, options = {}) {
@@ -1147,6 +1182,7 @@ function renderInterpreterDirectory(profiles) {
         card.onclick = () => selectDirectoryProfile(profile, true);
         return card;
     }));
+    renderConceptMapSheet(profiles[0]);
 }
 
 function selectDirectoryProfile(profile, openProfile = false) {
@@ -1157,6 +1193,7 @@ function selectDirectoryProfile(profile, openProfile = false) {
         directoryMap.panTo(marker.getLatLng());
         marker.openPopup();
     }
+    renderConceptMapSheet(profile);
     if (openProfile && directoryView === "list") openPublicProfile(profile);
 }
 
@@ -1298,6 +1335,7 @@ async function openPublicProfile(profile) {
     $("publicProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
     $("publicProfileReviews").innerHTML = "<p>Detailed community feedback will appear here as reviews are added.</p>";
+    renderConceptProfile(profile);
     show("profileView");
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -3647,7 +3685,9 @@ async function toggleCamera() {
 }
 async function endCall() {
     const callId = activeCallId;
-    cleanupCall(); show("dashboardView");
+    lastSessionSnapshot = captureSessionSnapshot();
+    lastEndedCall = callId ? { id: callId, translatorId: selectedInterpreterProfile?.id || activeDirectoryProfile?.id || "" } : lastEndedCall;
+    cleanupCall(); show("dashboardView"); openDashboardPanel("summary");
     if (callId) {
         try {
             await apiFetch(`/api/calls/${encodeURIComponent(callId)}/leave`, { method: "POST", body: "{}" });
@@ -3960,6 +4000,290 @@ function renderTranscriptInto(list, rows) {
         const text = document.createElement("p"); text.className = "transcript-text"; text.textContent = row.text || "";
         speaker.append(name, role); item.append(speaker, text); list.appendChild(item);
     }
+}
+
+let conceptCategory = "Education";
+let lastSessionSnapshot = null;
+let lastEndedCall = null;
+let conceptMatchedProfile = null;
+
+function setConceptCategory(name) {
+    conceptCategory = name || "Education";
+    document.querySelectorAll("[data-discovery-category], [data-concept-category]").forEach(button => {
+        const value = button.dataset.discoveryCategory || button.dataset.conceptCategory;
+        const active = value === conceptCategory;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+    });
+}
+
+function openConceptCategory(name) {
+    setConceptCategory(name);
+    if ($("dashboardView")?.classList.contains("hidden")) show("dashboardView");
+    if (name === "Education") openDashboardPanel("classroom");
+    else if (name === "Personal") openDashboardPanel("home");
+    else {
+        openDashboardPanel("directory");
+        if ($("directorySearch")) $("directorySearch").value = "Business";
+        filterInterpreterDirectory();
+    }
+}
+
+function renderConceptMapSheet(profile) {
+    const sheet = $("conceptMapSheet");
+    if (!sheet) return;
+    if (!profile) { sheet.hidden = true; return; }
+    sheet.hidden = false;
+    sheet.dataset.profileId = profile.id || "";
+    $("conceptSheetName").textContent = profile.displayName || "Interpreter";
+    const rating = Number(profile.rating || 0);
+    const filled = rating ? Math.max(1, Math.min(5, Math.round(rating))) : 5;
+    $("conceptSheetStars").textContent = `${"★".repeat(filled)}${"☆".repeat(5 - filled)}`;
+    const meta = [...(profile.dialects || []), ...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2).join(" · ");
+    $("conceptSheetMeta").textContent = meta || "Verified interpreter";
+    setProfileAvatar($("conceptSheetAvatar"), profile);
+}
+
+function renderConceptProfile(profile) {
+    const languages = $("conceptProfileLanguages");
+    if (!languages) return;
+    const badges = [...(profile.languages || []), ...(profile.dialects || [])].filter(Boolean).slice(0, 3);
+    languages.innerHTML = badges.map(value => `<span>${escapeHtml(value)}</span>`).join("");
+    $("conceptProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Today · 11:00 AM – 12:00 PM");
+    const labels = ["S", "M", "T", "W", "T", "F", "S"];
+    const today = new Date().getDay();
+    $("conceptProfileWeek").innerHTML = labels.map((label, index) => index === today ? `<b>${label}</b>` : `<span>${label}</span>`).join("");
+}
+
+function captureSessionSnapshot() {
+    const others = [...peerProfiles.values()].map(profile => profile?.displayName).filter(Boolean);
+    const lines = [...($("transcriptList")?.querySelectorAll(".transcript-line") || [])].slice(-6).map(line => line.innerText.trim()).filter(Boolean);
+    return {
+        selfName: currentProfile?.displayName || "You",
+        otherName: others[0] || activeDirectoryProfile?.displayName || "Participant",
+        tutorName: selectedInterpreterProfile?.displayName || activeDirectoryProfile?.displayName || others[0] || "Your interpreter",
+        language: (selectedInterpreterProfile?.languages || activeDirectoryProfile?.languages || [])[0] || "Session",
+        when: $("callDuration")?.textContent || "",
+        lines
+    };
+}
+
+async function ensureDirectoryProfiles() {
+    if (directoryProfiles.length) return directoryProfiles;
+    try { directoryProfiles = await fetchDirectoryProfiles(); } catch (error) { console.warn("Concept directory load failed:", error); }
+    return directoryProfiles;
+}
+
+function paintConceptAvatar(element, profile, fallback) {
+    if (!element) return;
+    if (!profile) { element.textContent = fallback || "FS"; element.style.backgroundImage = ""; return; }
+    setProfileAvatar(element, profile);
+}
+
+function renderLessonScreen() {
+    ensureDirectoryProfiles().then(profiles => {
+        const tutor = activeDirectoryProfile || profiles[0];
+        if (!tutor) return;
+        conceptMatchedProfile = tutor;
+        paintConceptAvatar($("conceptTutorAvatar"), tutor, "IG");
+        $("conceptTutorName").textContent = tutor.displayName || "Your tutor";
+        const rating = Number(tutor.rating || 4.9);
+        $("conceptTutorStars").innerHTML = `${"★".repeat(Math.max(1, Math.round(rating)))} <span>${rating.toFixed(1)}</span>`;
+        $("conceptTutorBadge").textContent = tutor.verificationStatus === "verified" ? "Verified" : "Tutor";
+        $("conceptLessonTopic").textContent = (tutor.specialties || [])[0] || "Intermediate Vocabulary";
+    });
+}
+
+function renderScheduleScreen() {
+    const month = $("conceptScheduleMonth");
+    const grid = $("conceptScheduleGrid");
+    if (!month || !grid) return;
+    const now = new Date();
+    month.textContent = now.toLocaleString(undefined, { month: "long", year: "numeric" });
+    const year = now.getFullYear();
+    const monthIndex = now.getMonth();
+    const first = new Date(year, monthIndex, 1).getDay();
+    const days = new Date(year, monthIndex + 1, 0).getDate();
+    const labels = ["S", "M", "T", "W", "T", "F", "S"];
+    grid.replaceChildren();
+    labels.forEach(label => {
+        const cell = document.createElement("span");
+        cell.textContent = label;
+        grid.appendChild(cell);
+    });
+    for (let blank = 0; blank < first; blank += 1) grid.appendChild(document.createElement("span"));
+    for (let day = 1; day <= days; day += 1) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = String(day);
+        if (day === now.getDate()) button.className = "active";
+        button.onclick = () => {
+            grid.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
+            $("conceptSlotLabel").textContent = `${button.textContent} · 11:00 AM – 12:00 PM`;
+        };
+        grid.appendChild(button);
+    }
+    const profile = activeDirectoryProfile || selectedInterpreterProfile;
+    $("conceptSlotMeta").textContent = profile ? [...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2).join(", ") || "Live session" : "Legal, Business";
+}
+
+function renderGoalScreen() {
+    const profile = activeDirectoryProfile || conceptMatchedProfile || directoryProfiles[0];
+    if (!profile) return;
+    conceptMatchedProfile = profile;
+    $("conceptGoalName").textContent = profile.displayName || "Interpreter";
+    paintConceptAvatar($("conceptGoalAvatar"), profile, "AC");
+}
+
+function renderLiveScreen() {
+    const profile = activeDirectoryProfile || conceptMatchedProfile;
+    if (!profile) return;
+    $("conceptLiveName").textContent = profile.displayName || "Interpreter";
+    paintConceptAvatar($("conceptLiveAvatarA"), profile, "AC");
+    paintConceptAvatar($("conceptLiveAvatarB"), { displayName: currentProfile?.displayName || "You" }, "You");
+}
+
+function scoreProfile(profile) {
+    const language = ($("conceptMatchLanguage")?.value || "").toLowerCase();
+    const goal = ($("conceptMatchGoal")?.value || "").toLowerCase();
+    const blob = [profile.displayName, profile.bio, ...(profile.languages || []), ...(profile.dialects || []), ...(profile.specialties || [])].filter(Boolean).join(" ").toLowerCase();
+    let score = 72 + Math.min(12, Number(profile.rating || 0) * 2);
+    if (language && blob.includes(language)) score += 12;
+    goal.split(/\s+/).filter(word => word.length > 3).forEach(word => { if (blob.includes(word)) score += 4; });
+    if (profile.verificationStatus === "verified") score += 6;
+    return Math.min(99, Math.round(score));
+}
+
+function renderAutoMatchScreen() {
+    const list = $("conceptMatchList");
+    if (!list) return;
+    ensureDirectoryProfiles().then(profiles => {
+        const ranked = [...profiles].sort((a, b) => scoreProfile(b) - scoreProfile(a)).slice(0, 2);
+        conceptMatchedProfile = ranked[0] || null;
+        if (!ranked.length) {
+            list.innerHTML = '<p class="transcript-empty">No interpreters are available to match yet.</p>';
+            return;
+        }
+        list.innerHTML = ranked.map(profile => {
+            const tags = [...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2);
+            const quote = profile.bio ? `"${profile.bio.slice(0, 42)}${profile.bio.length > 42 ? "…" : ""}"` : "Highly recommended";
+            return `<article class="concept-match-card"><div class="concept-avatar">${escapeHtml(profileInitials(profile.displayName))}</div><div><strong>${escapeHtml(profile.displayName || "Interpreter")}</strong><div class="concept-stars">${"★".repeat(Math.max(1, Math.round(Number(profile.rating || 5))))}</div><div class="concept-lang-badges">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join("")}</div><p>${escapeHtml(quote)}</p></div><span class="match-score">${scoreProfile(profile)}% Match</span></article>`;
+        }).join("");
+        ranked.forEach((profile, index) => paintConceptAvatar(list.querySelectorAll(".concept-avatar")[index], profile));
+    });
+}
+
+function renderSummaryScreen() {
+    const snapshot = lastSessionSnapshot;
+    if (!snapshot) return;
+    $("conceptSummarySelf").textContent = snapshot.selfName;
+    $("conceptSummaryOther").textContent = snapshot.otherName;
+    $("conceptSummaryTutor").textContent = snapshot.tutorName;
+    $("conceptSummaryLanguage").textContent = snapshot.language;
+    if (snapshot.when) $("conceptSummaryWhen").textContent = snapshot.when;
+    paintConceptAvatar($("conceptSummaryAvatarA"), { displayName: snapshot.selfName }, "FS");
+    paintConceptAvatar($("conceptSummaryAvatarB"), { displayName: snapshot.otherName }, "AN");
+    paintConceptAvatar($("conceptSummaryTutorAvatar"), { displayName: snapshot.tutorName }, "CC");
+    if (snapshot.lines.length) {
+        $("conceptTranscriptHits").innerHTML = snapshot.lines.map(line => `<p>${escapeHtml(line)}</p>`).join("");
+    }
+}
+
+function renderEducationScreen() {
+    const list = $("educationHistory");
+    if (!list) return;
+    const rows = [...historyCalls.values()].sort((a, b) => callMillis(b) - callMillis(a)).slice(0, 4);
+    if (!rows.length) return;
+    list.innerHTML = rows.map(call => {
+        const other = (currentUser?.uid === call.callerId ? call.receiverName : call.callerName) || call.translatorName || "FiniSpeak session";
+        const date = timestampDate(call.startedAt) || timestampDate(call.createdAt);
+        const when = date ? date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "Recent";
+        return `<article><div><strong>${escapeHtml(other)}</strong><small>${escapeHtml(when)}</small></div><div><strong>${escapeHtml(call.language || "Session")}</strong><small>${escapeHtml(call.status || "Completed")}</small></div></article>`;
+    }).join("");
+}
+
+function bindConceptScreens() {
+    const activateGroup = selector => {
+        document.querySelectorAll(selector).forEach(button => {
+            button.onclick = () => {
+                button.parentElement.querySelectorAll("button").forEach(item => {
+                    const active = item === button;
+                    item.classList.toggle("active", active);
+                    item.setAttribute("aria-pressed", String(active));
+                });
+            };
+        });
+    };
+    activateGroup("[data-duration]");
+    activateGroup("[data-goal-duration]");
+    activateGroup("[data-live-duration]");
+    activateGroup("[data-lesson-topic]");
+    $("conceptTutorProfile").onclick = () => { if (conceptMatchedProfile || activeDirectoryProfile) openPublicProfile(conceptMatchedProfile || activeDirectoryProfile); };
+    $("conceptBookLesson").onclick = () => openDashboardPanel("schedule");
+    $("conceptRequestInstant").onclick = () => {
+        if (activeDirectoryProfile) startDirectTranslatorChat();
+        else {
+            openDashboardPanel("home");
+            if ($("conceptMoreTools")) $("conceptMoreTools").open = true;
+            $("receiverEmail")?.focus();
+        }
+    };
+    $("conceptConfirmSchedule").onclick = () => {
+        $("conceptScheduleStatus").textContent = `Session held for ${$("conceptSlotLabel").textContent}. Request an instant call when everyone is ready.`;
+    };
+    $("conceptGoalBook").onclick = () => {
+        if ($("conceptMatchGoal")) $("conceptMatchGoal").value = $("conceptGoalInput").value;
+        openDashboardPanel("match");
+    };
+    $("conceptLiveBook").onclick = () => openDashboardPanel("schedule");
+    $("conceptQuickBook").onclick = () => {
+        if (conceptMatchedProfile) activeDirectoryProfile = conceptMatchedProfile;
+        openDashboardPanel("schedule");
+    };
+    $("conceptMatchProfile").onclick = () => { if (conceptMatchedProfile) openPublicProfile(conceptMatchedProfile); };
+    $("conceptRerunMatch").onclick = () => renderAutoMatchScreen();
+    $("conceptMatchLanguage").onchange = () => renderAutoMatchScreen();
+    $("conceptMatchGoal").oninput = () => renderAutoMatchScreen();
+    $("openIntelligenceHub").onclick = () => openDashboardPanel("intelligence");
+    $("educationBookParent").onclick = () => {
+        $("conceptGoalInput").value = "Parent meeting";
+        openDashboardPanel("goal");
+    };
+    $("educationLiveSupport").onclick = () => openDashboardPanel("live");
+    $("conceptViewTranscript").onclick = () => {
+        if (lastEndedCall?.id) openHistoryTranscript(lastEndedCall);
+        else openDashboardPanel("live");
+    };
+    $("conceptEmailSummary").onclick = () => {
+        const body = lastSessionSnapshot?.lines?.join("\n") || $("conceptLiveTranscript")?.innerText || "FiniSpeak session summary";
+        window.location.href = `mailto:?subject=${encodeURIComponent("FiniSpeak session summary")}&body=${encodeURIComponent(body)}`;
+    };
+    $("conceptBookAgain").onclick = () => openDashboardPanel("directory");
+    $("conceptContinueSession").onclick = () => openDashboardPanel("lesson");
+    $("conceptTranscriptSearch").oninput = () => {
+        const query = $("conceptTranscriptSearch").value.trim().toLowerCase();
+        const lines = lastSessionSnapshot?.lines || [...$("conceptLiveTranscript").querySelectorAll("p")].map(item => item.textContent);
+        const hits = lines.filter(line => !query || line.toLowerCase().includes(query));
+        $("conceptTranscriptHits").innerHTML = hits.map(line => `<p>${escapeHtml(line)}</p>`).join("");
+    };
+    document.querySelectorAll("[data-rate]").forEach(button => {
+        button.onclick = () => {
+            const value = Number(button.dataset.rate);
+            document.querySelectorAll("[data-rate]").forEach(star => star.classList.toggle("active", Number(star.dataset.rate) <= value));
+            if ($("reviewRating")) $("reviewRating").value = String(value);
+            if (lastEndedCall?.translatorId) openReviewModal(lastEndedCall);
+        };
+    });
+    $("conceptRequestCall").onclick = () => $("profileChatTranslator").click();
+    $("conceptScheduleSession").onclick = () => {
+        if (!currentUser) {
+            openAuth(false, "customer");
+            $("authStatus").textContent = "Log in to schedule a session.";
+            return;
+        }
+        show("dashboardView");
+        openDashboardPanel("schedule");
+    };
 }
 
 function escapeHtml(value) {
