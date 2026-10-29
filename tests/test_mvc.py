@@ -97,6 +97,8 @@ class MvcRouteTests(unittest.TestCase):
         script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
         self.assertIn('purpose: "translator_chat"', script)
         self.assertIn('$("profileChatTranslator").onclick = startDirectTranslatorChat', script)
+        self.assertIn("Translators cannot call other translators.", script)
+        self.assertIn("isInterpreterRole(currentProfile?.role)", script)
 
     def test_phone_call_prototype_exposes_signup_profile_and_call_fields(self):
         response = self.client.get("/")
@@ -205,6 +207,49 @@ class MvcRouteTests(unittest.TestCase):
         self.assertEqual(args[1]["uid"], "translator-9")
         self.assertEqual(kwargs["purpose"], "translator_chat")
         self.assertIsNone(kwargs["translator"])
+
+    @patch("controllers.calls_controller.CallModel.create", return_value={"id": "call-customer", "status": "ringing"})
+    @patch("controllers.calls_controller.AccountModel.get")
+    @patch("controllers.calls_controller.TranslatorModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_translator_cannot_call_another_translator(self, identity, get_translator, get_account, create_call):
+        identity.return_value = ({"uid": "translator-1", "role": "translator"}, None)
+        direct = self.client.post("/api/calls/", json={
+            "receiverId": "translator-9", "purpose": "translator_chat",
+        })
+        self.assertEqual(direct.status_code, 403)
+        self.assertEqual(direct.get_json()["error"], "Translators cannot call other translators.")
+        get_translator.assert_not_called()
+
+        get_account.return_value = {"uid": "translator-9", "role": "translator", "status": "active"}
+        addressed = self.client.post("/api/calls/", json={"receiverId": "translator-9"})
+        self.assertEqual(addressed.status_code, 403)
+        self.assertEqual(addressed.get_json()["error"], "Translators cannot call other translators.")
+
+        get_account.return_value = {"uid": "customer-2", "role": "customer", "status": "active"}
+        invited = self.client.post("/api/calls/", json={
+            "receiverId": "customer-2", "translatorId": "translator-9",
+        })
+        self.assertEqual(invited.status_code, 403)
+        self.assertEqual(invited.get_json()["error"], "Translators cannot call other translators.")
+        create_call.assert_not_called()
+
+        customer_call = self.client.post("/api/calls/", json={"receiverId": "customer-2"})
+        self.assertEqual(customer_call.status_code, 201)
+
+    @patch("controllers.calls_controller.CallModel.request_translator")
+    @patch("controllers.calls_controller.CallModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_translator_cannot_invite_another_translator(self, identity, get_call, request_translator):
+        identity.return_value = ({"uid": "translator-1", "role": "translator"}, None)
+        get_call.return_value = {
+            "id": "call-1", "callerId": "customer-1", "receiverId": "translator-1",
+            "status": "connected", "translationStatus": "not_requested",
+        }
+        response = self.client.post("/api/calls/call-1/translator-request", json={"translatorId": "translator-9"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "Translators cannot call other translators.")
+        request_translator.assert_not_called()
 
     @patch("controllers.translators_controller.TranslatorModel.all_public")
     def test_translator_controller_uses_model(self, all_public):

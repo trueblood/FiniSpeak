@@ -22,6 +22,12 @@ CallModel = repository_proxy("calls")
 ParticipantModel = repository_proxy("participants")
 TranslatorModel = repository_proxy("translators")
 TranscriptModel = repository_proxy("transcripts")
+INTERPRETER_ROLES = {"translator", "translator_applicant"}
+TRANSLATOR_CALL_BLOCKED = "Translators cannot call other translators."
+
+
+def _is_interpreter(account):
+    return (account or {}).get("role") in INTERPRETER_ROLES
 
 
 def create():
@@ -39,6 +45,8 @@ def create():
         return error
     if identity["uid"] == receiver_id:
         return jsonify({"error": "You cannot call yourself."}), 400
+    if direct_translator_chat and _is_interpreter(identity):
+        return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
     if direct_translator_chat:
         public_translator = TranslatorModel.get(receiver_id)
         translator_record = TranslatorModel.get(receiver_id, public=False) if public_translator else None
@@ -51,8 +59,13 @@ def create():
             return jsonify({"error": "That translator is unavailable."}), 404
     else:
         receiver = AccountModel.get(receiver_id)
+        if _is_interpreter(identity) and _is_interpreter(receiver):
+            return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
         if not receiver or receiver.get("status", "active") != "active" or receiver.get("role") not in {"customer", "admin"}:
             return jsonify({"error": "The receiving customer account is unavailable."}), 404
+
+    if _is_interpreter(identity) and data.get("translatorId"):
+        return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
 
     translator = None
     translator_id = data.get("translatorId")
@@ -205,6 +218,8 @@ def request_translator(call_id):
             return jsonify({"error": "This interpretation request was sent to another interpreter."}), 403
         updated = CallModel.request_translator(call_id, decline_translator_id=identity["uid"])
         return (jsonify({"call": updated}), 200) if updated else (jsonify({"error": "Call not found."}), 404)
+    if _is_interpreter(identity):
+        return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
     if identity.get("role") != "admin" and identity["uid"] not in {call.get("callerId"), call.get("receiverId")}:
         return jsonify({"error": "Call not found or access denied."}), 404
     if call.get("status") in {"ended", "declined", "cancelled"}:

@@ -324,6 +324,10 @@ function bindUI() {
     };
     bindConceptScreens();
     $("profileStartCall").onclick = () => {
+        if (isInterpreterRole(currentProfile?.role)) {
+            $("profileCallStatus").textContent = "Translators cannot call other translators.";
+            return;
+        }
         if (!currentUser) {
             selectInterpreterForCall(activeDirectoryProfile);
             openAuth(false, "customer");
@@ -1343,6 +1347,11 @@ async function openPublicProfile(profile) {
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
     $("publicProfileReviews").innerHTML = "<p>Detailed community feedback will appear here as reviews are added.</p>";
     renderConceptProfile(profile);
+    const viewerIsInterpreter = isInterpreterRole(currentProfile?.role);
+    ["conceptRequestCall", "profileChatTranslator", "profileStartCall"].forEach(id => {
+        $(id)?.classList.toggle("hidden", viewerIsInterpreter);
+    });
+    if ($("profileCallStatus")) $("profileCallStatus").textContent = viewerIsInterpreter ? "Translators cannot call other translators." : "";
     show("profileView");
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -2171,6 +2180,10 @@ async function startDirectTranslatorChat() {
     const profile = activeDirectoryProfile;
     const button = $("profileChatTranslator");
     const status = $("profileCallStatus");
+    if (isInterpreterRole(currentProfile?.role)) {
+        if (status) status.textContent = "Translators cannot call other translators.";
+        return;
+    }
     if (!profile?.id) return;
     if (!currentUser) {
         selectInterpreterForCall(profile);
@@ -4228,6 +4241,11 @@ function bindConceptScreens() {
     $("conceptTutorProfile").onclick = () => { if (conceptMatchedProfile || activeDirectoryProfile) openPublicProfile(conceptMatchedProfile || activeDirectoryProfile); };
     $("conceptBookLesson").onclick = () => openDashboardPanel("schedule");
     $("conceptRequestInstant").onclick = () => {
+        if (isInterpreterRole(currentProfile?.role) && activeDirectoryProfile) {
+            if ($("conceptScheduleStatus")) $("conceptScheduleStatus").textContent = "Translators cannot call other translators.";
+            if ($("profileCallStatus")) $("profileCallStatus").textContent = "Translators cannot call other translators.";
+            return;
+        }
         if (activeDirectoryProfile) startDirectTranslatorChat();
         else {
             openDashboardPanel("home");
