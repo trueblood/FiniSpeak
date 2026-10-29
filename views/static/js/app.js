@@ -342,6 +342,12 @@ function bindUI() {
     $("profileChatTranslator").onclick = startDirectTranslatorChat;
 }
 
+function setLanguageLessonAction(hosting) {
+    const label = hosting ? "Host a Language Session" : "Book a Language Lesson";
+    if ($("openLanguageLessonLabel")) $("openLanguageLessonLabel").textContent = label;
+    if ($("lessonTitle")) $("lessonTitle").textContent = label;
+}
+
 function setCustomerCallActionsVisible(visible) {
     ["customerTools", "openStartCall", "openDirectCall", "callStartCard"].forEach(id => {
         $(id)?.classList.toggle("hidden", !visible);
@@ -520,6 +526,7 @@ async function handleAuthState(user) {
         // Administrators can also participate in calls. Keep the customer call
         // workspace available while exposing the additional admin dashboard.
         setCustomerCallActionsVisible(!isTranslator);
+        setLanguageLessonAction(isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         await refreshRtcConfiguration();
@@ -562,6 +569,7 @@ async function handleAuthState(user) {
         $("interpreterProfileNav")?.classList.add("hidden");
         $("translatorTools")?.classList.add("hidden");
         setCustomerCallActionsVisible(true);
+        setLanguageLessonAction(false);
         openDashboardPanel("home");
         show("dashboardView");
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;
