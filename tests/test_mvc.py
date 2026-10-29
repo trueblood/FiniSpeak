@@ -77,6 +77,8 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('class="mobile-app-header"', html)
         self.assertIn('id="appActionTitle">What do you need today?', html)
         self.assertIn('id="openStartCall"', html)
+        self.assertIn('id="openDirectCall"', html)
+        self.assertIn(">Call Another User<", html)
         self.assertIn('data-discovery-category="Business"', html)
         self.assertIn('data-dashboard-panel="directory"', html)
         self.assertIn('data-dashboard-panel="classroom" aria-label="Language Classroom"', html)

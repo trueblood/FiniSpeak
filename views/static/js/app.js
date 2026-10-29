@@ -293,12 +293,8 @@ function bindUI() {
     $("clearFeaturedFilters").onclick = clearFeaturedFilters;
     $("backToDirectory").onclick = openInterpreterDirectory;
     $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
-    $("openStartCall").onclick = () => {
-        const more = $("conceptMoreTools");
-        if (more) more.open = true;
-        $("callStartCard").scrollIntoView({ behavior: "smooth", block: "start" });
-        window.setTimeout(() => $("receiverEmail")?.focus(), 250);
-    };
+    $("openStartCall").onclick = openDirectCall;
+    $("openDirectCall").onclick = openDirectCall;
     document.querySelectorAll("[data-discovery-category]").forEach(button => {
         button.onclick = () => openConceptCategory(button.dataset.discoveryCategory);
     });
@@ -340,6 +336,15 @@ function bindUI() {
         $("receiverEmail")?.focus();
     };
     $("profileChatTranslator").onclick = startDirectTranslatorChat;
+}
+
+function openDirectCall() {
+    show("dashboardView");
+    openDashboardPanel("home");
+    const more = $("conceptMoreTools");
+    if (more) more.open = true;
+    $("callStartCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => $("receiverEmail")?.focus(), 250);
 }
 
 function openModal(id) {
@@ -504,6 +509,7 @@ async function handleAuthState(user) {
         // workspace available while exposing the additional admin dashboard.
         $("customerTools").classList.toggle("hidden", isTranslator);
         $("openStartCall").classList.toggle("hidden", isTranslator);
+        $("openDirectCall")?.classList.toggle("hidden", isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         await refreshRtcConfiguration();
@@ -547,6 +553,7 @@ async function handleAuthState(user) {
         $("translatorTools")?.classList.add("hidden");
         $("customerTools")?.classList.remove("hidden");
         $("openStartCall")?.classList.remove("hidden");
+        $("openDirectCall")?.classList.remove("hidden");
         openDashboardPanel("home");
         show("dashboardView");
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;
