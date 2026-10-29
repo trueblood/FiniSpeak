@@ -146,6 +146,31 @@ body.dashboard-mode .concept-inline-categories button,
 .concept-more-tools { margin-top:18px; }
 .concept-more-tools summary { cursor:pointer; color:#0b6cff; font-weight:750; }
 .concept-more-tools .dashboard-grid { margin-top:12px; }
+/* Viewport breakpoints still see a wide monitor, but this shell is only 420px.
+   The desktop grid's 300px second column was crushing the call form to a few pixels. */
+body.dashboard-mode .dashboard-grid,
+body.dashboard-mode .settings-grid,
+body.dashboard-mode .classroom-grid,
+body.dashboard-mode .form-grid,
+body.dashboard-mode .translator-summary-grid,
+body.dashboard-mode .friends-layout,
+body.dashboard-mode .admin-operations-grid {
+  grid-template-columns:minmax(0,1fr);
+}
+body.dashboard-mode .translator-stat-grid,
+body.dashboard-mode .admin-metric-grid {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+body.dashboard-mode .settings-grid .card:first-child,
+body.dashboard-mode .classroom-personal .classroom-grid .card:last-child {
+  grid-column:auto;
+}
+body.dashboard-mode .dashboard-grid > *,
+body.dashboard-mode .call-start-card,
+body.dashboard-mode .history-card {
+  min-width:0;
+  max-width:100%;
+}
 .concept-translator-home { margin-top:16px; }
 
 .concept-screen h2 { margin:.2rem 0 16px; color:#111827; font-size:2rem; line-height:1.05; letter-spacing:-.04em; }
