@@ -353,11 +353,14 @@ function setLanguageLessonAction(hosting) {
 }
 
 function setCustomerCallActionsVisible(visible) {
-    ["customerTools", "openStartCall", "openDirectCall", "callStartCard"].forEach(id => {
-        $(id)?.classList.toggle("hidden", !visible);
+    // Translators keep Call Another User so they can reach a customer.
+    // The extra "Start a call" link stays customer-only.
+    $("openStartCall")?.classList.toggle("hidden", !visible);
+    ["customerTools", "openDirectCall", "callStartCard"].forEach(id => {
+        $(id)?.classList.remove("hidden");
     });
     const summary = document.querySelector("#conceptMoreTools summary");
-    if (summary) summary.textContent = visible ? "Start a call or review recent conversations" : "Review recent conversations";
+    if (summary) summary.textContent = "Start a call or review recent conversations";
 }
 
 function openDirectCall() {
@@ -2161,6 +2164,7 @@ async function createCall(e) {
             receiverHasUid: Boolean(receiver?.uid)
         });
         if (!receiver) throw new Error(`No FiniSpeak account was found with that ${receiverEmail ? "email" : "phone number"}. Ask them to save it in their profile, then try again.`);
+        if (isInterpreterRole(currentProfile?.role) && isInterpreterRole(receiver.role)) throw new Error("Translators cannot call other translators.");
         if (!["customer", "admin"].includes(receiver.role)) throw new Error("That contact belongs to an account that cannot receive customer calls.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
         const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
