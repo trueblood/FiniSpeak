@@ -342,6 +342,10 @@ function bindUI() {
     $("profileChatTranslator").onclick = startDirectTranslatorChat;
 }
 
+function setTranslatorDiscoveryVisible(visible) {
+    $("openFindTranslator")?.classList.toggle("hidden", !visible);
+}
+
 function setLanguageLessonAction(hosting) {
     const label = hosting ? "Host a Language Session" : "Book a Language Lesson";
     if ($("openLanguageLessonLabel")) $("openLanguageLessonLabel").textContent = label;
@@ -527,6 +531,7 @@ async function handleAuthState(user) {
         // workspace available while exposing the additional admin dashboard.
         setCustomerCallActionsVisible(!isTranslator);
         setLanguageLessonAction(isTranslator);
+        setTranslatorDiscoveryVisible(!isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         await refreshRtcConfiguration();
@@ -570,6 +575,7 @@ async function handleAuthState(user) {
         $("translatorTools")?.classList.add("hidden");
         setCustomerCallActionsVisible(true);
         setLanguageLessonAction(false);
+        setTranslatorDiscoveryVisible(true);
         openDashboardPanel("home");
         show("dashboardView");
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;

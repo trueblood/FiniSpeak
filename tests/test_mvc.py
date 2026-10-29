@@ -103,6 +103,8 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn("setCustomerCallActionsVisible(!isTranslator)", script)
         self.assertIn("Host a Language Session", script)
         self.assertIn('id="openLanguageLessonLabel">Book a Language Lesson', html)
+        self.assertIn('id="openFindTranslator"', html)
+        self.assertIn("setTranslatorDiscoveryVisible(!isTranslator)", script)
 
     def test_phone_call_prototype_exposes_signup_profile_and_call_fields(self):
         response = self.client.get("/")
