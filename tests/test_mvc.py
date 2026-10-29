@@ -99,6 +99,8 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('$("profileChatTranslator").onclick = startDirectTranslatorChat', script)
         self.assertIn("Translators cannot call other translators.", script)
         self.assertIn("isInterpreterRole(currentProfile?.role)", script)
+        self.assertIn("Review recent conversations", script)
+        self.assertIn("setCustomerCallActionsVisible(!isTranslator)", script)
 
     def test_phone_call_prototype_exposes_signup_profile_and_call_fields(self):
         response = self.client.get("/")

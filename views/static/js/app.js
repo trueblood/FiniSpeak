@@ -342,6 +342,14 @@ function bindUI() {
     $("profileChatTranslator").onclick = startDirectTranslatorChat;
 }
 
+function setCustomerCallActionsVisible(visible) {
+    ["customerTools", "openStartCall", "openDirectCall", "callStartCard"].forEach(id => {
+        $(id)?.classList.toggle("hidden", !visible);
+    });
+    const summary = document.querySelector("#conceptMoreTools summary");
+    if (summary) summary.textContent = visible ? "Start a call or review recent conversations" : "Review recent conversations";
+}
+
 function openDirectCall() {
     show("dashboardView");
     openDashboardPanel("home");
@@ -511,9 +519,7 @@ async function handleAuthState(user) {
         $("adminNav").classList.toggle("hidden", !isAdmin);
         // Administrators can also participate in calls. Keep the customer call
         // workspace available while exposing the additional admin dashboard.
-        $("customerTools").classList.toggle("hidden", isTranslator);
-        $("openStartCall").classList.toggle("hidden", isTranslator);
-        $("openDirectCall")?.classList.toggle("hidden", isTranslator);
+        setCustomerCallActionsVisible(!isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         await refreshRtcConfiguration();
@@ -555,9 +561,7 @@ async function handleAuthState(user) {
         hydrateDashboardProfile();
         $("interpreterProfileNav")?.classList.add("hidden");
         $("translatorTools")?.classList.add("hidden");
-        $("customerTools")?.classList.remove("hidden");
-        $("openStartCall")?.classList.remove("hidden");
-        $("openDirectCall")?.classList.remove("hidden");
+        setCustomerCallActionsVisible(true);
         openDashboardPanel("home");
         show("dashboardView");
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;
