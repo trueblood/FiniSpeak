@@ -291,7 +291,9 @@ function bindUI() {
     $("featuredSpecialty").addEventListener("change", filterFeaturedProfiles);
     $("featuredAvailable").addEventListener("change", filterFeaturedProfiles);
     $("clearFeaturedFilters").onclick = clearFeaturedFilters;
-    $("backToDirectory").onclick = openInterpreterDirectory;
+    $("backToDirectory").onclick = closePublicProfile;
+    $("dashboardBackButton").onclick = goDashboardBack;
+    $("authBack").onclick = () => show("heroView");
     $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
     $("openStartCall").onclick = openDirectCall;
     $("openDirectCall").onclick = openDirectCall;
@@ -500,6 +502,7 @@ async function handleAuthState(user) {
     if (!user) {
         currentProfile = null;
         currentInterpreterProfile = null;
+        dashboardHistory = ["home"];
         clearSelectedInterpreter();
         cleanupDashboardListeners();
         cleanupCall();
@@ -541,7 +544,7 @@ async function handleAuthState(user) {
 
         // Show the dashboard before loading optional translator/profile data so
         // a profile problem cannot block navigation after login.
-        openDashboardPanel(isAdmin ? "admin" : "home");
+        openDashboardPanel(isAdmin ? "admin" : "home", "reset");
         show("dashboardView");
         $("authStatus").textContent = "";
 
@@ -608,8 +611,40 @@ function hydrateDashboardProfile() {
     $("settingsEmail").textContent = currentProfile.email || currentUser?.email || "";
 }
 
-function openDashboardPanel(panel) {
+let dashboardHistory = ["home"];
+let profileReturnPanel = "directory";
+
+function nextDashboardHistory(history, panel, mode) {
+    const current = Array.isArray(history) && history.length ? history.slice() : ["home"];
+    if (mode === "back") return current;
+    if (panel === "home") return ["home"];
+    if (mode === "reset") return ["home", panel];
+    if (current[current.length - 1] === panel) return current;
+    const existing = current.indexOf(panel);
+    if (existing >= 0) return current.slice(0, existing + 1);
+    return [...current, panel];
+}
+
+function updateDashboardBackButton() {
+    const button = $("dashboardBackButton");
+    if (!button) return;
+    const showBack = (dashboardHistory[dashboardHistory.length - 1] || "home") !== "home";
+    button.classList.toggle("hidden", !showBack);
+    button.hidden = !showBack;
+}
+
+function goDashboardBack() {
+    if (dashboardHistory.length > 1) dashboardHistory.pop();
+    else dashboardHistory = ["home"];
+    openDashboardPanel(dashboardHistory[dashboardHistory.length - 1] || "home", "back");
+    if ($("dashboardBackButton")?.hidden) $("mainContent")?.focus();
+}
+
+function openDashboardPanel(panel, historyMode = "push") {
     const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", intelligence: "dashboardIntelligence" };
+    if (!ids[panel]) return;
+    if (historyMode !== "back") dashboardHistory = nextDashboardHistory(dashboardHistory, panel, historyMode);
+    updateDashboardBackButton();
     Object.entries(ids).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== panel));
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => {
         const active = button.dataset.dashboardPanel === panel;
@@ -618,6 +653,7 @@ function openDashboardPanel(panel) {
     });
     document.body.classList.remove("nav-open");
     $("conceptMenuButton")?.setAttribute("aria-expanded", "false");
+    if (historyMode === "back") return;
     $("dashboardView")?.querySelector(".dashboard-content")?.scrollTo({ top: 0, behavior: "auto" });
     if (panel === "directory") { setDirectoryView("map"); loadInterpreterDirectory(); }
     if (panel === "friends") loadFriends();
@@ -1342,8 +1378,26 @@ async function searchCurrentMapArea() {
     await refreshInterpreterDirectory();
 }
 
+function closePublicProfile() {
+    if (!currentUser) {
+        show("heroView");
+        loadFeaturedProfiles();
+        window.requestAnimationFrame(() => $("featuredProfiles")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        return;
+    }
+    const panel = profileReturnPanel || "directory";
+    if (dashboardHistory[dashboardHistory.length - 1] !== panel) {
+        dashboardHistory = nextDashboardHistory(dashboardHistory, panel, "push");
+    }
+    show("dashboardView");
+    openDashboardPanel(panel, "back");
+}
+
 async function openPublicProfile(profile) {
     activeDirectoryProfile = profile;
+    profileReturnPanel = dashboardHistory[dashboardHistory.length - 1] || "directory";
+    const backLabel = $("backToDirectory")?.querySelector("span");
+    if (backLabel) backLabel.textContent = currentUser ? "Back" : "Back to interpreters";
     const available = Boolean(profile.availability?.availableNow);
     $("publicProfileName").textContent = profile.displayName || "Interpreter";
     $("publicProfileHeadline").textContent = profile.specialties?.length

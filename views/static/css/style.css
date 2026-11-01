@@ -19,6 +19,9 @@ p { color:var(--muted); line-height:1.65; }
 .actions,.call-controls { display:flex; gap:12px; flex-wrap:wrap; margin-top:28px; }
 button { border:0; border-radius:12px; padding:13px 20px; background:var(--primary); color:#fff; font-weight:750; cursor:pointer; }
 button:hover { background:var(--primary-dark); }
+button.screen-back { display:inline-flex; align-items:center; gap:6px; width:auto; min-height:40px; margin:0 0 14px; padding:8px 14px 8px 10px; border-radius:999px; background:#f3f4f6; color:#111827; font-size:.95rem; }
+button.screen-back svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+button.screen-back:hover { background:#e5e7eb; color:#111827; }
 button.secondary,.text-button { background:#fff; color:var(--dark); border:1px solid var(--border); }
 button.danger { background:var(--danger); }
 .text-button { padding:9px 14px; }

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261028-call-layout">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-back-buttons">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-mobile-call-details">
 </head>
 <body>
@@ -95,6 +95,7 @@
 
     <section id="authView" class="panel hidden">
         <div class="card narrow">
+            <button id="authBack" class="screen-back" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg><span>Back</span></button>
             <div class="section-heading"><span class="eyebrow">FiniSpeak account</span><h2 id="authTitle">Sign in</h2></div>
             <form id="authForm">
                 <label id="nameField" class="hidden">Name<input id="displayName" autocomplete="name"></label>
@@ -139,6 +140,7 @@
                         <button id="conceptMenuButton" class="mobile-settings-button" type="button" aria-label="Open account menu" aria-expanded="false" aria-controls="dashboardSidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></button>
                     </div>
                 </header>
+                <button id="dashboardBackButton" class="screen-back hidden" type="button" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg><span>Back</span></button>
                 <div id="dashboardHome" class="dashboard-panel">
                     <div class="dashboard-heading"><div><span class="eyebrow">Welcome back</span><h2 id="welcomeName">FiniSpeak</h2><p id="accountRole"></p></div><span id="accountStatusBadge" class="status-badge">Active</span></div>
                     <section class="app-action-hub concept-welcome" aria-labelledby="appActionTitle">
@@ -563,7 +565,7 @@
     <section id="profileView" class="panel profile-detail-view hidden">
         <div class="profile-detail-shell">
             <div class="concept-profile-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
-            <button id="backToDirectory" class="text-button profile-back" type="button">← Back to interpreters</button>
+            <button id="backToDirectory" class="screen-back profile-back" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg><span>Back to interpreters</span></button>
             <article class="profile-detail-card">
                 <div class="profile-detail-hero">
                     <div id="publicProfileAvatar" class="public-profile-avatar" aria-hidden="true">FS</div>
@@ -950,6 +952,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261028-translator-direct-call"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261101-back-buttons"></script>
 </body>
 </html>
