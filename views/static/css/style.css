@@ -211,7 +211,7 @@ button.interpreter-match.is-invited,button.request-match-card.is-invited { borde
 .translator-request-modal-card button.request-match-card { background:#10151d; color:#e8eef6; }
 .translator-request-modal-card button.request-match-card:hover,.translator-request-modal-card button.request-match-card.is-invited { background:#172033; color:#fff; }
 button.request-match-card:hover,button.request-match-card.is-invited { background:#172033; }
-.request-match-avatar { width:58px; height:58px; display:grid; place-items:center; border-radius:16px; background:#dbeafe; color:#1e3a8a; font-weight:850; background-size:cover; background-position:center; }
+.request-match-avatar { width:58px; height:58px; display:grid; place-items:center; overflow:hidden; border-radius:16px; background:#dbeafe; color:#1e3a8a; font-weight:850; background-size:cover; background-position:center; }
 .request-match-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
 .request-match-heading strong { color:#fff; font-size:1.05rem; }
 .request-match-card .profile-rating { margin-top:2px; }
@@ -539,7 +539,7 @@ button:disabled { cursor:wait; opacity:.72; }
 .hero-match-card:hover:not(:disabled),.hero-match-card:focus-visible { background:#fff; border-color:#9fc9e3; transform:translateY(-2px); box-shadow:0 16px 30px rgba(2,18,35,.2); }
 .hero-match-card strong,.hero-match-card small { display:block; }
 .hero-match-card small { margin-top:3px; color:var(--muted); }
-.hero-match-avatar { width:48px; height:48px; display:grid; place-items:center; border-radius:14px; background:#fde5dc; color:#a94725; font-weight:850; background-size:cover; background-position:center; }
+.hero-match-avatar { width:48px; height:48px; display:grid; place-items:center; overflow:hidden; border-radius:14px; background:#fde5dc; color:#a94725; font-weight:850; background-size:cover; background-position:center; }
 .hero-match-avatar-blue { background:#dcebf5; color:#1b5c85; }
 .hero-verified { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:#dceef8; color:#226a95; font-weight:900; }
 .hero-match-primary { margin-top:4px; }

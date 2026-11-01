@@ -186,9 +186,10 @@ body.dashboard-mode .history-card {
 .concept-primary-block { background:#0b6cff; color:#fff; }
 .concept-soft { background:#f3f4f6; color:#111827; }
 .concept-avatar,.concept-live-photo {
-  width:64px; height:64px; border-radius:50%; display:grid; place-items:center;
+  width:64px; height:64px; border-radius:50%; display:grid; place-items:center; overflow:hidden;
   background:#dbe7f5 center/cover no-repeat; color:#123c69; font-weight:850;
 }
+.concept-avatar.has-photo,.concept-live-photo.has-photo { color:transparent; }
 .concept-stars { color:#f5b400; letter-spacing:1px; font-size:.95rem; }
 .concept-stars span,.concept-sheet-person small,.concept-person-copy small { color:#64748b; letter-spacing:0; font-weight:650; }
 .concept-verified,.concept-lang-badges span { display:inline-flex; margin:4px 4px 0 0; padding:3px 8px; border-radius:999px; background:#0b6cff; color:#fff; font-size:.72rem; font-weight:800; }

@@ -1269,7 +1269,8 @@ function renderDirectoryMap(profiles, fitToResults = false) {
             className: "interpreter-map-marker-wrap", html: `<span class="interpreter-map-marker ${available ? "available" : "unavailable"}" aria-hidden="true"></span>`, iconSize: [28, 38], iconAnchor: [14, 38]
         }) });
         const distance = profile.distanceMiles != null ? `${Number(profile.distanceMiles).toFixed(1)} miles away` : "Distance available after choosing your location";
-        const photo = profile.photoUrl ? `<img src="${escapeHtml(profile.photoUrl)}" alt="">` : `<span class="map-popup-avatar" aria-hidden="true">${escapeHtml(profileInitials(profile.displayName))}</span>`;
+        const photoUrl = safeProfilePhotoUrl(profile.photoUrl);
+        const photo = photoUrl ? `<img alt="">` : `<span class="map-popup-avatar" aria-hidden="true">${escapeHtml(profileInitials(profile.displayName))}</span>`;
         const popupContent = document.createElement("article");
         popupContent.className = "map-profile-popup";
         popupContent.innerHTML = `<header>${photo}<strong>${escapeHtml(profile.displayName)}</strong></header><span>${escapeHtml([...(profile.languages || []), ...(profile.dialects || [])].slice(0,3).join(" · "))}</span><span>${escapeHtml((profile.specialties || []).slice(0,2).join(" · "))}</span><span>${Number(profile.yearsExperience || 0)} years · ${Number(profile.rating || 0).toFixed(1)} ★ (${Number(profile.ratingCount || 0)})</span><span>${escapeHtml(profile.verificationStatus === "verified" ? "Verified" : "")}${available ? " · Available now" : ""}</span><span>${escapeHtml(distance)}</span><div><button type="button" data-map-profile="${escapeHtml(profile.id)}">View profile</button></div>`;
@@ -1278,6 +1279,17 @@ function renderDirectoryMap(profiles, fitToResults = false) {
             marker.closePopup();
             openPublicProfile(profile);
         };
+        const popupImage = popupContent.querySelector("img");
+        if (popupImage) {
+            popupImage.onerror = () => {
+                const fallback = document.createElement("span");
+                fallback.className = "map-popup-avatar";
+                fallback.setAttribute("aria-hidden", "true");
+                fallback.textContent = profileInitials(profile.displayName);
+                popupImage.replaceWith(fallback);
+            };
+            popupImage.src = photoUrl;
+        }
         marker.bindPopup(popupContent);
         marker.on("click", () => selectDirectoryProfile(profile));
         directoryMarkers.set(profile.id, marker); directoryMarkerLayer.addLayer(marker); bounds.push([location.latitude, location.longitude]);
@@ -1427,13 +1439,44 @@ function ratingMarkup(rating, count = 0, includeCount = true) {
     return `<div class="profile-rating" aria-label="${value ? `${value.toFixed(1)} out of 5 stars` : "Not yet rated"}"><span class="rating-stars" aria-hidden="true">${stars}</span><span class="rating-value">${value ? value.toFixed(1) : "New"}</span>${countText}</div>`;
 }
 
+function safeProfilePhotoUrl(url) {
+    // Uploaded photos are same-origin file paths. Older profiles may still
+    // point at a public https image. Anything else stays on the initials.
+    const value = String(url || "").trim();
+    if (/^\/api\/files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/content$/i.test(value)) return value;
+    let parsed;
+    try { parsed = new URL(value); } catch (_) { return ""; }
+    if (parsed.username || parsed.password || parsed.protocol !== "https:") return "";
+    if (/[\s"'\\<>()]/.test(parsed.href)) return "";
+    return parsed.href;
+}
+
+let avatarRequestSerial = 0;
+
 function setProfileAvatar(element, profile) {
-    element.textContent = profileInitials(profile.displayName);
+    if (!element) return;
+    const initials = profileInitials(profile?.displayName);
+    const photoUrl = safeProfilePhotoUrl(profile?.photoUrl);
+    const requestId = String(++avatarRequestSerial);
+    element.dataset.avatarRequest = requestId;
+    element.textContent = initials;
     element.style.backgroundImage = "";
-    if (profile.photoUrl && /^https:\/\//i.test(profile.photoUrl)) {
-        element.style.backgroundImage = `url("${profile.photoUrl.replace(/"/g, "%22")}")`;
+    element.style.backgroundSize = "";
+    element.style.backgroundPosition = "";
+    element.style.backgroundRepeat = "";
+    element.classList.remove("has-photo");
+    if (!photoUrl) return;
+    const image = new Image();
+    image.onload = () => {
+        if (element.dataset.avatarRequest !== requestId) return;
+        element.style.backgroundImage = `url("${photoUrl}")`;
+        element.style.backgroundSize = "cover";
+        element.style.backgroundPosition = "center";
+        element.style.backgroundRepeat = "no-repeat";
         element.textContent = "";
-    }
+        element.classList.add("has-photo");
+    };
+    image.src = photoUrl;
 }
 
 function profileInitials(name = "") {
