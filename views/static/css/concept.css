@@ -312,6 +312,21 @@ body.dashboard-mode #interpreterMap { height:42vh; min-height:260px; border-radi
 .concept-week b { color:#111827; }
 .concept-profile-schedule { margin:4px 0; color:#334155; font-weight:700; }
 
+#returnToCall { min-height:34px; padding:6px 12px; border-radius:999px; background:#0b6cff; color:#fff; font-size:.78rem; font-weight:800; }
+#returnToCall:hover { background:#0057e0; }
+#dashboardSummary .concept-summary-people { gap:42px; }
+#dashboardSummary .concept-summary-people .concept-avatar { width:104px; height:104px; margin:0 auto 8px; font-size:1.45rem; }
+#dashboardSummary .concept-summary-people strong { display:block; margin-top:8px; color:#0b6cff; font-size:1.15rem; font-weight:750; }
+#dashboardSummary .concept-when { margin:8px 0 16px; color:#111827; font-size:1.02rem; font-weight:650; }
+#dashboardSummary #conceptViewTranscript,
+#dashboardSummary #conceptBookAgain { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:52px; border-radius:14px; background:#0b6cff; color:#fff; font-size:1.05rem; font-weight:800; }
+#dashboardSummary #conceptViewTranscript svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+#dashboardSummary #conceptEmailSummary { display:block; width:100%; margin:4px 0 8px; padding:8px; border:0; background:transparent; color:#0b6cff; font-weight:750; text-align:center; }
+#dashboardSummary #conceptEmailSummary:hover { background:transparent; color:#0057e0; }
+#dashboardSummary .summary-rate-title { margin:16px 0 4px; color:#111827; font-size:1.25rem; font-weight:800; }
+#dashboardSummary .concept-rate button { font-size:2.35rem; color:#f5b400; }
+#dashboardSummary .concept-rate button.active { color:#d97706; }
+
 body.signed-in.profile-mode .site-header { display:none; }
 body.signed-in.profile-mode #profileView { min-height:100dvh; display:grid; place-items:center; padding:18px 12px; background:#e7ebf0; }
 body.signed-in.profile-mode .profile-detail-shell { width:min(420px,100%); max-height:min(880px,calc(100dvh - 28px)); overflow:auto; background:#fff; border:10px solid #151515; border-radius:38px; box-shadow:0 28px 70px rgba(15,23,42,.18); }

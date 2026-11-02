@@ -233,7 +233,11 @@ export function createCallExperience(deps) {
         deps.$("localParticipantName").textContent = name;
         deps.$("localVideoName").textContent = name;
         if (state.mediaMode === "avatar") useAvatar(state.avatarId, false);
-        else markCameraMode(true);
+        else {
+            const stream = deps.getLocalStream?.();
+            const cameraOn = Boolean(stream?.getVideoTracks?.().some(track => track.readyState === "live" && track.enabled));
+            markCameraMode(cameraOn);
+        }
         startLoop();
     }
 
@@ -258,7 +262,9 @@ export function createCallExperience(deps) {
         const elapsed = Math.max(0, Date.now() - started);
         const minutes = String(Math.floor(elapsed / 60000)).padStart(2, "0");
         const seconds = String(Math.floor(elapsed / 1000) % 60).padStart(2, "0");
-        deps.$("callDuration").textContent = `${minutes}:${seconds}`;
+        const label = `${minutes}:${seconds}`;
+        deps.$("callDuration").textContent = label;
+        if (deps.$("audioCallDuration")) deps.$("audioCallDuration").textContent = label;
     }
 
     function updateSubtitles(rows) {
@@ -551,8 +557,11 @@ export function createCallExperience(deps) {
     function syncNotes(call) {
         const notes = call?.callNotes || "";
         const field = deps.$("callNotes");
-        if (!field || state.notesDirty || document.activeElement === field) return;
+        const audioNote = deps.$("audioCallNote");
+        const editing = document.activeElement === field || document.activeElement === audioNote;
+        if (!field || state.notesDirty || editing) return;
         if (field.value !== notes) field.value = notes;
+        if (audioNote && audioNote.value !== notes) audioNote.value = notes;
     }
 
     function scheduleNotesSave() {
@@ -1496,7 +1505,8 @@ export function createCallExperience(deps) {
         noteLanguages: refreshInterpreterLanguages,
         isAvatar: () => state.mediaMode === "avatar" && !state.screenTrack,
         activateCamera: useCamera,
-        markCamera: markCameraMode
+        markCamera: markCameraMode,
+        startedAt: () => Date.parse(state.call?.startedAt || "") || state.joinedAt || Date.now()
     };
 }
 
