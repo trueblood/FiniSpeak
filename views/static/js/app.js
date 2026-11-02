@@ -292,6 +292,17 @@ function bindUI() {
     $("featuredAvailable").addEventListener("change", filterFeaturedProfiles);
     $("clearFeaturedFilters").onclick = clearFeaturedFilters;
     $("backToDirectory").onclick = closePublicProfile;
+    $("profileSearchButton").onclick = () => {
+        if (!currentUser) {
+            show("heroView");
+            loadFeaturedProfiles();
+            window.requestAnimationFrame(() => $("featuredProfiles")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            return;
+        }
+        show("dashboardView");
+        openDashboardPanel("directory");
+        window.setTimeout(() => $("directorySearch")?.focus(), 50);
+    };
     $("dashboardBackButton").onclick = goDashboardBack;
     $("authBack").onclick = () => show("heroView");
     $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
@@ -1412,14 +1423,20 @@ async function openPublicProfile(profile) {
     if (backLabel) backLabel.textContent = currentUser ? "Back" : "Back to interpreters";
     const available = Boolean(profile.availability?.availableNow);
     $("publicProfileName").textContent = profile.displayName || "Interpreter";
-    $("publicProfileHeadline").textContent = profile.specialties?.length
-        ? `${profile.specialties.slice(0, 2).join(" · ")} interpreter`
-        : `${(profile.languages || []).slice(0, 2).join(" · ") || "Professional"} interpreter`;
+    const specialtyLine = (profile.specialties || []).filter(Boolean).slice(0, 2).join(", ");
+    $("publicProfileHeadline").textContent = specialtyLine || (profile.languages || []).filter(Boolean).slice(0, 2).join(", ") || "Professional interpreter";
+    const verifiedMark = $("publicProfileVerified");
+    if (verifiedMark) {
+        const verified = profile.verificationStatus === "verified";
+        verifiedMark.hidden = !verified;
+        verifiedMark.classList.toggle("hidden", !verified);
+    }
     $("publicProfileAvailability").textContent = available ? "Available now" : "Currently unavailable";
     $("publicProfileAvailability").classList.toggle("available", available);
-    $("publicProfileRating").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
+    $("publicProfileRating").innerHTML = ratingMarkup(profile.rating, profile.ratingCount, false);
     $("publicProfileBio").textContent = profile.bio || "This interpreter has not added a professional bio yet.";
     setProfileAvatar($("publicProfileAvatar"), profile);
+    setProfileAvatar($("publicProfileSlotAvatar"), profile);
     renderProfileTags($("publicProfileLanguages"), "Languages", [...(profile.languages || []), ...(profile.dialects || [])]);
     renderProfileTags($("publicProfileSpecialties"), "Specialties", profile.specialties || []);
     $("publicProfileExperience").textContent = `${Number(profile.yearsExperience || 0)} years`;
@@ -1430,9 +1447,10 @@ async function openPublicProfile(profile) {
         ? `${publicArea}${profile.serviceOptions?.inPerson ? ` · within ${Number(profile.serviceOptions.radiusMiles || 25)} miles` : " · Remote service"}`
         : "Remote video";
     $("publicProfileVerification").textContent = profileVerificationLabel(profile);
-    $("publicProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
+    const scheduleText = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
+    $("publicProfileSchedule").textContent = `${available ? "Available now" : "Not available now"} · ${scheduleText}`;
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
-    $("publicProfileReviews").innerHTML = "<p>Detailed community feedback will appear here as reviews are added.</p>";
+    renderProfileReviews(Array.isArray(profile.recentReviews) ? profile.recentReviews : []);
     renderConceptProfile(profile);
     const viewerIsInterpreter = isInterpreterRole(currentProfile?.role);
     ["conceptRequestCall", "profileChatTranslator", "profileStartCall"].forEach(id => {
@@ -4188,10 +4206,23 @@ function renderConceptProfile(profile) {
     if (!languages) return;
     const badges = [...(profile.languages || []), ...(profile.dialects || [])].filter(Boolean).slice(0, 3);
     languages.innerHTML = badges.map(value => `<span>${escapeHtml(value)}</span>`).join("");
-    $("conceptProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Today · 11:00 AM – 12:00 PM");
-    const labels = ["S", "M", "T", "W", "T", "F", "S"];
-    const today = new Date().getDay();
-    $("conceptProfileWeek").innerHTML = labels.map((label, index) => index === today ? `<b>${label}</b>` : `<span>${label}</span>`).join("");
+    const availability = profile.availability || {};
+    const time = availability.start && availability.end
+        ? `${formatAvailabilityTime(availability.start)} – ${formatAvailabilityTime(availability.end)}`
+        : "11:00 AM – 12:00 PM";
+    $("conceptProfileSchedule").textContent = time;
+    const slotMeta = $("profileSlotMeta");
+    if (slotMeta) {
+        const detail = [...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2).join(", ");
+        slotMeta.textContent = detail || "Live session";
+    }
+    const today = new Date();
+    $("conceptProfileWeek").innerHTML = Array.from({ length: 5 }, (_, offset) => {
+        const date = new Date(today);
+        date.setDate(today.getDate() + offset);
+        const label = offset === 0 ? "Today" : String(date.getDate());
+        return offset === 0 ? `<b>${label}</b>` : `<span>${label}</span>`;
+    }).join("");
 }
 
 function captureSessionSnapshot() {

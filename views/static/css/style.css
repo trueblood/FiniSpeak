@@ -482,17 +482,46 @@ button:disabled { cursor:wait; opacity:.72; }
 .directory-meta { display:flex; flex-wrap:wrap; gap:8px 15px; margin-top:13px; color:var(--muted); font-size:.82rem; font-weight:650; }
 .profile-detail-view { min-height:calc(100vh - 72px); background:#f8fafc; }.profile-detail-shell { max-width:1120px; margin:0 auto; }.profile-back { margin-bottom:18px; }
 .profile-detail-card { overflow:hidden; border:1px solid var(--border); border-radius:28px; background:#fff; box-shadow:0 20px 55px rgba(15,23,42,.07); }
-.profile-detail-hero { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:24px; align-items:center; padding:34px; background:linear-gradient(135deg,#eff6ff,#fff 62%); border-bottom:1px solid var(--border); }
-.profile-call-actions { display:grid; gap:10px; width:min(100%,290px); }
+.profile-overview { display:grid; gap:14px; padding:28px 34px 8px; background:linear-gradient(180deg,#f8fbff,#fff 70%); border-bottom:1px solid var(--border); }
+.profile-overview-top { display:flex; align-items:flex-start; gap:16px; }
+.profile-overview .public-profile-avatar { width:96px; height:96px; flex:0 0 96px; border-radius:50%; font-size:1.45rem; }
+.profile-overview-copy { min-width:0; }
+.profile-name-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.profile-name-row h1 { margin:0; color:#111827; font-size:clamp(1.7rem,3vw,2.2rem); font-weight:850; line-height:1.05; letter-spacing:-.03em; }
+.profile-verified { display:inline-flex; align-items:center; gap:4px; padding:3px 8px 3px 6px; border-radius:999px; background:#0b6cff; color:#fff; font-size:.72rem; font-weight:800; line-height:1; }
+.profile-verified svg { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:2.6; stroke-linecap:round; stroke-linejoin:round; }
+.profile-overview .concept-lang-badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.profile-overview .concept-lang-badges span { margin:0; }
+.profile-overview .profile-rating { margin-top:8px; }
+.profile-overview .rating-stars { color:#f5b400; font-size:1.05rem; letter-spacing:1px; }
+.profile-specialty-line { margin:6px 0 0; color:#334155; font-weight:750; }
+.profile-overview .availability-pill { margin-top:8px; }
+.profile-overview .concept-week { width:min(100%,420px); justify-content:space-between; gap:8px; margin:2px 0 0; padding:13px 16px; border-radius:16px; background:#f3f4f6; font-size:.95rem; }
+.profile-overview .concept-week b,.profile-overview .concept-week span { min-width:36px; text-align:center; }
+.profile-slot { display:flex; align-items:center; gap:12px; width:min(100%,420px); }
+.profile-slot strong { color:#111827; font-size:1rem; }
+.profile-slot-avatar { width:44px; height:44px; flex:0 0 44px; font-size:.8rem; }
+.profile-slot-icon { width:28px; height:28px; display:grid; place-items:center; color:#64748b; }
+.profile-slot-icon svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.profile-slot strong,.profile-slot small { display:block; }
+.profile-slot small { color:#64748b; font-weight:650; }
+.profile-call-actions { display:grid; gap:10px; width:min(100%,420px); }
+@media (min-width:900px) {
+  .profile-overview { grid-template-columns:minmax(0,1fr) minmax(280px,420px); align-items:center; }
+  .profile-overview-top,.profile-overview .concept-week,.profile-slot { grid-column:1; }
+  .profile-overview .concept-week,.profile-slot { width:100%; }
+  .profile-call-actions { grid-column:2; grid-row:1 / span 3; width:100%; align-self:center; }
+}
 .profile-call-actions button { width:100%; }
-.profile-call-actions .status { min-height:0; margin:0; text-align:center; }
-.profile-detail-heading h1 { margin:8px 0; font-size:clamp(2rem,5vw,3.3rem); line-height:1; }.profile-detail-heading p { margin:0 0 9px; }
+button.profile-primary { min-height:48px; border-radius:14px; background:#0b6cff; color:#fff; font-weight:800; }
+button.profile-primary:hover { background:#0057e0; }
+.profile-call-actions .status { min-height:0; margin:0; text-align:left; }
 .availability-pill { display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; background:#f1f5f9; color:#475569; font-size:.78rem; font-weight:800; }.availability-pill.available { background:#dcfce7; color:#166534; }
 .profile-detail-grid { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:34px; padding:36px; }.profile-main-content { display:grid; gap:36px; }.profile-main-content section { padding-bottom:34px; border-bottom:1px solid var(--border); }.profile-main-content section:last-child { border-bottom:0; padding-bottom:0; }.profile-main-content h2 { font-size:1.55rem; }
 .profile-facts { align-self:start; position:sticky; top:100px; box-shadow:none; }.profile-facts dl { margin:0; }.profile-facts dl div { padding:15px 0; border-bottom:1px solid var(--border); }.profile-facts dl div:last-child { border:0; }.profile-facts dt { color:var(--muted); font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }.profile-facts dd { margin:6px 0 0; font-weight:700; line-height:1.45; }
 .reviews-heading { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }.review-summary { text-align:right; }.review-list { display:grid; gap:12px; margin-top:18px; }.review-card { padding:18px; border:1px solid var(--border); border-radius:16px; background:#f8fafc; }.review-card-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }.review-card strong,.review-card small { display:block; }.review-card small { color:var(--muted); margin-top:3px; }.review-card p { margin:12px 0 0; color:var(--dark); }
 @media (max-width:1000px) { .directory-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }.interpreter-directory,.featured-interpreter-grid { grid-template-columns:1fr; }.profile-detail-grid { grid-template-columns:1fr; }.profile-facts { position:static; }.directory-results-layout.split-view { grid-template-columns:1fr; }.directory-location-bar { grid-template-columns:1fr 1fr; }.directory-location-bar>span { grid-column:1/-1; } }
-@media (max-width:650px) { .directory-filters { grid-template-columns:1fr; }.profile-detail-hero { grid-template-columns:1fr; justify-items:start; padding:24px; }.profile-call-actions { width:100%; }.profile-detail-grid { padding:24px; }.reviews-heading { flex-direction:column; }.review-summary { text-align:left; } }
+@media (max-width:650px) { .directory-filters { grid-template-columns:1fr; }.profile-overview { padding:20px 18px 4px; }.profile-overview .concept-week,.profile-slot,.profile-call-actions { width:100%; }.profile-detail-grid { padding:24px; }.reviews-heading { flex-direction:column; }.review-summary { text-align:left; } }
 @media (max-width:650px) { .directory-location-bar { grid-template-columns:1fr; }.directory-location-bar>span { grid-column:auto; } #interpreterMap { min-height:55vh; height:55vh; border-radius:16px; }.location-entry button { padding-inline:12px; } #dashboardDirectory>.dashboard-heading { flex-direction:column; align-items:stretch; gap:12px; } .directory-view-switch { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; } .directory-view-switch button,.directory-view-switch #directorySplitView { display:block; width:100%; text-align:center; } }
 
 /* Database-backed interpreter taxonomy tags */

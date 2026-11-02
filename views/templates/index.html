@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-main">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261101-profile-overview">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-profile-overview">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-mobile-call-details">
 </head>
 <body>
@@ -564,19 +564,30 @@
 
     <section id="profileView" class="panel profile-detail-view hidden">
         <div class="profile-detail-shell">
-            <div class="concept-profile-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
+            <div class="concept-profile-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong><button id="profileSearchButton" class="mobile-settings-button" type="button" aria-label="Search translators"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button></div>
             <button id="backToDirectory" class="screen-back profile-back" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg><span>Back to interpreters</span></button>
             <article class="profile-detail-card">
-                <div class="profile-detail-hero">
-                    <div id="publicProfileAvatar" class="public-profile-avatar" aria-hidden="true">FS</div>
-                    <div class="profile-detail-heading"><span id="publicProfileAvailability" class="availability-pill">Availability unknown</span><h1 id="publicProfileName">Interpreter</h1><p id="publicProfileHeadline">Professional FiniSpeak interpreter</p><div id="publicProfileRating" class="profile-rating"></div></div>
+                <div class="profile-overview">
+                    <div class="profile-overview-top">
+                        <div id="publicProfileAvatar" class="public-profile-avatar" aria-hidden="true">FS</div>
+                        <div class="profile-overview-copy">
+                            <div class="profile-name-row"><h1 id="publicProfileName">Interpreter</h1><span id="publicProfileVerified" class="profile-verified hidden"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7.5"/></svg>Verified</span></div>
+                            <div id="conceptProfileLanguages" class="concept-lang-badges"></div>
+                            <div id="publicProfileRating" class="profile-rating"></div>
+                            <p id="publicProfileHeadline" class="profile-specialty-line">Professional interpreter</p>
+                            <span id="publicProfileAvailability" class="availability-pill">Availability unknown</span>
+                        </div>
+                    </div>
+                    <div class="concept-week" id="conceptProfileWeek" aria-label="Upcoming days"></div>
+                    <div class="profile-slot">
+                        <div id="publicProfileSlotAvatar" class="concept-avatar profile-slot-avatar" aria-hidden="true">FS</div>
+                        <span class="profile-slot-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span>
+                        <div><strong id="conceptProfileSchedule">11:00 AM – 12:00 PM</strong><small id="profileSlotMeta">Session</small></div>
+                    </div>
                     <div class="profile-call-actions">
-                        <div id="conceptProfileLanguages" class="concept-lang-badges"></div>
-                        <p id="conceptProfileSchedule" class="concept-profile-schedule"></p>
-                        <div class="concept-week" id="conceptProfileWeek" aria-hidden="true"></div>
-                        <button id="conceptRequestCall" type="button">Request Instant Call</button>
-                        <button id="conceptScheduleSession" type="button">Schedule a Session</button>
-                        <button id="profileChatTranslator" type="button">Chat with translator</button>
+                        <button id="conceptRequestCall" class="profile-primary" type="button">Request Instant Call</button>
+                        <button id="conceptScheduleSession" class="profile-primary" type="button">Schedule a Session</button>
+                        <button id="profileChatTranslator" class="secondary" type="button">Chat with translator</button>
                         <button id="profileStartCall" class="secondary" type="button">Start a call with another person</button>
                         <p id="profileCallStatus" class="status" role="status" aria-live="polite"></p>
                     </div>
@@ -952,6 +963,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261101-main"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261101-profile-overview"></script>
 </body>
 </html>
