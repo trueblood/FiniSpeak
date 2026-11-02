@@ -241,7 +241,6 @@ function bindUI() {
     $("endCallButton").onclick = endCall;
     $("acceptIncomingCall").onclick = acceptIncomingCall;
     $("declineIncomingCall").onclick = declineIncomingCall;
-    $("closeTranscriptModal").onclick = () => closeModal("transcriptModal");
     $("closeReviewModal").onclick = () => closeModal("reviewModal");
     $("reviewForm").onsubmit = submitInterpreterReview;
     document.addEventListener("keydown", handleModalKeyboard);
@@ -668,7 +667,7 @@ function goDashboardBack() {
 }
 
 function openDashboardPanel(panel, historyMode = "push") {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", intelligence: "dashboardIntelligence" };
+    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
     if (!ids[panel]) return;
     if (historyMode !== "back") dashboardHistory = nextDashboardHistory(dashboardHistory, panel, historyMode);
     updateDashboardBackButton();
@@ -4202,36 +4201,54 @@ async function submitInterpreterReview(event) {
     }
 }
 
+let historyTranscriptRequest = 0;
+
 async function openHistoryTranscript(call) {
+    if (!call?.id || (activeCallId && document.body.classList.contains("in-call"))) return;
+    const request = ++historyTranscriptRequest;
     $("historyTranscriptTitle").textContent = "Call transcript";
     const date = timestampDate(call.startedAt) || timestampDate(call.createdAt);
     $("historyTranscriptMeta").textContent = date ? date.toLocaleString() : "Previous conversation";
     const list = $("historyTranscriptList");
-    list.innerHTML = '<p class="transcript-empty">Loading transcript…</p>';
-    openModal("transcriptModal");
+    list.innerHTML = '<p class="app-transcript-empty">Loading transcript…</p>';
+    if ($("dashboardView")?.classList.contains("hidden")) show("dashboardView");
+    openDashboardPanel("transcript");
+    $("historyTranscriptTitle")?.focus();
     try {
         const payload = await apiFetch(`/api/calls/${encodeURIComponent(call.id)}/transcripts`);
+        if (request !== historyTranscriptRequest) return;
         const rows = payload.transcripts || [];
         rows.sort((a, b) => (profileTimestampMillis(a.createdAt) || a.clientCreatedAt || 0) - (profileTimestampMillis(b.createdAt) || b.clientCreatedAt || 0));
         renderTranscriptInto(list, rows);
     } catch (error) {
-        list.innerHTML = `<p class="status">Could not load transcript: ${escapeHtml(error.message)}</p>`;
+        if (request !== historyTranscriptRequest) return;
+        list.innerHTML = `<p class="app-transcript-empty">Could not load transcript: ${escapeHtml(error.message)}</p>`;
     }
 }
 
 function renderTranscriptInto(list, rows) {
     if (!rows.length) {
-        list.innerHTML = '<p class="transcript-empty">No transcript was saved for this conversation.</p>';
+        list.innerHTML = '<p class="app-transcript-empty">No transcript was saved for this conversation.</p>';
         return;
     }
-    list.innerHTML = "";
+    list.replaceChildren();
     for (const row of rows) {
-        const item = document.createElement("div"); item.className = "transcript-line";
-        const speaker = document.createElement("div"); speaker.className = "transcript-speaker";
-        const name = document.createElement("span"); name.textContent = row.speakerName || "Participant";
-        const role = document.createElement("span"); role.className = "transcript-role"; role.textContent = formatTranscriptRole(row.speakerRole);
-        const text = document.createElement("p"); text.className = "transcript-text"; text.textContent = row.text || "";
-        speaker.append(name, role); item.append(speaker, text); list.appendChild(item);
+        const item = document.createElement("article");
+        item.className = "app-transcript-line";
+        const speaker = document.createElement("div");
+        speaker.className = "app-transcript-speaker";
+        const name = document.createElement("span");
+        name.className = "app-transcript-name";
+        name.textContent = row.speakerName || "Participant";
+        const role = document.createElement("span");
+        role.className = "app-transcript-role";
+        role.textContent = formatTranscriptRole(row.speakerRole);
+        const text = document.createElement("p");
+        text.className = "app-transcript-text";
+        text.textContent = row.text || "";
+        speaker.append(name, role);
+        item.append(speaker, text);
+        list.appendChild(item);
     }
 }
 
