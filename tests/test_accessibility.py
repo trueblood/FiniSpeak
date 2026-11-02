@@ -176,7 +176,9 @@ class AccessibilityRegressionTests(unittest.TestCase):
 
     def test_transcripts_are_named_logs(self):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
-        self.assertIn('id="historyTranscriptList" class="transcript-list history-transcript-list" role="log"', self.html)
+        self.assertIn('id="dashboardTranscript"', self.html)
+        self.assertIn('id="historyTranscriptList" class="app-transcript-list" role="log"', self.html)
+        self.assertNotIn('id="transcriptModal"', self.html)
 
     def test_experimental_processing_controls_are_hidden_and_stateful(self):
         self.assertNotIn('id="preCallProcessingModes"', self.html)

@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261101-main">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-main">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261101-in-app-transcript">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-in-app-transcript">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261101-main">
 </head>
 <body>
@@ -554,6 +554,15 @@
                     </div>
                     <p id="adminStatus" class="status" role="status" aria-live="polite"></p>
                 </div>
+
+                <div id="dashboardTranscript" class="dashboard-panel hidden">
+                    <section class="concept-screen app-transcript" aria-labelledby="historyTranscriptTitle">
+                        <span class="eyebrow">Previous conversation</span>
+                        <h2 id="historyTranscriptTitle" tabindex="-1">Call transcript</h2>
+                        <p id="historyTranscriptMeta" class="app-transcript-when"></p>
+                        <div id="historyTranscriptList" class="app-transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Previous call transcript"></div>
+                    </section>
+                </div>
                 <nav class="concept-tabbar" aria-label="Session category">
                     <button type="button" data-concept-category="Business">Business</button>
                     <button type="button" data-concept-category="Education" class="active" aria-pressed="true">Education</button>
@@ -811,17 +820,6 @@
         </div>
     </div>
 
-    <div id="transcriptModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="historyTranscriptTitle" aria-describedby="historyTranscriptMeta">
-        <div class="modal-card transcript-modal-card">
-            <div class="transcript-header">
-                <div><span class="eyebrow">Previous conversation</span><h2 id="historyTranscriptTitle">Call transcript</h2></div>
-                <button id="closeTranscriptModal" class="secondary" type="button">Close</button>
-            </div>
-            <p id="historyTranscriptMeta"></p>
-            <div id="historyTranscriptList" class="transcript-list history-transcript-list" role="log" aria-label="Previous call transcript"></div>
-        </div>
-    </div>
-
     <div id="translatorRequestModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="translatorRequestTitle" aria-describedby="translatorRequestDescription">
         <div class="modal-card translator-request-modal-card">
             <div class="transcript-header">
@@ -993,6 +991,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261101-main"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261101-in-app-transcript"></script>
 </body>
 </html>

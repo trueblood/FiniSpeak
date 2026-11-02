@@ -162,8 +162,6 @@ button.interpreter-match.is-invited,button.request-match-card.is-invited { borde
 .modal-card { width: min(520px, 100%); background: #111827; border: 1px solid rgba(255,255,255,.14); border-radius: 22px; padding: 1.5rem; box-shadow: 0 24px 80px rgba(0,0,0,.45); }
 .modal-card h2 { color:#f8fafc; }
 .modal-card .actions { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1.25rem; }
-.transcript-modal-card { width: min(760px, 100%); max-height: 85vh; display: flex; flex-direction: column; }
-.history-transcript-list { min-height: 260px; max-height: 58vh; overflow-y: auto; }
 .translator-request-modal-card { width:min(660px,100%); max-height:90vh; overflow-y:auto; }
 .sign-access-card { width:min(680px,100%); max-height:90vh; overflow-y:auto; }
 .sign-access-card h2 { font-size:1.35rem; line-height:1.25; }

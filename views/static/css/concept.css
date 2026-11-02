@@ -327,6 +327,17 @@ body.dashboard-mode #interpreterMap { height:42vh; min-height:260px; border-radi
 #dashboardSummary .concept-rate button { font-size:2.35rem; color:#f5b400; }
 #dashboardSummary .concept-rate button.active { color:#d97706; }
 
+#dashboardTranscript .app-transcript h2 { margin:2px 0 4px; }
+#dashboardTranscript .app-transcript-when { margin:0 0 14px; color:#334155; font-size:.95rem; font-weight:650; }
+#dashboardTranscript .app-transcript-list { display:grid; }
+#dashboardTranscript .app-transcript-line { padding:12px 0; border-bottom:1px solid #e2e8f0; }
+#dashboardTranscript .app-transcript-line:last-child { border-bottom:0; }
+#dashboardTranscript .app-transcript-speaker { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
+#dashboardTranscript .app-transcript-name { min-width:0; padding:3px 8px; border-radius:8px; background:#0b6cff; color:#fff; font-size:.8rem; font-weight:800; line-height:1.3; overflow-wrap:anywhere; }
+#dashboardTranscript .app-transcript-role { flex:none; color:#475569; font-size:.68rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+#dashboardTranscript .app-transcript-text { margin:6px 0 0; color:#1e293b; font-size:1rem; font-weight:650; line-height:1.45; }
+#dashboardTranscript .app-transcript-empty { margin:8px 0 0; color:#334155; font-weight:650; }
+
 body.signed-in.profile-mode .site-header { display:none; }
 body.signed-in.profile-mode #profileView { min-height:100dvh; display:grid; place-items:center; padding:18px 12px; background:#e7ebf0; }
 body.signed-in.profile-mode .profile-detail-shell { display:flex; flex-direction:column; width:min(420px,100%); max-height:min(880px,calc(100dvh - 28px)); overflow:hidden; background:#fff; border:10px solid #151515; border-radius:38px; box-shadow:0 28px 70px rgba(15,23,42,.18); }
