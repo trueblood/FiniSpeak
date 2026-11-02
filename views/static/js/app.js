@@ -1327,9 +1327,7 @@ function renderDirectoryMap(profiles, fitToResults = false) {
         const location = profile.serviceLocation;
         if (!location?.showOnMap || location.latitude == null || location.longitude == null) return;
         const available = Boolean(profile.availability?.availableNow);
-        const marker = L.marker([location.latitude, location.longitude], { icon: L.divIcon({
-            className: "interpreter-map-marker-wrap", html: `<span class="interpreter-map-marker ${available ? "available" : "unavailable"}" aria-hidden="true"></span>`, iconSize: [28, 38], iconAnchor: [14, 38]
-        }) });
+        const marker = L.marker([location.latitude, location.longitude], { icon: interpreterMarkerIcon(profile) });
         const distance = profile.distanceMiles != null ? `${Number(profile.distanceMiles).toFixed(1)} miles away` : "Distance available after choosing your location";
         const photoUrl = safeProfilePhotoUrl(profile.photoUrl);
         const photo = photoUrl ? `<img alt="">` : `<span class="map-popup-avatar" aria-hidden="true">${escapeHtml(profileInitials(profile.displayName))}</span>`;
@@ -1564,6 +1562,19 @@ function setProfileAvatar(element, profile) {
         element.classList.add("has-photo");
     };
     image.src = photoUrl;
+}
+
+function interpreterMarkerIcon(profile) {
+    const available = Boolean(profile?.availability?.availableNow);
+    const photoUrl = safeProfilePhotoUrl(profile?.photoUrl);
+    const state = available ? "available" : "unavailable";
+    const photoStyle = photoUrl ? ` style="--marker-photo:url('${photoUrl}')"` : "";
+    return L.divIcon({
+        className: "interpreter-map-marker-wrap",
+        html: `<span class="interpreter-map-marker ${state}${photoUrl ? " has-photo" : ""}"${photoStyle} aria-hidden="true"></span>`,
+        iconSize: photoUrl ? [42, 42] : [28, 38],
+        iconAnchor: photoUrl ? [21, 50] : [14, 38]
+    });
 }
 
 function profileInitials(name = "") {
@@ -3564,12 +3575,7 @@ function renderRequestMatchMap(profiles) {
     profiles.forEach(profile => {
         const location = profile.serviceLocation;
         if (!location?.showOnMap || location.latitude == null || location.longitude == null) return;
-        const available = Boolean(profile.availability?.availableNow);
-        const marker = L.marker([location.latitude, location.longitude], { icon: L.divIcon({
-            className: "interpreter-map-marker-wrap",
-            html: `<span class="interpreter-map-marker ${available ? "available" : "unavailable"}" aria-hidden="true"></span>`,
-            iconSize: [28, 38], iconAnchor: [14, 38]
-        }) });
+        const marker = L.marker([location.latitude, location.longitude], { icon: interpreterMarkerIcon(profile) });
         marker.bindPopup(`<strong>${escapeHtml(profile.displayName || "Interpreter")}</strong>`);
         marker.addTo(requestMatchMarkerLayer);
         bounds.push([location.latitude, location.longitude]);
