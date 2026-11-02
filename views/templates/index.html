@@ -7,9 +7,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261101-profile-overview">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-profile-overview">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-mobile-call-details">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261101-main">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-main">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261101-main">
 </head>
 <body>
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -136,6 +136,7 @@
                 <header class="mobile-app-header">
                     <div class="mobile-app-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
                     <div class="concept-header-actions">
+                        <button id="returnToCall" class="hidden" type="button">Return to call</button>
                         <button id="conceptSearchButton" class="mobile-settings-button" type="button" aria-label="Search translators"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button>
                         <button id="conceptMenuButton" class="mobile-settings-button" type="button" aria-label="Open account menu" aria-expanded="false" aria-controls="dashboardSidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></button>
                     </div>
@@ -447,11 +448,11 @@
                 <div id="dashboardSummary" class="dashboard-panel hidden">
                     <section class="concept-screen" aria-labelledby="summaryScreenTitle">
                         <h2 id="summaryScreenTitle">Session Summary</h2>
-                        <div class="concept-summary-people"><div><div id="conceptSummaryAvatarA" class="concept-avatar">LM</div><strong id="conceptSummarySelf">Lisa M.</strong></div><div><div id="conceptSummaryAvatarB" class="concept-avatar">AN</div><strong id="conceptSummaryOther">Anna</strong></div></div>
-                        <p id="conceptSummaryWhen" class="concept-when">11:00 AM – 12:08 PM</p>
-                        <button id="conceptViewTranscript" class="concept-primary-block" type="button">View Transcription</button>
+                        <div class="concept-summary-people"><div><div id="conceptSummaryAvatarA" class="concept-avatar">FS</div><strong id="conceptSummaryLeft">Participant</strong></div><div><div id="conceptSummaryAvatarB" class="concept-avatar">You</div><strong id="conceptSummaryRight">You</strong></div></div>
+                        <p id="conceptSummaryWhen" class="concept-when"></p>
+                        <button id="conceptViewTranscript" class="concept-primary-block" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4.5 4.5V20a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M14 3.5V8h4.5M8.5 13h7M8.5 16.5h5"/></svg>View Transcription</button>
                         <button id="conceptEmailSummary" class="text-button" type="button">Send via Email</button>
-                        <p class="concept-kicker">Rate the translation</p>
+                        <p class="summary-rate-title">Rate the translation</p>
                         <div id="conceptRating" class="concept-rate" role="group" aria-label="Rate the translation"><button type="button" data-rate="1" aria-label="1 star">★</button><button type="button" data-rate="2" aria-label="2 stars">★</button><button type="button" data-rate="3" aria-label="3 stars">★</button><button type="button" data-rate="4" aria-label="4 stars">★</button><button type="button" data-rate="5" aria-label="5 stars">★</button></div>
                         <button id="conceptBookAgain" class="concept-primary-block" type="button">Book Again</button>
                         <div class="concept-post-summary">
@@ -611,6 +612,35 @@
 
     <section id="callView" class="call-view hidden">
         <video id="localCapture" class="local-capture" autoplay muted playsinline webkit-playsinline aria-hidden="true"></video>
+        <section id="audioCall" class="audio-call" aria-label="Audio call">
+            <div class="audio-call-shell">
+                <div class="audio-call-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
+                <div class="audio-call-scroll">
+                    <div class="audio-call-people">
+                        <div><div id="audioCallAvatarA" class="concept-avatar" aria-hidden="true">FS</div><strong id="audioCallNameA">Waiting</strong></div>
+                        <div><div id="audioCallAvatarB" class="concept-avatar" aria-hidden="true">You</div><strong id="audioCallNameB">You</strong></div>
+                    </div>
+                    <p id="audioCallDuration" class="audio-call-timer">00:00</p>
+                    <div class="audio-call-controls" role="toolbar" aria-label="Audio call controls">
+                        <button id="audioMuteButton" class="audio-round" type="button" aria-pressed="false" aria-label="Mute microphone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8 21h8"/></svg></button>
+                        <button id="audioHangupButton" class="audio-round audio-hangup" type="button" aria-label="End call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.6.6 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 7a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11 11 0 0 0 .6 3.6 1 1 0 0 1-.25 1L6.6 10.8Z"/></svg></button>
+                        <button id="audioVideoButton" class="audio-round" type="button" aria-pressed="false" aria-label="Turn camera on"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/></svg></button>
+                    </div>
+                    <h2 class="audio-transcript-title">Live transcription</h2>
+                    <div id="audioTranscript" class="audio-transcript" role="log" aria-live="polite" aria-relevant="additions text"><p class="audio-transcript-empty">Live transcription appears here as people speak.</p></div>
+                    <div class="audio-note-row">
+                        <input id="audioCallNote" type="text" maxlength="4000" placeholder="Add a note..." aria-label="Add a note">
+                        <button id="audioFlagMoment" class="audio-flag" type="button">Flag Key Moment</button>
+                    </div>
+                    <button id="audioBookNow" class="audio-book" type="button">Book Now</button>
+                </div>
+                <nav class="concept-tabbar audio-call-tabs" aria-label="Session category">
+                    <button type="button" data-audio-category="Business">Business</button>
+                    <button type="button" data-audio-category="Education" class="active" aria-pressed="true">Education</button>
+                    <button type="button" data-audio-category="Personal">Personal</button>
+                </nav>
+            </div>
+        </section>
         <div id="callShell" class="call-shell subs-both is-transcript-collapsed are-call-details-collapsed" data-pane="video">
             <div class="call-frame">
                 <section id="smartInterpreter" class="smart-interpreter" hidden aria-hidden="true">
@@ -963,6 +993,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261101-profile-overview"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261101-main"></script>
 </body>
 </html>

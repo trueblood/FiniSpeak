@@ -1,4 +1,4 @@
-import { createCallExperience } from "./call-experience.js?v=20261019-document-upload";
+import { createCallExperience } from "./call-experience.js?v=20261101-audio-call";
 import { createCameraRelay } from "./camera-relay.js?v=20261018-membership-refresh";
 import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 
@@ -10,11 +10,12 @@ const show = (id) => {
     document.body.classList.toggle("dashboard-mode", id === "dashboardView");
     document.body.classList.toggle("profile-mode", id === "profileView");
     document.body.classList.toggle("in-call", id === "callView");
+    updateReturnToCall();
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let authActionToken = null;
 let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerProfiles = new Map(), peerDebug = new Map(), peerJobs = new Map(), rosterParticipants = [], rosterTranscripts = [];
-let cameraRelay = null, cameraRelayOpen = false, cameraRestart = null, lastCameraRestart = 0;
+let cameraRelay = null, cameraRelayOpen = false, cameraRestart = null, lastCameraRestart = 0, suppressCameraRestart = false;
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let callMembershipKey = "";
@@ -198,6 +199,21 @@ function bindUI() {
     };
     $("muteButton").onclick = toggleMute;
     $("cameraButton").onclick = toggleCamera;
+    $("audioMuteButton").onclick = toggleMute;
+    $("audioVideoButton").onclick = toggleCamera;
+    $("audioHangupButton").onclick = endCall;
+    $("audioBookNow").onclick = bookFromAudioCall;
+    $("audioFlagMoment").onclick = flagKeyMoment;
+    $("audioCallNote").oninput = () => {
+        const notes = $("callNotes");
+        if (!notes) return;
+        notes.value = $("audioCallNote").value;
+        notes.dispatchEvent(new Event("input"));
+    };
+    $("returnToCall").onclick = () => { if (activeCallId) show("callView"); };
+    document.querySelectorAll("[data-audio-category]").forEach(button => {
+        button.onclick = () => setConceptCategory(button.dataset.audioCategory);
+    });
     $("callView")?.addEventListener("pointerdown", playRemoteMedia, { passive: true });
     document.querySelectorAll("[data-processing-mode]").forEach(button => button.onclick = () => selectProcessingMode(button.dataset.processingMode));
     $("toggleCallProcessingModes").onclick = (event) => {
@@ -2378,14 +2394,14 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
             stage = "translator-connect-update";
             await apiFetch(`/api/calls/${encodeURIComponent(callId)}/translator-claim`, { method: "POST", body: "{}" });
         }
-        activeCallId = callId; show("callView"); $("callIdLabel").textContent = callId;
+        activeCallId = callId; setCallPresentation("audio"); show("callView"); $("callIdLabel").textContent = callId;
         const storedMode = call.processingModes?.[currentUser.uid]; if (storedMode) selectedProcessingMode = storedMode; renderProcessingMode();
         resetDetectedLanguage();
         document.querySelector('.video-card[data-role="local"]').dataset.speaker = currentUser.uid;
         $("requestTranslatorButton").classList.toggle("hidden", role === "translator");
         $("requestTranslatorButton").disabled = false;
         stage = "media-permission";
-        callLog(attemptId, stage, { audio: true, video: true });
+        callLog(attemptId, stage, { audio: true, video: false });
         await startMedia();
         callLog(attemptId, "media-ready", {
             audioTracks: localStream?.getAudioTracks().length || 0,
@@ -2425,22 +2441,29 @@ async function startMedia() {
     if (localStream) {
         await bindLocalPreview(localStream);
         startCameraRelay();
+        const cameraLive = localStream.getVideoTracks().some(track => track.readyState === "live" && track.enabled);
+        setCallPresentation(cameraLive ? "video" : "audio");
         return;
     }
     requireMediaCapture();
-    localStream = await captureCallMedia();
+    localStream = await captureCallMedia({ video: false });
     for (const track of localStream.getVideoTracks()) watchCameraTrack(track);
     await bindLocalPreview(localStream);
-    document.querySelector('.video-card[data-role="local"]')?.classList.add("is-camera-on");
+    const cameraOn = localStream.getVideoTracks().some(track => track.readyState === "live" && track.enabled);
+    document.querySelector('.video-card[data-role="local"]')?.classList.toggle("is-camera-on", cameraOn);
+    setCallPresentation(cameraOn ? "video" : "audio");
     callExperience?.attachLocalStream(localStream);
     startCameraRelay();
 }
 
-async function captureCallMedia() {
-    const attempts = [
+async function captureCallMedia({ video = true } = {}) {
+    const attempts = video ? [
         { audio: { echoCancellation: true, noiseSuppression: true }, video: frontCamera },
         { audio: true, video: { facingMode: "user" } },
         { audio: false, video: { facingMode: "user" } }
+    ] : [
+        { audio: { echoCancellation: true, noiseSuppression: true }, video: false },
+        { audio: true, video: false }
     ];
     let stream = null;
     let failure = null;
@@ -2452,7 +2475,7 @@ async function captureCallMedia() {
             failure = error;
         }
     }
-    if (!stream) throw failure || new Error("Camera is unavailable on this device.");
+    if (!stream) throw failure || new Error(video ? "Camera is unavailable on this device." : "Microphone is unavailable on this device.");
     if (!stream.getAudioTracks().some(track => track.readyState === "live")) {
         try {
             const microphone = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -2493,20 +2516,24 @@ const watchedCameraTracks = new WeakSet();
 function watchCameraTrack(track) {
     if (!track || watchedCameraTracks.has(track)) return;
     watchedCameraTracks.add(track);
-    track.addEventListener("ended", () => { restartLocalCamera(); });
+    track.addEventListener("ended", () => {
+        if (suppressCameraRestart || !document.body.classList.contains("video-call")) return;
+        restartLocalCamera();
+    });
 }
 
 async function restartLocalCamera() {
-    if (!activeCallId || cameraRestart || callExperience?.isAvatar?.()) return;
-    if (Date.now() - lastCameraRestart < 2000) return;
+    if (!activeCallId || callExperience?.isAvatar?.()) return false;
+    if (cameraRestart) return cameraRestart;
+    if (Date.now() - lastCameraRestart < 2000) return false;
     const current = localStream?.getVideoTracks?.().find(track => track.readyState === "live" && track.enabled);
-    if (current && ($("localCapture")?.videoWidth > 0 || $("localVideo")?.videoWidth > 0)) return;
+    if (current && ($("localCapture")?.videoWidth > 0 || $("localVideo")?.videoWidth > 0)) return true;
     lastCameraRestart = Date.now();
     cameraRestart = (async () => {
         try {
             const fresh = await navigator.mediaDevices.getUserMedia({ audio: false, video: frontCamera });
             const track = fresh.getVideoTracks()[0];
-            if (!track || !localStream) { track?.stop(); return; }
+            if (!track || !localStream) { track?.stop(); return false; }
             for (const old of [...localStream.getVideoTracks()]) {
                 localStream.removeTrack(old);
                 old.stop();
@@ -2516,13 +2543,15 @@ async function restartLocalCamera() {
             await bindLocalPreview(localStream);
             replaceOutgoingVideo(track);
             callExperience?.markCamera?.(true);
+            return true;
         } catch (error) {
             console.warn("Camera restart failed", error);
+            return false;
         } finally {
             cameraRestart = null;
         }
     })();
-    await cameraRestart;
+    return cameraRestart;
 }
 
 function resumeLocalPreview() {
@@ -2530,6 +2559,7 @@ function resumeLocalPreview() {
     replayCallMedia();
     window.setTimeout(() => {
         if (!activeCallId) return;
+        if (!document.body.classList.contains("video-call")) return;
         const track = localStream?.getVideoTracks?.()[0];
         if (!track || track.readyState === "ended") restartLocalCamera();
     }, 400);
@@ -2630,7 +2660,16 @@ function watchCall(callId) {
         const callPayload = await apiFetch(`/api/calls/${encodeURIComponent(callId)}`);
         const call = callPayload.call;
         if (["ended", "declined", "cancelled"].includes(call.status)) {
-            cleanupCall(); show("dashboardView"); loadConversationHistory(); return;
+            const ended = call.status === "ended";
+            if (ended) {
+                lastSessionSnapshot = captureSessionSnapshot();
+                rememberEndedCall(callId);
+            }
+            cleanupCall();
+            show("dashboardView");
+            if (ended) openDashboardPanel("summary");
+            loadConversationHistory();
+            return;
         }
         const [participantPayload, transcriptPayload] = await Promise.all([
           apiFetch(`/api/sessions/${encodeURIComponent(callId)}/participants`),
@@ -2654,10 +2693,17 @@ function watchCall(callId) {
                         : "Customer call connected";
         const participantRows = participantPayload.participants || [];
         if (participantRows.some(person => person?.id === currentUser.uid && person.leftAt)) {
-            cleanupCall(); show("dashboardView"); loadConversationHistory(); return;
+            lastSessionSnapshot = captureSessionSnapshot();
+            rememberEndedCall(callId);
+            cleanupCall();
+            show("dashboardView");
+            openDashboardPanel("summary");
+            loadConversationHistory();
+            return;
         }
         const ids = new Set();
         rosterParticipants = peopleInCall(call, participantRows);
+        syncAudioCallFaces();
         const nextMembershipKey = rosterParticipants.map(person => person?.id).filter(Boolean).sort().join("|");
         if (callMembershipKey && nextMembershipKey !== callMembershipKey) {
             connectSignaling(callId);
@@ -3704,6 +3750,7 @@ function renderTranscript(rows) {
     const list = $("transcriptList");
     if (!rows.length) {
         list.innerHTML = '<p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p>';
+        renderAudioTranscript(rows);
         return;
     }
     const localLanguage = [...rows].reverse().find(row => row.speakerId === currentUser?.uid && row.language);
@@ -3732,6 +3779,7 @@ function renderTranscript(rows) {
         list.appendChild(item);
     }
     list.scrollTop = list.scrollHeight;
+    renderAudioTranscript(rows);
 }
 
 function updateParticipantLanguageBadges(rows) {
@@ -3823,19 +3871,46 @@ function toggleMute() {
     const enabled = !tracks[0].enabled;
     for (const track of tracks) track.enabled = enabled;
     setToolLabel("muteButton", enabled ? "Mute" : "Unmute", !enabled, enabled ? "Mute microphone" : "Unmute microphone");
+    syncAudioMute(!enabled);
     if (enabled) playRemoteMedia();
     callExperience?.persistPresence()?.catch(error => console.warn(error));
 }
 async function toggleCamera() {
-    if (callExperience?.isAvatar?.()) { await callExperience.activateCamera(); return; }
-    const tracks = tracksInCall("video");
+    if (callExperience?.isAvatar?.()) {
+        await callExperience.activateCamera();
+        setCallPresentation("video");
+        return;
+    }
+    const tracks = tracksInCall("video").filter(track => track.readyState === "live");
     if (!tracks.length) {
-        await restartLocalCamera();
+        const started = await restartLocalCamera();
+        if (!started) {
+            if ($("callStatus")) $("callStatus").textContent = "Camera is unavailable on this device.";
+            setCallPresentation("audio");
+            return;
+        }
         setToolLabel("cameraButton", "Camera", false, "Turn camera off");
+        setCallPresentation("video");
+        callExperience?.persistPresence()?.catch(error => console.warn(error));
         return;
     }
     const enabled = !tracks[0].enabled;
-    for (const track of tracks) track.enabled = enabled;
+    if (enabled) {
+        for (const track of tracks) track.enabled = true;
+        setCallPresentation("video");
+    } else {
+        setCallPresentation("audio");
+        suppressCameraRestart = true;
+        try {
+            for (const track of tracks) {
+                track.stop();
+                localStream?.removeTrack(track);
+            }
+            for (const pc of peerConnections.values()) senderFor(pc, "video")?.replaceTrack(null).catch(() => {});
+        } finally {
+            suppressCameraRestart = false;
+        }
+    }
     setToolLabel("cameraButton", enabled ? "Camera" : "Camera off", !enabled, enabled ? "Turn camera off" : "Turn camera on");
     callExperience?.markCamera?.(enabled);
     callExperience?.persistPresence()?.catch(error => console.warn(error));
@@ -3843,7 +3918,7 @@ async function toggleCamera() {
 async function endCall() {
     const callId = activeCallId;
     lastSessionSnapshot = captureSessionSnapshot();
-    lastEndedCall = callId ? { id: callId, translatorId: selectedInterpreterProfile?.id || activeDirectoryProfile?.id || "" } : lastEndedCall;
+    rememberEndedCall(callId);
     cleanupCall(); show("dashboardView"); openDashboardPanel("summary");
     if (callId) {
         try {
@@ -3884,6 +3959,7 @@ function cleanupCall(stopMedia = true) {
         if ($("localCapture")) $("localCapture").srcObject = null;
     }
     callExperience?.cleanup();
+    document.body.classList.remove("video-call");
     activeCallId = null; currentCallRole = null;
     activeTranslatorConnected = false;
     if (endingCallId) for (const key of [...routedLanguageCalls]) if (key.startsWith(`${endingCallId}:`)) routedLanguageCalls.delete(key);
@@ -4166,8 +4242,8 @@ let conceptMatchedProfile = null;
 
 function setConceptCategory(name) {
     conceptCategory = name || "Education";
-    document.querySelectorAll("[data-discovery-category], [data-concept-category]").forEach(button => {
-        const value = button.dataset.discoveryCategory || button.dataset.conceptCategory;
+    document.querySelectorAll("[data-discovery-category], [data-concept-category], [data-audio-category]").forEach(button => {
+        const value = button.dataset.discoveryCategory || button.dataset.conceptCategory || button.dataset.audioCategory;
         const active = value === conceptCategory;
         button.classList.toggle("active", active);
         button.setAttribute("aria-pressed", String(active));
@@ -4225,15 +4301,115 @@ function renderConceptProfile(profile) {
     }).join("");
 }
 
+function formatSessionClock(date) {
+    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function updateReturnToCall() {
+    $("returnToCall")?.classList.toggle("hidden", !activeCallId || document.body.classList.contains("in-call"));
+}
+
+function setCallPresentation(mode) {
+    document.body.classList.toggle("video-call", mode === "video");
+    $("audioVideoButton")?.setAttribute("aria-pressed", String(mode === "video"));
+    syncAudioCallFaces();
+}
+
+function syncAudioMute(muted) {
+    const button = $("audioMuteButton");
+    if (!button) return;
+    button.classList.toggle("is-muted", muted);
+    button.setAttribute("aria-pressed", String(muted));
+    button.setAttribute("aria-label", muted ? "Unmute microphone" : "Mute microphone");
+}
+
+function syncAudioCallFaces() {
+    const other = [...peerProfiles.values()].find(profile => profile?.displayName) || activeDirectoryProfile || selectedInterpreterProfile;
+    const self = currentProfile || { displayName: "You" };
+    if ($("audioCallNameA")) $("audioCallNameA").textContent = other?.displayName || "Waiting";
+    if ($("audioCallNameB")) $("audioCallNameB").textContent = self.displayName || "You";
+    setProfileAvatar($("audioCallAvatarA"), other || { displayName: "Waiting" });
+    setProfileAvatar($("audioCallAvatarB"), self);
+}
+
+function renderAudioTranscript(rows) {
+    const list = $("audioTranscript");
+    if (!list) return;
+    if (!rows?.length) {
+        list.innerHTML = '<p class="audio-transcript-empty">Live transcription appears here as people speak.</p>';
+        return;
+    }
+    const viewerLanguage = callExperience?.viewerLanguage?.() || "en";
+    list.replaceChildren();
+    for (const row of rows) {
+        const name = String(row.speakerName || "Speaker").trim().split(/\s+/)[0] || "Speaker";
+        const line = document.createElement("div");
+        line.className = "audio-line";
+        const speaker = document.createElement("span");
+        speaker.className = "audio-speaker";
+        speaker.textContent = name;
+        const text = document.createElement("p");
+        text.textContent = row.text || "";
+        line.append(speaker, text);
+        list.appendChild(line);
+        const translated = row.translations?.[viewerLanguage]?.text || "";
+        if (translated && translated !== row.text) {
+            const extra = document.createElement("div");
+            extra.className = "audio-line is-translation";
+            const who = document.createElement("span");
+            who.className = "audio-speaker";
+            who.textContent = name;
+            const copy = document.createElement("p");
+            copy.textContent = translated;
+            extra.append(who, copy);
+            list.appendChild(extra);
+        }
+    }
+    list.scrollTop = list.scrollHeight;
+}
+
+function flagKeyMoment() {
+    const when = $("audioCallDuration")?.textContent || $("callDuration")?.textContent || "";
+    const latest = [...($("audioTranscript")?.querySelectorAll("p") || [])].map(item => item.textContent.trim()).filter(Boolean).at(-1) || "";
+    const line = `Key moment ${when}${latest ? `: ${latest}` : ""}`.trim();
+    const notes = $("callNotes");
+    if (notes) {
+        notes.value = [notes.value.trim(), line].filter(Boolean).join("\n");
+        notes.dispatchEvent(new Event("input"));
+    }
+    if ($("audioCallNote") && notes) $("audioCallNote").value = notes.value;
+    $("audioFlagMoment")?.classList.add("is-flagged");
+}
+
+function bookFromAudioCall() {
+    const profile = activeDirectoryProfile || selectedInterpreterProfile || [...peerProfiles.values()].find(item => item?.id);
+    if (profile) activeDirectoryProfile = profile;
+    show("dashboardView");
+    openDashboardPanel("schedule");
+}
+
+function rememberEndedCall(callId) {
+    if (!callId) return;
+    const other = [...peerProfiles.values()].find(profile => profile?.id);
+    lastEndedCall = {
+        id: callId,
+        translatorId: selectedInterpreterProfile?.id || activeDirectoryProfile?.id || other?.id || ""
+    };
+}
+
 function captureSessionSnapshot() {
-    const others = [...peerProfiles.values()].map(profile => profile?.displayName).filter(Boolean);
+    const otherProfile = [...peerProfiles.values()].find(profile => profile?.displayName) || activeDirectoryProfile || selectedInterpreterProfile || null;
     const lines = [...($("transcriptList")?.querySelectorAll(".transcript-line") || [])].slice(-6).map(line => line.innerText.trim()).filter(Boolean);
+    const startedMs = callExperience?.startedAt?.() || Date.now();
+    const start = new Date(Number.isFinite(startedMs) ? startedMs : Date.now());
     return {
         selfName: currentProfile?.displayName || "You",
-        otherName: others[0] || activeDirectoryProfile?.displayName || "Participant",
-        tutorName: selectedInterpreterProfile?.displayName || activeDirectoryProfile?.displayName || others[0] || "Your interpreter",
-        language: (selectedInterpreterProfile?.languages || activeDirectoryProfile?.languages || [])[0] || "Session",
-        when: $("callDuration")?.textContent || "",
+        selfPhoto: currentProfile?.photoUrl || "",
+        otherName: otherProfile?.displayName || "Participant",
+        otherPhoto: otherProfile?.photoUrl || "",
+        tutorName: selectedInterpreterProfile?.displayName || activeDirectoryProfile?.displayName || otherProfile?.displayName || "Your interpreter",
+        language: (selectedInterpreterProfile?.languages || activeDirectoryProfile?.languages || otherProfile?.languages || [])[0] || "Session",
+        when: `${formatSessionClock(start)} – ${formatSessionClock(new Date())}`,
         lines
     };
 }
@@ -4346,13 +4522,13 @@ function renderAutoMatchScreen() {
 function renderSummaryScreen() {
     const snapshot = lastSessionSnapshot;
     if (!snapshot) return;
-    $("conceptSummarySelf").textContent = snapshot.selfName;
-    $("conceptSummaryOther").textContent = snapshot.otherName;
+    $("conceptSummaryLeft").textContent = snapshot.otherName;
+    $("conceptSummaryRight").textContent = snapshot.selfName;
     $("conceptSummaryTutor").textContent = snapshot.tutorName;
     $("conceptSummaryLanguage").textContent = snapshot.language;
     if (snapshot.when) $("conceptSummaryWhen").textContent = snapshot.when;
-    paintConceptAvatar($("conceptSummaryAvatarA"), { displayName: snapshot.selfName }, "FS");
-    paintConceptAvatar($("conceptSummaryAvatarB"), { displayName: snapshot.otherName }, "AN");
+    paintConceptAvatar($("conceptSummaryAvatarA"), { displayName: snapshot.otherName, photoUrl: snapshot.otherPhoto }, "FS");
+    paintConceptAvatar($("conceptSummaryAvatarB"), { displayName: snapshot.selfName, photoUrl: snapshot.selfPhoto }, "You");
     paintConceptAvatar($("conceptSummaryTutorAvatar"), { displayName: snapshot.tutorName }, "CC");
     if (snapshot.lines.length) {
         $("conceptTranscriptHits").innerHTML = snapshot.lines.map(line => `<p>${escapeHtml(line)}</p>`).join("");

@@ -268,3 +268,47 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
 @media (prefers-reduced-motion:reduce) {
     .call-view * { scroll-behavior:auto; }
 }
+
+body.in-call:not(.video-call) { background:#e7ebf0; overflow:auto; }
+body.in-call:not(.video-call) main { height:auto; min-height:100dvh; }
+body.in-call:not(.video-call) .call-view { height:auto; min-height:100dvh; display:grid; place-items:center; padding:18px 12px; overflow:visible; background:transparent; }
+body.in-call:not(.video-call) #callShell { display:none; }
+body.in-call.video-call #audioCall { display:none; }
+.audio-call { width:min(420px,100%); }
+.audio-call-shell { display:flex; flex-direction:column; width:100%; max-height:min(880px,calc(100dvh - 28px)); overflow:hidden; background:#fff; border:10px solid #151515; border-radius:38px; box-shadow:0 28px 70px rgba(15,23,42,.18); color:#111827; }
+.audio-call-brand { display:flex; align-items:center; gap:8px; flex:none; padding:16px 18px 4px; font-size:1.35rem; letter-spacing:-.03em; }
+.audio-call-brand .concept-globe { width:32px; height:32px; }
+.audio-call-scroll { flex:1; min-height:0; overflow:auto; padding:8px 18px 12px; }
+.audio-call-people { display:flex; justify-content:center; gap:36px; margin-top:8px; text-align:center; }
+.audio-call-people .concept-avatar { width:104px; height:104px; margin:0 auto 8px; font-size:1.4rem; }
+.audio-call-people strong { display:block; color:#0b6cff; font-size:1.15rem; font-weight:750; }
+.audio-call-timer { margin:14px 0 6px; text-align:center; color:#111827; font-size:2.7rem; font-weight:800; letter-spacing:-.04em; line-height:1; }
+.audio-call-controls { display:flex; align-items:center; justify-content:center; gap:22px; margin:8px 0 16px; }
+button.audio-round { width:62px; height:62px; display:grid; place-items:center; padding:0; border-radius:50%; background:#f3f4f6; color:#111827; }
+button.audio-round svg { width:26px; height:26px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+button.audio-round:hover { background:#e5e7eb; color:#111827; }
+button.audio-round.is-muted { background:#111827; color:#fff; }
+button.audio-hangup { width:74px; height:74px; background:#ff2d2d; color:#fff; }
+button.audio-hangup svg { fill:currentColor; stroke:none; }
+button.audio-hangup:hover { background:#e10600; color:#fff; }
+.audio-transcript-title { margin:4px 0 10px; color:#111827; font-size:1.2rem; font-weight:750; letter-spacing:0; }
+.audio-transcript { display:grid; gap:10px; max-height:min(180px,28dvh); margin:0 0 14px; overflow:auto; }
+.audio-transcript-empty { margin:0; color:#64748b; }
+.audio-line { display:flex; align-items:flex-start; gap:10px; }
+.audio-speaker { flex:none; min-width:52px; padding:3px 8px; border-radius:8px; background:#0b6cff; color:#fff; font-size:.78rem; font-weight:800; text-align:center; }
+.audio-line p { margin:2px 0 0; color:#334155; line-height:1.4; }
+.audio-line.is-translation .audio-speaker { background:transparent; color:#0b6cff; padding-left:0; text-align:left; }
+.audio-note-row { display:flex; align-items:center; gap:8px; margin-bottom:12px; padding:4px 12px; border:1px solid #e5e7eb; border-radius:14px; background:#fff; }
+.audio-note-row input { min-width:0; padding:10px 0; border:0; background:transparent; }
+.audio-note-row input:focus { outline:none; }
+button.audio-flag { width:auto; flex:none; padding:8px 2px; background:transparent; color:#0b6cff; font-weight:750; white-space:nowrap; }
+button.audio-flag:hover { background:transparent; color:#0057e0; }
+button.audio-flag.is-flagged { color:#b45309; }
+button.audio-book { width:100%; min-height:52px; border-radius:14px; background:#0b6cff; color:#fff; font-size:1.05rem; font-weight:800; }
+button.audio-book:hover { background:#0057e0; }
+.audio-call-tabs { padding:8px 18px 16px; }
+@media (max-width:700px) {
+  body.in-call:not(.video-call) .call-view { padding:0; }
+  .audio-call { width:100%; }
+  .audio-call-shell { height:100dvh; max-height:100dvh; border:0; border-radius:0; box-shadow:none; }
+}
