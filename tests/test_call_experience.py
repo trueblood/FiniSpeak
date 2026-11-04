@@ -1,7 +1,9 @@
 import io
+import os
 import unittest
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from models.sql_models import SqlCall, SqlTranscript
 from repositories.mysql import MySqlCallRepository, MySqlTranscriptRepository
@@ -9,6 +11,13 @@ from services.call_access import is_call_participant, participant_ids
 from services.document_extract import extract_document_text
 from services.call_experience_service import build_experience_changes
 from services.summary_service import summarize_lines
+from services.transcript_policy import (
+    attach_speech_translation,
+    build_speech_transcript,
+    consent_changes,
+    partition_transcripts,
+    policy_public,
+)
 from services.translation_service import explain_term, translate_text
 
 
@@ -192,6 +201,68 @@ class CallExperienceTests(unittest.TestCase):
         self.assertEqual(saved["text"], "Hello")
         self.assertEqual(saved["translations"]["es"]["text"], "Hola")
 
+    def test_flagged_moment_is_a_timestamped_follow_up(self):
+        call = {"callerId": "customer-1", "receiverId": "customer-2"}
+        actor = {"uid": "customer-1", "displayName": "Ada"}
+        flagged = build_experience_changes(call, actor, "flag-moment", {
+            "id": "moment-1", "elapsedLabel": "01:12", "transcriptId": "line-1",
+            "speakerName": "Ken", "text": "Please send the document.",
+        })
+        moment = flagged["keyMoments"][0]
+        self.assertEqual(moment["id"], "moment-1")
+        self.assertTrue(moment["followUp"])
+        self.assertTrue(moment["createdAt"])
+        self.assertEqual(moment["elapsedLabel"], "01:12")
+        self.assertEqual(moment["authorName"], "Ada")
+        again = build_experience_changes({**call, **flagged}, actor, "flag-moment", {"id": "moment-1", "text": "duplicate"})
+        self.assertEqual(len(again["keyMoments"]), 1)
+        resolved = build_experience_changes({**call, **flagged}, actor, "resolve-moment", {"id": "moment-1"})
+        self.assertFalse(resolved["keyMoments"][0]["followUp"])
+        self.assertTrue(resolved["keyMoments"][0]["resolvedAt"])
+        with self.assertRaises(PermissionError):
+            build_experience_changes(call, {"uid": "stranger"}, "flag-moment", {"text": "no"})
+
+    def test_transcript_consent_retention_and_speech_line(self):
+        call = {"callerId": "customer-1"}
+        granted = consent_changes("customer-1", True)
+        self.assertTrue(granted["transcriptConsent"]["granted"])
+        self.assertEqual(granted["transcriptConsent"]["retentionDays"], 90)
+        self.assertFalse(policy_public(call)["consentGranted"])
+        self.assertFalse(policy_public(granted)["storesAudio"])
+        self.assertIn("90 days", policy_public(granted)["statement"])
+        revoked = consent_changes("customer-1", False)
+        self.assertFalse(revoked["transcriptConsent"]["granted"])
+        saved = build_experience_changes(call, {"uid": "customer-1"}, "set-transcript-consent", {"granted": True})
+        self.assertTrue(saved["transcriptConsent"]["granted"])
+
+        source = {
+            "id": "line-1", "speakerId": "customer-1", "speakerRole": "caller", "speakerName": "Ada",
+            "language": "en", "text": "Hello, thank you.", "isFinal": True,
+            "createdAt": datetime.now(timezone.utc), "clientCreatedAt": 1_700_000_000_000,
+        }
+        speech = build_speech_transcript(source, "es", "Spanish", online=False)
+        self.assertEqual(speech["kind"], "speech")
+        self.assertEqual(speech["sourceTranscriptId"], "line-1")
+        self.assertEqual(speech["language"], "es")
+        self.assertEqual(speech["speakerId"], "customer-1")
+        self.assertIn("hola", speech["text"].casefold())
+        self.assertIn("gracias", speech["text"].casefold())
+        self.assertEqual(speech["clientCreatedAt"], 1_700_000_000_001)
+        paired = attach_speech_translation(source, speech)
+        self.assertEqual(paired["translations"]["es"]["kind"], "speech")
+        unchanged = build_speech_transcript({**source, "text": "zzzz-not-a-phrase"}, "en", "en", online=False)
+        self.assertIsNone(unchanged)
+        same_language = build_speech_transcript({**source, "language": "en", "text": "Hello"}, "en", None, online=False)
+        self.assertEqual(same_language["language"], "es")
+
+        now = datetime.now(timezone.utc)
+        fresh, expired = partition_transcripts([
+            {"id": "new", "createdAt": now.isoformat()},
+            {"id": "old", "createdAt": (now - timedelta(days=91)).isoformat()},
+        ], now=now, retention_days_value=90)
+        self.assertEqual([row["id"] for row in fresh], ["new"])
+        self.assertEqual([row["id"] for row in expired], ["old"])
+
 
 def _minimal_pdf(message):
     content = f"BT /F1 24 Tf 72 100 Td ({message}) Tj ET".encode("ascii")
@@ -216,6 +287,73 @@ def _minimal_pdf(message):
         output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
     output.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii"))
     return bytes(output)
+
+
+class TranscriptStorageTests(unittest.TestCase):
+    def setUp(self):
+        from app import create_app
+        self.app = create_app()
+        self.app.config["TESTING"] = True
+        self.client = self.app.test_client()
+
+    def test_published_rate_is_optional_and_bounded(self):
+        from controllers.translators_controller import published_rate
+        self.assertIsNone(published_rate(""))
+        self.assertIsNone(published_rate(None))
+        self.assertEqual(published_rate("12.5"), 12.5)
+        with self.assertRaisesRegex(ValueError, "price per minute"):
+            published_rate("nope")
+        with self.assertRaisesRegex(ValueError, "between 0 and 10000"):
+            published_rate(-1)
+
+    @patch.dict(os.environ, {"FINISPEAK_SPEECH_TRANSLATION": "glossary"})
+    @patch("controllers.calls_controller.TranscriptModel")
+    @patch("controllers.calls_controller.CallModel")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_saved_transcript_requires_consent_and_keeps_a_speech_line(self, identity, calls, transcripts):
+        identity.return_value = ({"uid": "customer-1", "role": "customer", "displayName": "Ada"}, None)
+        calls.is_participant.return_value = True
+        calls.get.return_value = {"callerId": "customer-1", "language": "Spanish"}
+        transcripts.add.side_effect = lambda call_id, transcript_id, data: {"id": transcript_id, **data}
+
+        denied = self.client.post("/api/calls/call-1/transcripts", json={
+            "id": "line-1", "text": "Hello", "language": "en", "captionLanguage": "es",
+        })
+        self.assertEqual(denied.status_code, 403)
+        self.assertIn("consent", denied.get_json()["error"].lower())
+        transcripts.add.assert_not_called()
+
+        calls.get.return_value = {
+            "callerId": "customer-1", "language": "Spanish",
+            "transcriptConsent": {"granted": True, "retentionDays": 90},
+        }
+        saved = self.client.post("/api/calls/call-1/transcripts", json={
+            "id": "line-1", "text": "Hello", "language": "en", "captionLanguage": "es",
+        })
+        self.assertEqual(saved.status_code, 201)
+        body = saved.get_json()
+        self.assertEqual(body["transcript"]["speakerName"], "Ada")
+        self.assertEqual(body["transcript"]["translations"]["es"]["kind"], "speech")
+        self.assertEqual(body["speechTranscript"]["kind"], "speech")
+        self.assertEqual(body["speechTranscript"]["language"], "es")
+        self.assertIn("hola", body["speechTranscript"]["text"].casefold())
+        self.assertFalse(body["policy"]["storesAudio"])
+
+        transcripts.delete_for_call.return_value = 2
+        deleted = self.client.delete("/api/calls/call-1/transcripts")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.get_json()["deleted"], 2)
+
+        now = datetime.now(timezone.utc)
+        transcripts.for_call.return_value = [
+            {"id": "fresh", "createdAt": now.isoformat(), "text": "Hello"},
+            {"id": "expired", "createdAt": (now - timedelta(days=91)).isoformat(), "text": "Old"},
+        ]
+        listed = self.client.get("/api/calls/call-1/transcripts")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([row["id"] for row in listed.get_json()["transcripts"]], ["fresh"])
+        transcripts.delete_ids.assert_called_once()
+        self.assertIn("expired", transcripts.delete_ids.call_args.args[1])
 
 
 if __name__ == "__main__":

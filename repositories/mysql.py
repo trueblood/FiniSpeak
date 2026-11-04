@@ -970,6 +970,25 @@ class MySqlTranscriptRepository:
         _commit(self.session)
         return _document(row, TRANSCRIPT_FIELDS)
 
+    def delete_ids(self, call_id, transcript_ids):
+        ids = [str(value) for value in (transcript_ids or []) if value]
+        if not ids:
+            return 0
+        rows = self.session.scalars(select(SqlTranscript).where(SqlTranscript.call_id == call_id, SqlTranscript.id.in_(ids))).all()
+        for row in rows:
+            self.session.delete(row)
+        if rows:
+            _commit(self.session)
+        return len(rows)
+
+    def delete_for_call(self, call_id):
+        rows = self.session.scalars(select(SqlTranscript).where(SqlTranscript.call_id == call_id)).all()
+        for row in rows:
+            self.session.delete(row)
+        if rows:
+            _commit(self.session)
+        return len(rows)
+
 
 class MySqlReviewRepository:
     def __init__(self, session): self.session = session

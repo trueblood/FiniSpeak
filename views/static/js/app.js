@@ -1,4 +1,4 @@
-import { createCallExperience } from "./call-experience.js?v=20261101-audio-call";
+import { createCallExperience } from "./call-experience.js?v=20261103-call-followup";
 import { createCameraRelay } from "./camera-relay.js?v=20261018-membership-refresh";
 import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 
@@ -47,6 +47,11 @@ let detectedCallLanguages = new Map();
 let selectedRequestLanguages = new Set();
 let activeModal = null, modalReturnFocus = null;
 let reviewCall = null;
+let transcriptConsentGranted = false;
+let historyTranscriptCall = null;
+let lastCallRecord = null;
+let activeCallRecord = null;
+const interpreterProfileCache = new Map();
 const isInterpreterRole = role => role === "translator" || role === "translator_applicant";
 const taxonomy = { languages: [], dialects: [], specialties: [] };
 const selectedTags = { languages: [], dialects: [], specialties: [] };
@@ -160,7 +165,13 @@ function bindUI() {
         closeModal,
         setCallStatus: (text) => { if ($("callStatus")) $("callStatus").textContent = text; },
         renderTranscript: (rows) => renderTranscript(rows),
-        replayCallMedia
+        replayCallMedia,
+        onCallSynced: (call) => {
+            activeCallRecord = call;
+            syncTranscriptConsent(call);
+            renderKeyMoments(call);
+            renderSessionInterpreter(call);
+        }
     });
     callExperience.bind();
     watchCameraHealth();
@@ -204,6 +215,14 @@ function bindUI() {
     $("audioHangupButton").onclick = endCall;
     $("audioBookNow").onclick = bookFromAudioCall;
     $("audioFlagMoment").onclick = flagKeyMoment;
+    $("conceptFlagMoment").onchange = () => {
+        if ($("conceptFlagMoment").dataset.syncing === "true") return;
+        if ($("conceptFlagMoment").checked) flagKeyMoment();
+        else resolveLatestKeyMoment();
+    };
+    $("transcriptConsent").onchange = () => setTranscriptConsent($("transcriptConsent").checked);
+    $("deleteTranscript").onclick = () => deleteSavedTranscript(activeCallId);
+    $("deleteHistoryTranscript").onclick = () => deleteSavedTranscript(historyTranscriptCall?.id);
     $("audioCallNote").oninput = () => {
         const notes = $("callNotes");
         if (!notes) return;
@@ -1835,6 +1854,7 @@ function hydrateInterpreterProfile(profile = {}) {
     setSelectedTags("dialects", p.dialects || []);
     setSelectedTags("specialties", p.specialties || []);
     $("interpreterYears").value = p.yearsExperience ?? "";
+    $("interpreterRate").value = p.ratePerMinute ?? "";
     $("interpreterCredentials").value = (p.credentials || []).join("\n");
     pendingCredentialRemovalPaths = new Set();
     renderCredentialReviewStatus(p);
@@ -2037,6 +2057,7 @@ function interpreterFormData() {
         dialects: [...selectedTags.dialects],
         specialties: [...selectedTags.specialties],
         yearsExperience: experienceValue === "" ? null : Number(experienceValue),
+        ratePerMinute: $("interpreterRate").value.trim() === "" ? null : Number($("interpreterRate").value),
         credentials: splitList($("interpreterCredentials").value),
         serviceArea: $("interpreterServiceArea").value.trim(),
         serviceOptions: {
@@ -2171,6 +2192,10 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
     if (!isInterpreterRole(currentProfile?.role)) return;
     const status = $("interpreterProfileStatus");
     const data = interpreterFormData();
+    if (data.ratePerMinute !== null && !Number.isFinite(data.ratePerMinute)) {
+        status.textContent = "Enter a price per minute in dollars, or leave it blank.";
+        return;
+    }
     const completion = interpreterCompletion(data);
     if (!draft && completion < 100) { status.textContent = "Complete all required interpreter fields before finishing onboarding."; updateInterpreterCompletion(data); return; }
     const submissionError = submitForVerification ? verificationSubmissionError(data) : "";
@@ -2672,8 +2697,10 @@ function watchCall(callId) {
         if (["ended", "declined", "cancelled"].includes(call.status)) {
             const ended = call.status === "ended";
             if (ended) {
+                lastCallRecord = call;
                 lastSessionSnapshot = captureSessionSnapshot();
                 rememberEndedCall(callId);
+                renderKeyMoments(call);
             }
             cleanupCall();
             show("dashboardView");
@@ -3329,7 +3356,22 @@ async function openTranscriptionPipeline(callId,mode){
 }
 async function saveFinalTranscript(callId,m,mode,generation){
     const evidence=m.languageEvidence||null, stable=evidence?.primaryLanguage||m.language, confidence=normalizeLanguageConfidence(evidence?.primaryConfidence??m.languageConfidence);if(stable)updateDetectedLanguage(stable,confidence,evidence?.confirmed===true);
-    const id=`${currentUser.uid}-${generation}-${m.sequence??0}`;const result=await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`,{method:"POST",headers:{"Idempotency-Key":id},body:JSON.stringify({id,language:m.language||null,languageConfidence:normalizeLanguageConfidence(m.languageConfidence),primaryLanguage:stable||null,primaryLanguageConfidence:confidence,languageSampleCount:Number(evidence?.sampleCount||1),languageConfirmationRequired:evidence?.requiresConfirmation===true,text:m.text.trim(),isFinal:true,processingMode:mode,processingGeneration:generation,performance:m.metrics||null,clientCreatedAt:Date.now()})});if(result.transcript){mergeLiveTranscript(result.transcript);broadcastCallUpdate("transcript",{transcript:result.transcript});}clearSharedCaption();callExperience?.requestTranslations(callId, id, m.language || stable);showProcessingDiagnostics(m.metrics);$("partialTranscript").classList.add("hidden");callExperience?.onPartial("");$("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;
+    const id=`${currentUser.uid}-${generation}-${m.sequence??0}`;
+    const payload={id,language:m.language||null,languageConfidence:normalizeLanguageConfidence(m.languageConfidence),primaryLanguage:stable||null,primaryLanguageConfidence:confidence,languageSampleCount:Number(evidence?.sampleCount||1),languageConfirmationRequired:evidence?.requiresConfirmation===true,text:m.text.trim(),isFinal:true,processingMode:mode,processingGeneration:generation,performance:m.metrics||null,clientCreatedAt:Date.now(),captionLanguage:callExperience?.viewerLanguage?.()||null};
+    const local={...payload,speakerId:currentUser?.uid,speakerRole:currentProfile?.role,speakerName:currentProfile?.displayName||currentUser?.displayName||"You",createdAt:new Date().toISOString(),localOnly:!transcriptConsentGranted};
+    mergeLiveTranscript(local);
+    clearSharedCaption();
+    $("partialTranscript").classList.add("hidden");
+    callExperience?.onPartial("");
+    if(!transcriptConsentGranted){$("transcriptionStatus").textContent="Speech recognized on this device. Allow transcript saving to keep it.";showProcessingDiagnostics(m.metrics);return;}
+    const result=await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`,{method:"POST",headers:{"Idempotency-Key":id},body:JSON.stringify(payload)});
+    if(result.transcript){mergeLiveTranscript(result.transcript);broadcastCallUpdate("transcript",{transcript:result.transcript});}
+    if(result.speechTranscript){mergeLiveTranscript(result.speechTranscript);broadcastCallUpdate("transcript",{transcript:result.speechTranscript});}
+    const sourceLanguage=m.language||stable;
+    const savedSpeech=String(result.speechTranscript?.language||"").toLowerCase();
+    if(savedSpeech!==String(callExperience?.viewerLanguage?.()||"").toLowerCase())callExperience?.requestTranslations(callId,id,sourceLanguage);
+    showProcessingDiagnostics(m.metrics);
+    $("transcriptionStatus").textContent=`Listening 🎤 · ${mode}`;
 }
 async function requestPipelineStop(){const socket=transcriptionSocket;if(!socket||socket.readyState!==WebSocket.OPEN){socket?.close();return;}await new Promise(resolve=>{let done=false;const finish=()=>{if(!done){done=true;transcriptionStopResolver=null;resolve();}};transcriptionStopResolver=finish;socket.send(JSON.stringify({type:"stop"}));setTimeout(finish,60000);});socket.close();}
 async function switchProcessingMode(next){if(!activeCallId||next===selectedProcessingMode)return;const previous=selectedProcessingMode;transcriptionSwitching=true;stopBrowserStreamingPartials();renderProcessingMode();$("processingModeStatus").textContent=`Finishing buffered ${previous} audio…`;try{await requestPipelineStop();await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:next})});selectedProcessingMode=next;renderProcessingMode();await openTranscriptionPipeline(activeCallId,next);}catch(error){selectedProcessingMode="baseline";renderProcessingMode();$("processingModeStatus").textContent=`${next} failed. Returning to baseline.`;try{await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/processing-mode`,{method:"PATCH",body:JSON.stringify({processingMode:"baseline"})});await openTranscriptionPipeline(activeCallId,"baseline");}catch(fallbackError){transcriptionSwitching=false;renderProcessingMode();$("processingModeStatus").textContent=`Transcription logging unavailable: ${fallbackError.message||error.message}`;$("transcriptionStatus").textContent="Call audio is still connected; logging is unavailable.";}}}
@@ -3751,6 +3793,17 @@ function stopTranscription(updateStatus = true) {
     if (updateStatus && $("transcriptionStatus")) $("transcriptionStatus").textContent = "Transcription stopped";
 }
 
+function transcriptTimeLabel(row) {
+    const ms = profileTimestampMillis(row?.createdAt) || Number(row?.clientCreatedAt) || 0;
+    if (!ms) return "";
+    return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+function speechSibling(rows, row, language) {
+    const target = String(language || "").toLowerCase();
+    return (rows || []).some(item => item.kind === "speech" && item.sourceTranscriptId === row?.id && String(item.language || "").toLowerCase() === target);
+}
+
 function renderTranscript(rows) {
     const list = $("transcriptList");
     if (!rows.length) {
@@ -3758,29 +3811,33 @@ function renderTranscript(rows) {
         renderAudioTranscript(rows);
         return;
     }
-    const localLanguage = [...rows].reverse().find(row => row.speakerId === currentUser?.uid && row.language);
+    const localLanguage = [...rows].reverse().find(row => row.kind !== "speech" && row.speakerId === currentUser?.uid && row.language);
     if (localLanguage) updateDetectedLanguage(localLanguage.language, localLanguage.languageConfidence);
         updateParticipantLanguageBadges(rows);
     list.innerHTML = "";
     for (const row of rows) {
-        const item = document.createElement("div"); item.className = "transcript-line";
+        const item = document.createElement("div");
+        item.className = row.kind === "speech" ? "transcript-line is-speech" : "transcript-line";
         const speaker = document.createElement("div"); speaker.className = "transcript-speaker";
         const name = document.createElement("span"); name.textContent = row.speakerName || "Participant";
         const role = document.createElement("span"); role.className = "transcript-role"; role.textContent = formatTranscriptRole(row.speakerRole);
+        const when = document.createElement("time"); when.className = "transcript-time"; when.dateTime = row.createdAt || ""; when.textContent = transcriptTimeLabel(row);
         const language = document.createElement("span"); language.className = "transcript-language";
         const confidence = normalizeLanguageConfidence(row.languageConfidence);
-        language.textContent = row.language ? `${detectedLanguageLabel(row.language)}${confidence === null ? "" : ` · ${Math.round(confidence * 100)}%`}` : "Language pending";
-        const state = document.createElement("span"); state.className = "transcript-state"; state.textContent = row.isFinal === false ? "Partial" : "Final";
+        language.textContent = row.language ? `${detectedLanguageLabel(row.language)}${row.kind === "speech" || confidence === null ? "" : ` · ${Math.round(confidence * 100)}%`}` : "Language pending";
+        const state = document.createElement("span"); state.className = "transcript-state"; state.textContent = row.localOnly ? "On this device" : row.isFinal === false ? "Partial" : "Final";
         const text = document.createElement("p"); text.className = "transcript-text"; text.textContent = row.text || "";
         const viewerLanguage = callExperience?.viewerLanguage?.() || "en";
-        const translated = row.translations?.[viewerLanguage]?.text || "";
+        const translated = row.kind === "speech" ? "" : (row.translations?.[viewerLanguage]?.text || "");
         const source = String(row.language || "").toLowerCase();
         const status = document.createElement("span"); status.className = "transcript-status";
-        if (translated && translated !== row.text) { status.textContent = "Translated"; }
+        if (row.kind === "speech") status.textContent = "Speech transcript";
+        else if (speechSibling(rows, row, viewerLanguage)) status.textContent = "Original";
+        else if (translated && translated !== row.text) { status.textContent = "Translated"; }
         else if (source && source !== viewerLanguage) { status.className += " is-pending"; status.textContent = "Translating…"; callExperience?.ensureTranslation(row); }
         else status.textContent = "Original";
-        speaker.append(name, role, language, state, status); item.append(speaker, text);
-        if (translated && translated !== row.text) { const translation = document.createElement("p"); translation.className = "transcript-translation"; translation.textContent = translated; item.append(translation); }
+        speaker.append(name, role, when, language, state, status); item.append(speaker, text);
+        if (translated && translated !== row.text && !speechSibling(rows, row, viewerLanguage)) { const translation = document.createElement("p"); translation.className = "transcript-translation"; translation.textContent = translated; item.append(translation); }
         list.appendChild(item);
     }
     list.scrollTop = list.scrollHeight;
@@ -3790,7 +3847,7 @@ function renderTranscript(rows) {
 function updateParticipantLanguageBadges(rows) {
     const latestBySpeaker = new Map();
     for (const row of rows) {
-        if (!row.language) continue;
+        if (!row.language || row.kind === "speech") continue;
         rememberDetectedLanguage(row.language, row.languageConfidence);
         if (row.speakerId) latestBySpeaker.set(row.speakerId, row);
     }
@@ -4212,9 +4269,12 @@ let historyTranscriptRequest = 0;
 async function openHistoryTranscript(call) {
     if (!call?.id || (activeCallId && document.body.classList.contains("in-call"))) return;
     const request = ++historyTranscriptRequest;
+    historyTranscriptCall = call;
+    renderKeyMoments(call);
     $("historyTranscriptTitle").textContent = "Call transcript";
     const date = timestampDate(call.startedAt) || timestampDate(call.createdAt);
     $("historyTranscriptMeta").textContent = date ? date.toLocaleString() : "Previous conversation";
+    if ($("historyTranscriptPolicy")) $("historyTranscriptPolicy").textContent = "Finalized transcript text is saved only after someone on the call allows it. Raw microphone audio is not stored. Saved text is deleted after 90 days, and anyone on the call can delete it sooner.";
     const list = $("historyTranscriptList");
     list.innerHTML = '<p class="app-transcript-empty">Loading transcript…</p>';
     if ($("dashboardView")?.classList.contains("hidden")) show("dashboardView");
@@ -4224,6 +4284,7 @@ async function openHistoryTranscript(call) {
         const payload = await apiFetch(`/api/calls/${encodeURIComponent(call.id)}/transcripts`);
         if (request !== historyTranscriptRequest) return;
         const rows = payload.transcripts || [];
+        if (payload.policy?.statement && $("historyTranscriptPolicy")) $("historyTranscriptPolicy").textContent = payload.policy.statement;
         rows.sort((a, b) => (profileTimestampMillis(a.createdAt) || a.clientCreatedAt || 0) - (profileTimestampMillis(b.createdAt) || b.clientCreatedAt || 0));
         renderTranscriptInto(list, rows);
     } catch (error) {
@@ -4241,6 +4302,7 @@ function renderTranscriptInto(list, rows) {
     for (const row of rows) {
         const item = document.createElement("article");
         item.className = "app-transcript-line";
+        if (row.kind === "speech") item.classList.add("is-speech");
         const speaker = document.createElement("div");
         speaker.className = "app-transcript-speaker";
         const name = document.createElement("span");
@@ -4249,10 +4311,16 @@ function renderTranscriptInto(list, rows) {
         const role = document.createElement("span");
         role.className = "app-transcript-role";
         role.textContent = formatTranscriptRole(row.speakerRole);
+        const when = document.createElement("time");
+        when.className = "app-transcript-time";
+        when.textContent = transcriptTimeLabel(row);
+        const language = document.createElement("span");
+        language.className = "app-transcript-language";
+        language.textContent = row.kind === "speech" ? `${detectedLanguageLabel(row.language)} speech transcript` : detectedLanguageLabel(row.language || "");
         const text = document.createElement("p");
         text.className = "app-transcript-text";
         text.textContent = row.text || "";
-        speaker.append(name, role);
+        speaker.append(name, role, when, language);
         item.append(speaker, text);
         list.appendChild(item);
     }
@@ -4371,11 +4439,15 @@ function renderAudioTranscript(rows) {
         const speaker = document.createElement("span");
         speaker.className = "audio-speaker";
         speaker.textContent = name;
+        const when = document.createElement("time");
+        when.className = "transcript-time";
+        when.textContent = transcriptTimeLabel(row);
         const text = document.createElement("p");
         text.textContent = row.text || "";
-        line.append(speaker, text);
+        line.append(speaker, when, text);
+        if (row.kind === "speech") line.classList.add("is-speech");
         list.appendChild(line);
-        const translated = row.translations?.[viewerLanguage]?.text || "";
+        const translated = row.kind === "speech" || speechSibling(rows, row, viewerLanguage) ? "" : (row.translations?.[viewerLanguage]?.text || "");
         if (translated && translated !== row.text) {
             const extra = document.createElement("div");
             extra.className = "audio-line is-translation";
@@ -4391,17 +4463,223 @@ function renderAudioTranscript(rows) {
     list.scrollTop = list.scrollHeight;
 }
 
-function flagKeyMoment() {
-    const when = $("audioCallDuration")?.textContent || $("callDuration")?.textContent || "";
-    const latest = [...($("audioTranscript")?.querySelectorAll("p") || [])].map(item => item.textContent.trim()).filter(Boolean).at(-1) || "";
-    const line = `Key moment ${when}${latest ? `: ${latest}` : ""}`.trim();
-    const notes = $("callNotes");
-    if (notes) {
-        notes.value = [notes.value.trim(), line].filter(Boolean).join("\n");
-        notes.dispatchEvent(new Event("input"));
+async function flagKeyMoment() {
+    if (!activeCallId) {
+        setConceptFlagChecked(false);
+        if ($("conceptFlagStatus")) $("conceptFlagStatus").textContent = "Join a call before flagging a moment.";
+        return;
     }
-    if ($("audioCallNote") && notes) $("audioCallNote").value = notes.value;
-    $("audioFlagMoment")?.classList.add("is-flagged");
+    const when = $("audioCallDuration")?.textContent || $("callDuration")?.textContent || "";
+    const latest = [...rosterTranscripts].reverse().find(row => row.kind !== "speech" && row.text);
+    const id = `moment-${Date.now()}`;
+    try {
+        const result = await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/experience`, {
+            method: "POST",
+            body: JSON.stringify({
+                action: "flag-moment",
+                id,
+                elapsedLabel: when,
+                transcriptId: latest?.id || "",
+                speakerName: latest?.speakerName || "",
+                text: latest?.text || ""
+            })
+        });
+        activeCallRecord = result.call;
+        renderKeyMoments(result.call);
+        $("audioFlagMoment")?.classList.add("is-flagged");
+        setConceptFlagChecked(true);
+        if ($("conceptFlagStatus")) $("conceptFlagStatus").textContent = "Flagged for follow-up.";
+        if ($("callNotesStatus")) $("callNotesStatus").textContent = "Flagged moment saved for follow-up.";
+    } catch (error) {
+        setConceptFlagChecked(false);
+        if ($("conceptFlagStatus")) $("conceptFlagStatus").textContent = error.message;
+        if ($("callNotesStatus")) $("callNotesStatus").textContent = error.message;
+    }
+}
+
+function renderKeyMoments(call) {
+    const moments = Array.isArray(call?.keyMoments) ? call.keyMoments : [];
+    const targets = new Set([$("keyMomentList")]);
+    if (historyTranscriptCall?.id && historyTranscriptCall.id === call?.id) targets.add($("historyKeyMomentList"));
+    if (lastCallRecord?.id && lastCallRecord.id === call?.id) targets.add($("summaryKeyMomentList"));
+    for (const list of targets) fillKeyMomentList(list, moments, call?.id);
+    if (call?.id === activeCallId && !moments.some(item => item.followUp !== false)) $("audioFlagMoment")?.classList.remove("is-flagged");
+}
+
+function fillKeyMomentList(list, moments, callId) {
+    if (!list) return;
+    list.replaceChildren();
+    if (!moments.length) {
+        const empty = document.createElement("li");
+        empty.className = "key-moment-empty";
+        empty.textContent = "Flagged moments show up here for follow-up.";
+        list.appendChild(empty);
+        return;
+    }
+    for (const moment of moments) {
+        const item = document.createElement("li");
+        item.classList.toggle("is-resolved", moment.followUp === false);
+        const title = document.createElement("strong");
+        const when = [moment.elapsedLabel, transcriptTimeLabel(moment)].filter(Boolean).join(" · ");
+        title.textContent = when || "Flagged moment";
+        const text = document.createElement("p");
+        text.textContent = [moment.speakerName, moment.text].filter(Boolean).join(": ") || "Marked for follow-up.";
+        item.append(title, text);
+        if (moment.followUp !== false && callId) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "secondary";
+            button.textContent = "Done";
+            button.onclick = () => resolveKeyMoment(callId, moment.id);
+            item.appendChild(button);
+        } else if (moment.followUp === false) {
+            const state = document.createElement("span");
+            state.textContent = "Resolved";
+            item.appendChild(state);
+        }
+        list.appendChild(item);
+    }
+}
+
+async function resolveKeyMoment(callId, momentId) {
+    const result = await apiFetch(`/api/calls/${encodeURIComponent(callId)}/experience`, {
+        method: "POST",
+        body: JSON.stringify({ action: "resolve-moment", id: momentId })
+    });
+    if (lastCallRecord?.id === result.call?.id) lastCallRecord = result.call;
+    if (historyTranscriptCall?.id === result.call?.id) historyTranscriptCall = result.call;
+    renderKeyMoments(result.call);
+    setConceptFlagChecked((result.call?.keyMoments || []).some(item => item.followUp !== false));
+}
+
+function setConceptFlagChecked(checked) {
+    const box = $("conceptFlagMoment");
+    if (!box || box.checked === checked) return;
+    box.dataset.syncing = "true";
+    box.checked = checked;
+    box.dataset.syncing = "false";
+}
+
+function resolveLatestKeyMoment() {
+    const call = activeCallRecord || lastCallRecord;
+    const latest = [...(call?.keyMoments || [])].reverse().find(item => item.followUp !== false);
+    if (!activeCallId || !call?.id || !latest) {
+        if ($("conceptFlagStatus") && !activeCallId) $("conceptFlagStatus").textContent = "Join a call before flagging a moment.";
+        return;
+    }
+    resolveKeyMoment(call.id, latest.id);
+}
+
+function syncTranscriptConsent(call) {
+    transcriptConsentGranted = call?.transcriptConsent?.granted === true;
+    const box = $("transcriptConsent");
+    if (box && document.activeElement !== box) box.checked = transcriptConsentGranted;
+    const status = $("transcriptConsentStatus");
+    const days = Number(call?.transcriptConsent?.retentionDays || 90);
+    if (status) {
+        status.textContent = transcriptConsentGranted
+            ? `Finalized speech text is saved for people on this call. Raw audio is not stored. Text is deleted after ${days} days unless someone deletes it sooner.`
+            : "Finalized speech stays on this device until someone on the call allows saving. Raw audio is not stored.";
+    }
+}
+
+async function setTranscriptConsent(granted) {
+    if (!activeCallId) return;
+    try {
+        const result = await apiFetch(`/api/calls/${encodeURIComponent(activeCallId)}/experience`, {
+            method: "POST",
+            body: JSON.stringify({ action: "set-transcript-consent", granted })
+        });
+        syncTranscriptConsent(result.call);
+        if (granted) await flushLocalTranscripts(activeCallId);
+    } catch (error) {
+        if ($("transcriptConsent")) $("transcriptConsent").checked = transcriptConsentGranted;
+        if ($("transcriptConsentStatus")) $("transcriptConsentStatus").textContent = error.message;
+    }
+}
+
+async function flushLocalTranscripts(callId) {
+    const pending = rosterTranscripts.filter(row => row.localOnly && row.kind !== "speech");
+    for (const row of pending) {
+        const result = await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`, {
+            method: "POST",
+            headers: { "Idempotency-Key": row.id },
+            body: JSON.stringify({
+                id: row.id,
+                language: row.language,
+                languageConfidence: row.languageConfidence,
+                primaryLanguage: row.primaryLanguage,
+                primaryLanguageConfidence: row.primaryLanguageConfidence,
+                languageSampleCount: row.languageSampleCount,
+                languageConfirmationRequired: row.languageConfirmationRequired,
+                text: row.text,
+                isFinal: true,
+                processingMode: row.processingMode,
+                processingGeneration: row.processingGeneration,
+                performance: row.performance,
+                clientCreatedAt: row.clientCreatedAt,
+                captionLanguage: callExperience?.viewerLanguage?.() || null
+            })
+        });
+        if (result.transcript) mergeLiveTranscript(result.transcript);
+        if (result.speechTranscript) mergeLiveTranscript(result.speechTranscript);
+    }
+}
+
+async function deleteSavedTranscript(callId) {
+    if (!callId) return;
+    if (!window.confirm("Delete the saved transcript for this call? Live captions on this device stay until you leave.")) return;
+    try {
+        await apiFetch(`/api/calls/${encodeURIComponent(callId)}/transcripts`, { method: "DELETE" });
+        if (activeCallId === callId) {
+            rosterTranscripts = rosterTranscripts.filter(row => row.localOnly);
+            renderTranscript(rosterTranscripts);
+        }
+        if (historyTranscriptCall?.id === callId) {
+            $("historyTranscriptList").innerHTML = '<p class="app-transcript-empty">The saved transcript was deleted.</p>';
+        }
+        if ($("transcriptConsentStatus")) $("transcriptConsentStatus").textContent = "Saved transcript text was deleted.";
+        if ($("historyTranscriptPolicy")) $("historyTranscriptPolicy").textContent = "Saved transcript text was deleted. Raw microphone audio was not stored.";
+    } catch (error) {
+        if ($("transcriptConsentStatus")) $("transcriptConsentStatus").textContent = error.message;
+        if ($("historyTranscriptPolicy")) $("historyTranscriptPolicy").textContent = error.message;
+    }
+}
+
+function formatInterpreterPrice(profile) {
+    if (profile?.ratePerMinute === null || profile?.ratePerMinute === undefined || profile?.ratePerMinute === "") return "Price not published";
+    const rate = Number(profile.ratePerMinute);
+    if (!Number.isFinite(rate) || rate < 0) return "Price not published";
+    return `$${rate.toFixed(2)} per minute`;
+}
+
+async function renderSessionInterpreter(call) {
+    const card = $("sessionInterpreterCard");
+    if (!card) return;
+    const connected = call?.translationStatus === "connected" && call?.translatorId;
+    const interpreterId = connected ? call.translatorId : (call?.invitedTranslatorId || "");
+    if (!interpreterId) {
+        card.hidden = true;
+        return;
+    }
+    card.hidden = false;
+    $("sessionInterpreterName").textContent = call.translatorName || call.invitedTranslatorName || "Interpreter";
+    $("sessionInterpreterStatus").textContent = connected ? "On this call" : "Waiting to join";
+    let profile = interpreterProfileCache.get(interpreterId) || null;
+    if (!profile) {
+        try {
+            profile = await apiFetch(`/api/translators/${encodeURIComponent(interpreterId)}`);
+            if (profile?.id || profile?.uid) interpreterProfileCache.set(interpreterId, profile);
+        } catch (error) {
+            profile = null;
+        }
+    }
+    const languages = [...(profile?.languages || []), ...(profile?.dialects || [])].filter(Boolean);
+    $("sessionInterpreterLanguages").textContent = languages.length ? languages.join(", ") : (call.language || "Languages not published");
+    const rating = profile?.rating;
+    const count = Number(profile?.ratingCount || 0);
+    $("sessionInterpreterRating").textContent = rating == null ? "No reviews yet" : `${Number(rating).toFixed(1)} · ${count} review${count === 1 ? "" : "s"}`;
+    $("sessionInterpreterPrice").textContent = formatInterpreterPrice(profile);
 }
 
 function bookFromAudioCall() {

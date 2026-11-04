@@ -253,6 +253,7 @@ export function createCallExperience(deps) {
         applyParticipantPresence(participants || []);
         renderDocuments(call?.documents || []);
         syncNotes(call);
+        deps.onCallSynced?.(call);
         if (!state.summary && call?.savedSummaries?.length) showSummary(call.savedSummaries[call.savedSummaries.length - 1], "Saved with this call.");
         updateClock(call);
     }

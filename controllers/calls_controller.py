@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 from flask import jsonify, request
 
@@ -8,6 +9,14 @@ from services.call_experience_service import build_experience_changes
 from services.processing_mode_service import allowed_processing_modes, authorize_processing_mode
 from services.summary_service import summarize_lines
 from services.document_extract import extract_document_text
+from services.transcript_policy import (
+    assert_can_store,
+    attach_speech_translation,
+    build_speech_transcript,
+    partition_transcripts,
+    policy_public,
+    retention_days,
+)
 from services.translation_service import canonical_language, explain_term, translate_text
 
 def _lookup_invitee(value):
@@ -265,6 +274,16 @@ def claim_translator(call_id):
         return jsonify({"error": str(exc)}), 400
 
 
+def _public_transcript(row):
+    if not row:
+        return None
+    public = dict(row)
+    for key, value in public.items():
+        if isinstance(value, datetime):
+            public[key] = value.isoformat()
+    return public
+
+
 def transcripts(call_id):
     identity, error = identity_or_response()
     if error:
@@ -272,16 +291,50 @@ def transcripts(call_id):
     call = CallModel.get(call_id)
     if not call or (identity.get("role") != "admin" and not CallModel.is_participant(call, identity["uid"])):
         return jsonify({"error": "Call not found or access denied."}), 404
+    if request.method == "DELETE":
+        deleted = TranscriptModel.delete_for_call(call_id)
+        return jsonify({"deleted": deleted, "policy": policy_public(call)})
     if request.method == "GET":
-        return jsonify({"transcripts": TranscriptModel.for_call(call_id)})
+        fresh, expired = partition_transcripts(TranscriptModel.for_call(call_id), retention_days_value=retention_days(call))
+        if expired:
+            TranscriptModel.delete_ids(call_id, [row.get("id") for row in expired])
+        return jsonify({"transcripts": fresh, "policy": policy_public(call)})
     data = json_body()
     transcript_id = str(data.pop("id", "") or request.headers.get("Idempotency-Key", "")).strip()
     text = str(data.get("text") or "").strip()
     if not transcript_id or len(transcript_id) > 160 or not text or len(text) > 20000:
         return jsonify({"error": "A valid transcript id and text are required."}), 400
-    data.update({"speakerId": identity["uid"], "speakerRole": identity.get("role"), "speakerName": identity.get("displayName"), "text": text, "isFinal": bool(data.get("isFinal", True)), "createdAt": datetime.now(timezone.utc)})
-    transcript = TranscriptModel.add(call_id, transcript_id, data)
-    return jsonify({"transcript": transcript}), 201
+    try:
+        assert_can_store(call)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "policy": policy_public(call)}), 403
+    created_at = datetime.now(timezone.utc)
+    source = {
+        **data,
+        "id": transcript_id,
+        "speakerId": identity["uid"],
+        "speakerRole": identity.get("role"),
+        "speakerName": identity.get("displayName"),
+        "text": text,
+        "isFinal": bool(data.get("isFinal", True)),
+        "createdAt": created_at,
+    }
+    online = os.getenv("FINISPEAK_SPEECH_TRANSLATION", "provider") != "glossary"
+    speech = build_speech_transcript(
+        source,
+        data.get("captionLanguage"),
+        call.get("language"),
+        translate=translate_text,
+        online=online,
+    )
+    source = attach_speech_translation(source, speech)
+    transcript = TranscriptModel.add(call_id, transcript_id, source)
+    speech_row = TranscriptModel.add(call_id, speech["id"], speech) if speech else None
+    return jsonify({
+        "transcript": _public_transcript(transcript),
+        "speechTranscript": _public_transcript(speech_row),
+        "policy": policy_public(call),
+    }), 201
 
 
 def _call_for_participant(call_id):

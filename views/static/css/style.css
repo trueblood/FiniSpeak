@@ -142,6 +142,7 @@ button.interpreter-match.is-invited,button.request-match-card.is-invited { borde
 .transcript-speaker { display:flex; gap:8px; align-items:center; font-weight:800; font-size:.9rem; }
 .transcript-role { color:var(--primary); text-transform:uppercase; font-size:.72rem; letter-spacing:.04em; }
 .transcript-language { margin-left:auto; padding:4px 7px; border-radius:999px; background:#eef6ff; color:#285f80; font-size:.7rem; font-weight:800; }
+.transcript-time { color:var(--muted); font-size:.75rem; font-weight:700; }
 .transcript-text { margin:5px 0 0; color:var(--dark); line-height:1.5; }
 .transcript-empty,.transcript-note { font-size:.9rem; }
 .transcript-note { margin:10px 0 0; border-top:1px solid var(--border); padding-top:12px; }

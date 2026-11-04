@@ -7,9 +7,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261102-map-pin-photo">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261103-call-followup">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-in-app-transcript">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261101-main">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261103-call-followup">
 </head>
 <body>
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -296,7 +296,9 @@
                             </div>
                         </div>
                         <div class="card form-section hidden" data-wizard-panel="2"><span class="eyebrow">Step 3 of 5</span><h3 tabindex="-1">Experience and credentials</h3>
-                            <div class="form-grid"><label for="interpreterYears">Years of experience<input id="interpreterYears" type="number" min="0" max="80" step="1" required></label><div><span class="field-label">Credential review</span><strong id="interpreterCredentialStatus" class="credential-review-status">Not submitted</strong></div></div>
+                            <div class="form-grid"><label for="interpreterYears">Years of experience<input id="interpreterYears" type="number" min="0" max="80" step="1" required></label><label for="interpreterRate">Price per minute (USD)<input id="interpreterRate" type="number" min="0" max="10000" step="0.01" inputmode="decimal" placeholder="Optional" aria-describedby="interpreterRateHelp"></label></div>
+                            <p id="interpreterRateHelp" class="field-help">Shown on the call while you are the interpreter. Leave this blank until you publish a rate.</p>
+                            <div><span class="field-label">Credential review</span><strong id="interpreterCredentialStatus" class="credential-review-status">Not submitted</strong></div>
                             <label for="interpreterCredentials">Credentials / certifications<textarea id="interpreterCredentials" rows="4" placeholder="One credential per line, for example: CCHI Certified Healthcare Interpreter"></textarea></label>
                             <label for="interpreterCredentialFiles">Credential documents<input id="interpreterCredentialFiles" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" aria-describedby="credentialFilesHelp"></label>
                             <p id="credentialFilesHelp" class="field-help">Upload PDF, JPG, PNG, or WebP evidence. Each private document must be under 10 MB and is visible only to you and administrators. To replace a file, remove it and choose the replacement before saving.</p>
@@ -419,6 +421,7 @@
                         <div class="concept-live-photos" aria-hidden="true"><div id="conceptLiveAvatarA" class="concept-live-photo">AC</div><div id="conceptLiveAvatarB" class="concept-live-photo concept-live-photo-alt">JS</div></div>
                         <div class="concept-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
                         <div class="concept-live-head"><strong id="conceptLiveName">Ana Castillo</strong><label class="concept-flag">Flag Moment<input id="conceptFlagMoment" type="checkbox" role="switch"></label></div>
+                        <p id="conceptFlagStatus" class="summary-status" role="status" aria-live="polite"></p>
                         <div class="concept-live-columns"><span>1. Date and Time</span><span>Notepad</span></div>
                         <div id="conceptLiveTranscript" class="concept-live-transcript">
                             <p><strong>Ana.</strong> I’ll translate the contract for you. Let’s start with the first section.</p>
@@ -455,6 +458,10 @@
                         <p class="summary-rate-title">Rate the translation</p>
                         <div id="conceptRating" class="concept-rate" role="group" aria-label="Rate the translation"><button type="button" data-rate="1" aria-label="1 star">★</button><button type="button" data-rate="2" aria-label="2 stars">★</button><button type="button" data-rate="3" aria-label="3 stars">★</button><button type="button" data-rate="4" aria-label="4 stars">★</button><button type="button" data-rate="5" aria-label="5 stars">★</button></div>
                         <button id="conceptBookAgain" class="concept-primary-block" type="button">Book Again</button>
+                        <section id="summaryFollowUps" aria-labelledby="summaryFollowUpTitle">
+                            <h3 id="summaryFollowUpTitle">Flagged moments</h3>
+                            <ul id="summaryKeyMomentList" class="key-moment-list"></ul>
+                        </section>
                         <div class="concept-post-summary">
                             <h3>Post-Session Summary</h3>
                             <p>Smart tag auto-generator for topics discussed: helps with rebooking relevance and transcript searchability.</p>
@@ -560,6 +567,12 @@
                         <span class="eyebrow">Previous conversation</span>
                         <h2 id="historyTranscriptTitle" tabindex="-1">Call transcript</h2>
                         <p id="historyTranscriptMeta" class="app-transcript-when"></p>
+                        <p id="historyTranscriptPolicy" class="transcript-note">Finalized transcript text is saved only after someone on the call allows it. Raw microphone audio is not stored. Saved text is deleted after 90 days, and anyone on the call can delete it sooner.</p>
+                        <div class="history-transcript-actions"><button id="deleteHistoryTranscript" class="secondary" type="button">Delete saved transcript</button></div>
+                        <section aria-labelledby="historyFollowUpTitle">
+                            <h3 id="historyFollowUpTitle">Flagged moments</h3>
+                            <ul id="historyKeyMomentList" class="key-moment-list"></ul>
+                        </section>
                         <div id="historyTranscriptList" class="app-transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Previous call transcript"></div>
                     </section>
                 </div>
@@ -697,6 +710,17 @@
                 </header>
                 <div class="call-stage">
                     <aside id="aiPanel" class="ai-panel" aria-label="AI communication">
+                        <section id="sessionInterpreterCard" class="session-interpreter-card" hidden aria-live="polite">
+                            <div class="transcript-header">
+                                <div><span class="eyebrow">Interpreter</span><h3 id="sessionInterpreterName">Interpreter</h3></div>
+                                <span id="sessionInterpreterStatus" class="call-pill">On this call</span>
+                            </div>
+                            <dl class="session-interpreter-facts">
+                                <div><dt>Languages</dt><dd id="sessionInterpreterLanguages">—</dd></div>
+                                <div><dt>Rating</dt><dd id="sessionInterpreterRating">—</dd></div>
+                                <div><dt>Price</dt><dd id="sessionInterpreterPrice">Price not published</dd></div>
+                            </dl>
+                        </section>
                         <section class="transcript-card" aria-live="polite">
                             <div class="transcript-header">
                                 <div><span class="eyebrow">Live transcript</span><h3>Conversation</h3></div>
@@ -704,7 +728,10 @@
                             </div>
                             <div id="transcriptList" class="transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live call transcript"><p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p></div>
                             <p id="partialTranscript" class="partial-transcript hidden" role="status" aria-live="polite"></p>
-                            <p class="transcript-note">Only finalized text is saved to FiniSpeak. Raw microphone audio is not stored. Partial captions stay on this device.</p>
+                            <label class="summary-consent" for="transcriptConsent"><input id="transcriptConsent" type="checkbox"> Save finalized speech text for people on this call</label>
+                            <p id="transcriptConsentStatus" class="summary-status" role="status">Finalized speech stays on this device until someone on the call allows saving. Raw microphone audio is not stored.</p>
+                            <p class="transcript-note">Saved text is kept for 90 days. Anyone on the call can delete it sooner. Partial captions stay on this device.</p>
+                            <button id="deleteTranscript" class="secondary" type="button">Delete saved transcript</button>
                         </section>
                         <section id="interpreterMatches" class="interpreter-matches hidden" aria-live="polite">
                             <div class="interpreter-matches-heading"><div><span class="eyebrow">Available now</span><h3>Interpreter matches</h3></div><span id="interpreterMatchSummary"></span></div>
@@ -780,6 +807,10 @@
                     <div class="documents-heading"><div><span class="eyebrow">Notes</span><h3>Call notes</h3></div><button id="closeCallNotes" class="secondary" type="button">Close</button></div>
                     <textarea id="callNotes" rows="6" maxlength="4000" placeholder="Write a note from this call" aria-label="Call notes"></textarea>
                     <p id="callNotesStatus" class="summary-status" role="status"></p>
+                    <section aria-labelledby="keyMomentTitle">
+                        <h4 id="keyMomentTitle">Flagged moments</h4>
+                        <ul id="keyMomentList" class="key-moment-list"></ul>
+                    </section>
                 </aside>
                 <div id="callControls" class="call-controls floating-controls" role="toolbar" aria-label="Call controls">
                     <button id="toggleCallControls" class="secondary" type="button" aria-expanded="true" aria-controls="callControls" title="Hide call controls" aria-label="Hide call controls"><span class="tool-label">Hide</span></button>
@@ -991,6 +1022,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261102-map-pin-photo"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261103-call-followup"></script>
 </body>
 </html>

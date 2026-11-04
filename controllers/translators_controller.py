@@ -32,6 +32,18 @@ def current_private():
     return jsonify({"profile": public, "private": TranslatorModel.get_private(identity["uid"])})
 
 
+def published_rate(value):
+    if value in (None, ""):
+        return None
+    try:
+        rate = round(float(value), 2)
+    except (TypeError, ValueError):
+        raise ValueError("Enter a price per minute in dollars.") from None
+    if rate < 0 or rate > 10000:
+        raise ValueError("Enter a price per minute between 0 and 10000.")
+    return rate
+
+
 def save_current():
     identity, error = identity_or_response()
     if error:
@@ -39,10 +51,12 @@ def save_current():
     if identity.get("role") != "admin" and not TranslatorModel.get(identity["uid"], public=False):
         return jsonify({"error": "An interpreter account is required."}), 403
     data = json_body(); public = data.get("profile") or {}; private = data.get("private") or {}
-    allowed_public = {"displayName", "bio", "languages", "dialects", "specialties", "credentials", "yearsExperience", "availability", "photoUrl", "serviceLocation", "serviceOptions", "credentialStatus", "onboardingStatus"}
+    allowed_public = {"displayName", "bio", "languages", "dialects", "specialties", "credentials", "yearsExperience", "availability", "photoUrl", "serviceLocation", "serviceOptions", "credentialStatus", "onboardingStatus", "ratePerMinute"}
     allowed_private = {"email", "phone", "credentialDocuments"}
     public = {key: value for key, value in public.items() if key in allowed_public}
     private = {key: value for key, value in private.items() if key in allowed_private}
+    if "ratePerMinute" in public:
+        public["ratePerMinute"] = published_rate(public.get("ratePerMinute"))
     if not str(public.get("displayName") or "").strip():
         return jsonify({"error": "displayName is required"}), 400
     try:

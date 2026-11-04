@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from services.call_access import is_call_participant, participant_ids
 from services.summary_service import summarize_lines
+from services.transcript_policy import consent_changes
 from services.translation_service import canonical_language
 
 
@@ -224,6 +225,45 @@ def build_experience_changes(call, identity, action, data, lookup_account=None):
             "callNotesUpdatedAt": _now(),
             "callNotesAuthorId": actor_id,
         }
+    if action == "flag-moment":
+        moments = [dict(item) for item in (call.get("keyMoments") or []) if isinstance(item, dict)]
+        moment_id = str(data.get("id") or f"moment-{actor_id}-{len(moments) + 1}").strip()[:80]
+        if not moment_id:
+            raise ValueError("A flagged moment needs an id.")
+        if any(item.get("id") == moment_id for item in moments):
+            return {"keyMoments": moments}
+        if len(moments) >= 40:
+            raise ValueError("This call already has the maximum number of flagged moments.")
+        moments.append({
+            "id": moment_id,
+            "authorId": actor_id,
+            "authorName": str(identity.get("displayName") or "Participant").strip()[:160] or "Participant",
+            "createdAt": _now(),
+            "elapsedLabel": str(data.get("elapsedLabel") or "").strip()[:16],
+            "transcriptId": str(data.get("transcriptId") or "").strip()[:160],
+            "speakerName": str(data.get("speakerName") or "").strip()[:160],
+            "text": _clean_text(data.get("text") or "", 500).strip(),
+            "followUp": True,
+        })
+        return {"keyMoments": moments}
+    if action == "resolve-moment":
+        moment_id = str(data.get("id") or "").strip()
+        moments, found = [], False
+        for item in call.get("keyMoments") or []:
+            if not isinstance(item, dict):
+                continue
+            current = dict(item)
+            if current.get("id") == moment_id:
+                current["followUp"] = False
+                current["resolvedAt"] = _now()
+                current["resolvedBy"] = actor_id
+                found = True
+            moments.append(current)
+        if not found:
+            raise ValueError("That flagged moment was not found.")
+        return {"keyMoments": moments}
+    if action == "set-transcript-consent":
+        return consent_changes(actor_id, data.get("granted") is True)
     if action == "upsert-document":
         return upsert_document(call, actor_id, data.get("document") or {})
     if action == "delete-document":

@@ -43,6 +43,21 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
 .call-view .call-nav-modes .processing-mode-buttons button { background:#fff; color:#13233b; border-radius:14px; }
 .call-view .call-nav-modes.is-collapsed .call-processing-modes { display:none; }
 .call-view .transcript-line { border-bottom-color:rgba(255,255,255,.08); }
+.call-view .transcript-line.is-speech { background:rgba(245,166,91,.08); border-radius:12px; padding-left:8px; padding-right:8px; }
+.call-view .transcript-time { color:#9fb0c3; font-size:.72rem; font-weight:700; }
+.session-interpreter-card { display:grid; gap:8px; margin:0; padding:16px; border:1px solid rgba(255,255,255,.08); border-radius:22px; background:#1b212c; color:#f4f7fb; }
+.session-interpreter-card[hidden] { display:none; }
+.session-interpreter-facts { display:grid; gap:8px; margin:12px 0 0; }
+.session-interpreter-facts div { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+.session-interpreter-facts dt { color:#a7b3c4; font-size:.78rem; font-weight:750; }
+.session-interpreter-facts dd { margin:0; text-align:right; font-weight:750; }
+.key-moment-list { list-style:none; margin:8px 0 0; padding:0; display:grid; gap:8px; }
+.key-moment-list li { display:grid; gap:4px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.08); }
+.key-moment-list p { margin:0; }
+.key-moment-list button { width:auto; justify-self:start; }
+.key-moment-list .is-resolved { opacity:.65; }
+.audio-line .transcript-time { color:#64748b; font-size:.75rem; }
+.audio-line.is-speech .transcript-time { color:#9a6700; }
 .call-view .transcript-text,.call-view .transcript-translation { color:#e8eef6; }
 .call-view .transcript-translation { margin:6px 0 0; padding-left:10px; border-left:2px solid #f5a65b; }
 .call-view .transcript-role,.call-view .transcript-language,.call-view .transcript-state,.call-view .transcript-status { font-size:.68rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
