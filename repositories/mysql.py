@@ -77,10 +77,15 @@ def _json_safe(value):
 
 
 def _document(row, fields, identifier=None):
+    """Merge a typed row over its stored document.
+
+    A null column means that field was not copied during the MySQL move.
+    Keep the document value instead of erasing it.
+    """
     data = _raw(row)
     for api_name, column_name in fields.items():
         value = getattr(row, column_name)
-        if value is not None or api_name in data:
+        if value is not None:
             data[api_name] = value
     data[identifier or "id"] = row.id
     return data
@@ -163,7 +168,7 @@ TRANSLATOR_FIELDS = {
 
 
 class MySqlAccountRepository:
-    public_fields = {"uid", "displayName", "email", "phone", "role", "status", "createdAt", "updatedAt", "deletedAt", "deletedBy"}
+    public_fields = {"uid", "displayName", "email", "phone", "profileLocation", "role", "status", "createdAt", "updatedAt", "deletedAt", "deletedBy"}
 
     def __init__(self, session): self.session = session
 
@@ -248,6 +253,14 @@ class MySqlAccountRepository:
             changes["status"] = status
         changes["updatedAt"] = _now()
         _touch(row, changes, ACCOUNT_FIELDS)
+        if changes.get("role") == "translator":
+            # An administrator explicitly assigning the Translator role is an
+            # approval decision. Publish an existing profile regardless of its
+            # draft/submission state, or create the minimum profile needed for
+            # a user who has not started interpreter onboarding yet.
+            MySqlTranslatorRepository(self.session).approve_account(
+                row, actor_id, "Approved by assigning the Translator role.")
+            return self.get(uid)
         _commit(self.session)
         return _document(row, ACCOUNT_FIELDS, "uid")
 
@@ -288,7 +301,7 @@ class MySqlAccountRepository:
     def update_profile(self, uid, data):
         row = self.session.scalar(select(SqlUser).where(SqlUser.uid == uid).with_for_update())
         if not row: return None
-        changes = {key: data[key] for key in ("displayName", "phone") if key in data}
+        changes = {key: data[key] for key in ("displayName", "phone", "profileLocation") if key in data}
         if "phone" in changes:
             supplied_phone = str(changes["phone"] or "").strip()
             changes["phone"] = canonicalize_phone(supplied_phone)
@@ -308,6 +321,19 @@ class MySqlTranslatorRepository:
                      "yearsExperience"}
 
     def __init__(self, session): self.session = session
+
+    def _map_location(self, row, data):
+        """Prefer interpreter settings, then the account's public map area."""
+        interpreter_location = data.get("serviceLocation") or {}
+        if interpreter_location.get("showOnMap"):
+            return interpreter_location
+        account = self.session.get(SqlUser, row.id)
+        if not account and row.uid and row.uid != row.id:
+            account = self.session.scalar(select(SqlUser).where(SqlUser.uid == row.uid).limit(1))
+        account_location = (_raw(account).get("profileLocation") if account else None) or {}
+        if account_location.get("showOnMap"):
+            return account_location
+        return interpreter_location
 
     def all_public(self):
         rows = self.session.scalars(select(SqlTranslator).where(SqlTranslator.verification_status == "verified")).all()
@@ -354,7 +380,7 @@ class MySqlTranslatorRepository:
             if specialty and specialty not in {str(x).casefold() for x in data.get("specialties", [])}: continue
             if available_now and not (data.get("availability") or {}).get("availableNow"): continue
             if float(data.get("rating") or 0) < float(minimum_rating or 0): continue
-            options, location = data.get("serviceOptions") or {}, data.get("serviceLocation") or {}
+            options, location = data.get("serviceOptions") or {}, self._map_location(row, data)
             distance = None
             if has_origin and location.get("showOnMap") and location.get("latitude") is not None and location.get("longitude") is not None:
                 distance = haversine_miles(latitude, longitude, location["latitude"], location["longitude"])
@@ -370,35 +396,128 @@ class MySqlTranslatorRepository:
         results.sort(key=lambda item: (bool((item.get("availability") or {}).get("availableNow")), float(item.get("rating") or 0), int(item.get("ratingCount") or 0)), reverse=True)
         return results[:max(1, min(int(limit), 100))]
 
+    def _awaiting_review(self, row):
+        """True when a profile was submitted and has not been verified.
+
+        Submission can live on the typed columns or only inside the stored
+        document. The MySQL move left some submitted profiles with a null
+        credential column, so both places have to count.
+        """
+        raw = _raw(row)
+        data = _document(row, TRANSLATOR_FIELDS)
+        verification = str(data.get("verificationStatus") or raw.get("verificationStatus") or "")
+        if verification == "verified":
+            return False
+        statuses = {
+            str(data.get("credentialStatus") or ""),
+            str(raw.get("credentialStatus") or ""),
+            str(data.get("onboardingStatus") or ""),
+            str(raw.get("onboardingStatus") or ""),
+        }
+        return "submitted" in statuses
+
+    def submission_pending(self, translator_id):
+        row = self.session.get(SqlTranslator, translator_id)
+        if not row and translator_id:
+            row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.uid == translator_id).limit(1))
+        return bool(row and self._awaiting_review(row))
+
+    def approve_account(self, account, reviewer_id, notes=""):
+        """Make an administrator-assigned translator fully verified.
+
+        Admins manage roles from the account list, so the Translator selection
+        must work for submitted profiles, drafts, and accounts that do not yet
+        have a translator row.
+        """
+        keys = list(dict.fromkeys(value for value in (account.id, account.uid) if value))
+        row = self.session.scalar(select(SqlTranslator).where(or_(
+            SqlTranslator.id.in_(keys), SqlTranslator.uid.in_(keys)
+        )).with_for_update()) if keys else None
+        if not row:
+            now = _now()
+            translator_id = account.id
+            public = {
+                "uid": account.uid or translator_id,
+                "displayName": account.display_name or account.email or "Interpreter",
+                "onboardingStatus": "draft",
+                "verificationStatus": "unverified",
+                "languages": [], "dialects": [], "specialties": [], "credentials": [],
+                "credentialStatus": "unsubmitted", "yearsExperience": 0,
+                "availability": {"days": [], "start": "", "end": "", "availableNow": False},
+                "rating": None, "ratingCount": 0, "createdAt": now, "updatedAt": now,
+            }
+            private = {
+                "uid": account.uid or translator_id,
+                "email": normalize_email(account.email), "phone": account.phone,
+                "credentialDocuments": [], "createdAt": now, "updatedAt": now,
+            }
+            row = SqlTranslator(
+                id=translator_id, raw_document=_json_safe(public), migrated_at=now, mutation_version=1,
+                **{column: public.get(api) for api, column in TRANSLATOR_FIELDS.items()})
+            self.session.add(row)
+            _enqueue_pending_mutations(self.session)
+            self.session.flush()
+            self.session.add(SqlInterpreterPrivate(
+                id=translator_id, raw_document=_json_safe(private), migrated_at=now, mutation_version=1,
+                uid=private["uid"], email=private["email"], phone=private["phone"],
+                credential_documents=[], created_at=now, updated_at=now))
+        return self.set_verification(row.id, "verified", reviewer_id, notes)
+
     def pending_verification(self):
-        rows = self.session.scalars(select(SqlTranslator).where(
+        rows = self.session.scalars(select(SqlTranslator).where(or_(
+            SqlTranslator.verification_status.is_(None),
+            SqlTranslator.verification_status != "verified",
             SqlTranslator.credential_status == "submitted",
-            or_(SqlTranslator.verification_status != "verified", SqlTranslator.verification_status.is_(None)))).all()
+            SqlTranslator.onboarding_status == "submitted",
+        ))).all()
         result = []
         for row in rows:
+            if not self._awaiting_review(row):
+                continue
+            raw = _raw(row)
             data = _document(row, TRANSLATOR_FIELDS)
+            if str(raw.get("credentialStatus") or data.get("credentialStatus") or "") == "submitted":
+                data["credentialStatus"] = "submitted"
+            if str(raw.get("onboardingStatus") or data.get("onboardingStatus") or "") == "submitted":
+                data["onboardingStatus"] = "submitted"
             private = self.get_private(row.id)
-            data["credentialDocuments"] = private.get("credentialDocuments", data.get("credentialDocuments", []))
+            documents = private.get("credentialDocuments")
+            if not documents:
+                documents = data.get("credentialDocuments") or []
+            data["credentialDocuments"] = documents if isinstance(documents, list) else []
+            if not data.get("email"):
+                data["email"] = private.get("email")
             result.append(data)
         return result
+
+    def _account_for_translator(self, translator_id, translator_uid):
+        account = self.session.scalar(select(SqlUser).where(SqlUser.id == translator_id).with_for_update())
+        if account:
+            return account
+        keys = list(dict.fromkeys(value for value in (translator_id, translator_uid) if value))
+        if not keys:
+            return None
+        return self.session.scalar(select(SqlUser).where(or_(
+            SqlUser.id.in_(keys), SqlUser.uid.in_(keys)
+        )).with_for_update())
 
     def set_verification(self, translator_id, status, reviewer_id, notes=""):
         if status not in {"verified", "rejected", "needs_changes"}: raise ValueError("Invalid verification status.")
         row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.id == translator_id).with_for_update())
+        if not row and translator_id:
+            row = self.session.scalar(select(SqlTranslator).where(SqlTranslator.uid == translator_id).with_for_update())
         if not row: return None
         now = _now()
         _touch(row, {"verificationStatus": status, "credentialStatus": "approved" if status == "verified" else status,
                      "onboardingStatus": status, "verifiedBy": reviewer_id, "verifiedAt": now, "updatedAt": now}, TRANSLATOR_FIELDS)
-        private = self.session.get(SqlInterpreterPrivate, translator_id)
+        private = self.session.get(SqlInterpreterPrivate, row.id)
         if private:
             fields = {"verificationNotes": "verification_notes", "verifiedBy": "verified_by", "verifiedAt": "verified_at"}
             _touch(private, {"verificationNotes": notes, "verifiedBy": reviewer_id, "verifiedAt": now}, fields)
         if status == "verified":
-            account = self.session.scalar(select(SqlUser).where(SqlUser.id == translator_id).with_for_update())
-            if not account:
-                self.session.rollback()
-                raise ValueError("Interpreter account not found.")
-            _touch(account, {"role": "translator", "updatedAt": now}, ACCOUNT_FIELDS)
+            account = self._account_for_translator(row.id, row.uid)
+            if account and account.role != "admin":
+                _touch(account, {"role": "translator", "updatedAt": now}, ACCOUNT_FIELDS)
         _commit(self.session)
         return _document(row, TRANSLATOR_FIELDS)
 
@@ -444,9 +563,19 @@ class MySqlTranslatorRepository:
         existing = self.session.get(SqlTranslator, uid)
         if existing:
             account = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
-            if account:
-                _touch(account, {"role": "translator" if existing.verification_status == "verified" else "translator_applicant", "updatedAt": _now()}, ACCOUNT_FIELDS)
-                _commit(self.session)
+            if account and account.role != "admin":
+                # Do not demote someone an administrator already approved.
+                # Re-enrollment used to force every unverified profile back to
+                # translator_applicant, which undid that approval.
+                if existing.verification_status == "verified":
+                    next_role = "translator"
+                elif account.role == "translator":
+                    next_role = "translator"
+                else:
+                    next_role = "translator_applicant"
+                if account.role != next_role:
+                    _touch(account, {"role": next_role, "updatedAt": _now()}, ACCOUNT_FIELDS)
+                    _commit(self.session)
             return _document(existing, TRANSLATOR_FIELDS)
         account = self.session.scalar(select(SqlUser).where(SqlUser.id == uid).with_for_update())
         if not account:
@@ -474,7 +603,7 @@ class MySqlTranslatorRepository:
         profile["availability"] = {"availableNow": bool(availability.get("availableNow", False)),
             "days": availability.get("days", []) if isinstance(availability.get("days", []), list) else [],
             "start": availability.get("start", ""), "end": availability.get("end", "")}
-        location = data.get("serviceLocation") or {}
+        location = self._map_location(row, data)
         if location.get("showOnMap"):
             profile["serviceLocation"] = {key: location.get(key) for key in ("city", "state", "country", "latitude", "longitude", "geohash", "showOnMap")}
         else: profile.pop("serviceLocation", None)
@@ -515,10 +644,16 @@ class MySqlCallRepository:
         existing = self.session.get(SqlCall, call_id)
         if existing:
             return _document(existing, CALL_FIELDS)
+        invited_translator_id = translator.get("id") if translator else None
+        invited_translator_name = translator.get("displayName") if translator else None
         data = {"callerId": caller["uid"], "callerName": caller.get("displayName") or caller.get("email") or "FiniSpeak customer",
             "receiverId": receiver["uid"], "receiverName": receiver.get("displayName") or receiver.get("email") or "FiniSpeak customer",
-            "translatorId": translator.get("id") if translator else None, "translatorName": translator.get("displayName") if translator else None,
-            "status": "ringing", "translationStatus": "requested" if translator and translator.get("id") else "not_requested", "language": language,
+            # A selected interpreter is an invitee until they accept. Marking
+            # them connected here prevents existing browsers from detecting
+            # the real late join and rebuilding the camera mesh.
+            "translatorId": None, "translatorName": None,
+            "invitedTranslatorId": invited_translator_id, "invitedTranslatorName": invited_translator_name,
+            "status": "ringing", "translationStatus": "requested" if invited_translator_id else "not_requested", "language": language,
             "dialect": dialect, "specialty": specialty, "purpose": purpose, "scheduledAt": scheduled_at,
             "createdAt": now, "updatedAt": now, "startedAt": None, "endedAt": None,
             "processingModes": {caller["uid"]: processing_mode}}

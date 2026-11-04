@@ -1,4 +1,4 @@
-import { createCallExperience } from "./call-experience.js?v=20261018-mobile-call-details";
+import { createCallExperience } from "./call-experience.js?v=20261101-audio-call";
 import { createCameraRelay } from "./camera-relay.js?v=20261018-membership-refresh";
 import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 
@@ -8,12 +8,14 @@ const views = ["heroView", "authView", "dashboardView", "profileView", "callView
 const show = (id) => {
     views.forEach(v => $(v)?.classList.toggle("hidden", v !== id));
     document.body.classList.toggle("dashboard-mode", id === "dashboardView");
+    document.body.classList.toggle("profile-mode", id === "profileView");
     document.body.classList.toggle("in-call", id === "callView");
+    updateReturnToCall();
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let authActionToken = null;
 let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerProfiles = new Map(), peerDebug = new Map(), peerJobs = new Map(), rosterParticipants = [], rosterTranscripts = [];
-let cameraRelay = null, cameraRelayOpen = false, cameraRestart = null, lastCameraRestart = 0;
+let cameraRelay = null, cameraRelayOpen = false, cameraRestart = null, lastCameraRestart = 0, suppressCameraRestart = false;
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
 let pendingSignals = new Map(), signalingCursor = 0;
 let callMembershipKey = "";
@@ -197,6 +199,21 @@ function bindUI() {
     };
     $("muteButton").onclick = toggleMute;
     $("cameraButton").onclick = toggleCamera;
+    $("audioMuteButton").onclick = toggleMute;
+    $("audioVideoButton").onclick = toggleCamera;
+    $("audioHangupButton").onclick = endCall;
+    $("audioBookNow").onclick = bookFromAudioCall;
+    $("audioFlagMoment").onclick = flagKeyMoment;
+    $("audioCallNote").oninput = () => {
+        const notes = $("callNotes");
+        if (!notes) return;
+        notes.value = $("audioCallNote").value;
+        notes.dispatchEvent(new Event("input"));
+    };
+    $("returnToCall").onclick = () => { if (activeCallId) show("callView"); };
+    document.querySelectorAll("[data-audio-category]").forEach(button => {
+        button.onclick = () => setConceptCategory(button.dataset.audioCategory);
+    });
     $("callView")?.addEventListener("pointerdown", playRemoteMedia, { passive: true });
     document.querySelectorAll("[data-processing-mode]").forEach(button => button.onclick = () => selectProcessingMode(button.dataset.processingMode));
     $("toggleCallProcessingModes").onclick = (event) => {
@@ -224,7 +241,6 @@ function bindUI() {
     $("endCallButton").onclick = endCall;
     $("acceptIncomingCall").onclick = acceptIncomingCall;
     $("declineIncomingCall").onclick = declineIncomingCall;
-    $("closeTranscriptModal").onclick = () => closeModal("transcriptModal");
     $("closeReviewModal").onclick = () => closeModal("reviewModal");
     $("reviewForm").onsubmit = submitInterpreterReview;
     document.addEventListener("keydown", handleModalKeyboard);
@@ -283,26 +299,63 @@ function bindUI() {
     $("directoryListView").onclick = () => setDirectoryView("list");
     $("directoryMapView").onclick = () => setDirectoryView("map");
     $("directorySplitView").onclick = () => setDirectoryView("split");
+    $("showAllMapped").onclick = showAllMappedTranslators;
     $("searchMapArea").onclick = searchCurrentMapArea;
     $("featuredSearch").addEventListener("input", filterFeaturedProfiles);
     $("featuredLanguage").addEventListener("change", filterFeaturedProfiles);
     $("featuredSpecialty").addEventListener("change", filterFeaturedProfiles);
     $("featuredAvailable").addEventListener("change", filterFeaturedProfiles);
     $("clearFeaturedFilters").onclick = clearFeaturedFilters;
-    $("backToDirectory").onclick = openInterpreterDirectory;
-    $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
-    $("openStartCall").onclick = () => {
-        $("callStartCard").scrollIntoView({ behavior: "smooth", block: "start" });
-        window.setTimeout(() => $("receiverEmail")?.focus(), 250);
+    $("backToDirectory").onclick = closePublicProfile;
+    $("profileSearchButton").onclick = () => {
+        if (!currentUser) {
+            show("heroView");
+            loadFeaturedProfiles();
+            window.requestAnimationFrame(() => $("featuredProfiles")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            return;
+        }
+        show("dashboardView");
+        openDashboardPanel("directory");
+        window.setTimeout(() => $("directorySearch")?.focus(), 50);
     };
+    $("dashboardBackButton").onclick = goDashboardBack;
+    $("authBack").onclick = () => show("heroView");
+    $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
+    $("openStartCall").onclick = openDirectCall;
+    $("openDirectCall").onclick = openDirectCall;
     document.querySelectorAll("[data-discovery-category]").forEach(button => {
+        button.onclick = () => openConceptCategory(button.dataset.discoveryCategory);
+    });
+    document.querySelectorAll("[data-concept-category]").forEach(button => {
+        button.onclick = () => openConceptCategory(button.dataset.conceptCategory);
+    });
+    $("conceptMenuButton").onclick = () => {
+        const open = document.body.classList.toggle("nav-open");
+        $("conceptMenuButton").setAttribute("aria-expanded", String(open));
+    };
+    $("conceptSearchButton").onclick = () => {
+        show("dashboardView");
+        openDashboardPanel("directory");
+        window.setTimeout(() => $("directorySearch")?.focus(), 50);
+    };
+    document.querySelectorAll("[data-concept-chip]").forEach(button => {
         button.onclick = () => {
-            openDashboardPanel("directory");
-            $("directorySearch").value = button.dataset.discoveryCategory;
+            const active = !button.classList.contains("active");
+            document.querySelectorAll("[data-concept-chip]").forEach(chip => chip.classList.toggle("active", active && chip === button));
+            $("directorySearch").value = active ? button.dataset.conceptChip : "";
             filterInterpreterDirectory();
         };
     });
+    $("conceptViewProfile").onclick = () => {
+        const profile = directoryProfiles.find(item => item.id === $("conceptMapSheet")?.dataset.profileId) || filteredDirectoryProfiles[0];
+        if (profile) openPublicProfile(profile);
+    };
+    bindConceptScreens();
     $("profileStartCall").onclick = () => {
+        if (isInterpreterRole(currentProfile?.role)) {
+            $("profileCallStatus").textContent = "Translators cannot call other translators.";
+            return;
+        }
         if (!currentUser) {
             selectInterpreterForCall(activeDirectoryProfile);
             openAuth(false, "customer");
@@ -314,6 +367,37 @@ function bindUI() {
         openDashboardPanel("home");
         $("receiverEmail")?.focus();
     };
+    $("profileChatTranslator").onclick = startDirectTranslatorChat;
+}
+
+function setTranslatorDiscoveryVisible(visible) {
+    $("openFindTranslator")?.classList.toggle("hidden", !visible);
+}
+
+function setLanguageLessonAction(hosting) {
+    const label = hosting ? "Host a Language Session" : "Book a Language Lesson";
+    if ($("openLanguageLessonLabel")) $("openLanguageLessonLabel").textContent = label;
+    if ($("lessonTitle")) $("lessonTitle").textContent = label;
+}
+
+function setCustomerCallActionsVisible(visible) {
+    // Translators keep Call Another User so they can reach a customer.
+    // The extra "Start a call" link stays customer-only.
+    $("openStartCall")?.classList.toggle("hidden", !visible);
+    ["customerTools", "openDirectCall", "callStartCard"].forEach(id => {
+        $(id)?.classList.remove("hidden");
+    });
+    const summary = document.querySelector("#conceptMoreTools summary");
+    if (summary) summary.textContent = "Start a call or review recent conversations";
+}
+
+function openDirectCall() {
+    show("dashboardView");
+    openDashboardPanel("home");
+    const more = $("conceptMoreTools");
+    if (more) more.open = true;
+    $("callStartCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => $("receiverEmail")?.focus(), 250);
 }
 
 function openModal(id) {
@@ -438,10 +522,13 @@ async function localSignOut() {
 
 async function handleAuthState(user) {
     currentUser = user;
+    document.body.classList.toggle("signed-in", Boolean(user));
+    if (!user) document.body.classList.remove("nav-open");
     $("authNav").textContent = user ? "Log out" : "Log in";
     if (!user) {
         currentProfile = null;
         currentInterpreterProfile = null;
+        dashboardHistory = ["home"];
         clearSelectedInterpreter();
         cleanupDashboardListeners();
         cleanupCall();
@@ -474,15 +561,16 @@ async function handleAuthState(user) {
         $("adminNav").classList.toggle("hidden", !isAdmin);
         // Administrators can also participate in calls. Keep the customer call
         // workspace available while exposing the additional admin dashboard.
-        $("customerTools").classList.toggle("hidden", isTranslator);
-        $("openStartCall").classList.toggle("hidden", isTranslator);
+        setCustomerCallActionsVisible(!isTranslator);
+        setLanguageLessonAction(isTranslator);
+        setTranslatorDiscoveryVisible(!isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
 
         await refreshRtcConfiguration();
 
         // Show the dashboard before loading optional translator/profile data so
         // a profile problem cannot block navigation after login.
-        openDashboardPanel(isAdmin ? "admin" : "home");
+        openDashboardPanel(isAdmin ? "admin" : "home", "reset");
         show("dashboardView");
         $("authStatus").textContent = "";
 
@@ -490,14 +578,16 @@ async function handleAuthState(user) {
             try {
                 if (currentInterpreterProfile) hydrateInterpreterProfile(currentInterpreterProfile);
                 else await loadInterpreterProfile();
-                try {
-                    await loadTaxonomy();
-                } catch (taxonomyError) {
-                    console.warn("Interpreter taxonomy load failed; saved profile remains available:", taxonomyError);
-                }
             } catch (error) {
                 console.error("Interpreter profile load failed:", error);
                 $("translatorRequestStatus").textContent = `Dashboard loaded, but the interpreter profile could not be loaded: ${error.message}`;
+            }
+            // Taxonomy powers three independent multi-selects. A migrated or
+            // partially populated profile must not prevent their initialization.
+            try {
+                await loadTaxonomy();
+            } catch (taxonomyError) {
+                console.warn("Interpreter taxonomy load failed; saved profile remains available:", taxonomyError);
             }
         }
 
@@ -515,8 +605,9 @@ async function handleAuthState(user) {
         hydrateDashboardProfile();
         $("interpreterProfileNav")?.classList.add("hidden");
         $("translatorTools")?.classList.add("hidden");
-        $("customerTools")?.classList.remove("hidden");
-        $("openStartCall")?.classList.remove("hidden");
+        setCustomerCallActionsVisible(true);
+        setLanguageLessonAction(false);
+        setTranslatorDiscoveryVisible(true);
         openDashboardPanel("home");
         show("dashboardView");
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;
@@ -539,22 +630,67 @@ function hydrateDashboardProfile() {
     $("profileDisplayName").value = currentProfile.displayName || "";
     $("profileEmail").value = currentProfile.email || currentUser?.email || "";
     setPhoneFieldValue("profilePhone", currentProfile.phone || "");
+    const profileLocation = currentProfile.profileLocation || currentInterpreterProfile?.serviceLocation || {};
+    $("profileServiceArea").value = [profileLocation.city, profileLocation.state, profileLocation.country].filter(Boolean).join(", ");
+    $("profileShowOnMap").checked = Boolean(profileLocation.showOnMap);
     $("profileRole").value = roleLabel;
     $("settingsEmail").textContent = currentProfile.email || currentUser?.email || "";
 }
 
-function openDashboardPanel(panel) {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings" };
+let dashboardHistory = ["home"];
+let profileReturnPanel = "directory";
+
+function nextDashboardHistory(history, panel, mode) {
+    const current = Array.isArray(history) && history.length ? history.slice() : ["home"];
+    if (mode === "back") return current;
+    if (panel === "home") return ["home"];
+    if (mode === "reset") return ["home", panel];
+    if (current[current.length - 1] === panel) return current;
+    const existing = current.indexOf(panel);
+    if (existing >= 0) return current.slice(0, existing + 1);
+    return [...current, panel];
+}
+
+function updateDashboardBackButton() {
+    const button = $("dashboardBackButton");
+    if (!button) return;
+    const showBack = (dashboardHistory[dashboardHistory.length - 1] || "home") !== "home";
+    button.classList.toggle("hidden", !showBack);
+    button.hidden = !showBack;
+}
+
+function goDashboardBack() {
+    if (dashboardHistory.length > 1) dashboardHistory.pop();
+    else dashboardHistory = ["home"];
+    openDashboardPanel(dashboardHistory[dashboardHistory.length - 1] || "home", "back");
+    if ($("dashboardBackButton")?.hidden) $("mainContent")?.focus();
+}
+
+function openDashboardPanel(panel, historyMode = "push") {
+    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
+    if (!ids[panel]) return;
+    if (historyMode !== "back") dashboardHistory = nextDashboardHistory(dashboardHistory, panel, historyMode);
+    updateDashboardBackButton();
     Object.entries(ids).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== panel));
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => {
         const active = button.dataset.dashboardPanel === panel;
         button.classList.toggle("active", active);
         if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
     });
-    window.scrollTo({ top: 0, behavior: "auto" });
-    if (panel === "directory") loadInterpreterDirectory();
+    document.body.classList.remove("nav-open");
+    $("conceptMenuButton")?.setAttribute("aria-expanded", "false");
+    if (historyMode === "back") return;
+    $("dashboardView")?.querySelector(".dashboard-content")?.scrollTo({ top: 0, behavior: "auto" });
+    if (panel === "directory") { setDirectoryView("map"); loadInterpreterDirectory(); }
     if (panel === "friends") loadFriends();
     if (panel === "admin") loadAdminDashboard();
+    if (panel === "lesson") renderLessonScreen();
+    if (panel === "schedule") renderScheduleScreen();
+    if (panel === "goal") renderGoalScreen();
+    if (panel === "match") renderAutoMatchScreen();
+    if (panel === "live") renderLiveScreen();
+    if (panel === "summary") renderSummaryScreen();
+    if (panel === "classroom") renderEducationScreen();
 }
 
 async function apiFetch(path, options = {}) {
@@ -618,8 +754,9 @@ async function loadAdminDashboard() {
         $("adminSessions").textContent = metrics.sessions ?? 0;
         $("adminActiveSessions").textContent = `${metrics.activeSessions ?? 0} active`;
         $("adminOrganizations").textContent = metrics.organizations ?? 0;
-        renderAdminVerificationQueue(queue.interpreters || []);
-        renderAdminAccounts(activity.accounts || []);
+        const pendingInterpreters = queue.interpreters || [];
+        renderAdminVerificationQueue(pendingInterpreters);
+        renderAdminAccounts(activity.accounts || [], pendingInterpreters);
         renderAdminSessions(activity.sessions || []);
         renderAdminReviews(activity.reviews || []);
         renderAdminOrganizations(activity.organizations || []);
@@ -634,14 +771,18 @@ function adminEmpty(message) {
     return `<p class="admin-empty">${escapeHtml(message)}</p>`;
 }
 
-function renderAdminAccounts(accounts) {
+function renderAdminAccounts(accounts, pendingInterpreters = []) {
     const container = $("adminAccountList");
     if (!accounts.length) { container.innerHTML = adminEmpty("No accounts found."); return; }
+    const pendingIds = new Set(pendingInterpreters.flatMap(profile => [profile.id, profile.uid].filter(Boolean)));
     container.innerHTML = accounts.map(account => {
         const isCurrentAdmin = account.uid === currentUser?.uid;
         const deleted = account.status === "deleted" || Boolean(account.deletedAt);
-        return `<article class="admin-account-editor" data-admin-account="${escapeHtml(account.uid || "")}"><div class="admin-account-heading"><strong>${escapeHtml(account.displayName || account.email || "User")}</strong><span class="status-badge">${escapeHtml(deleted ? "deleted" : account.status || "active")}</span></div><div class="admin-account-fields"><label>Name<input data-account-field="displayName" value="${escapeHtml(account.displayName || "")}"${deleted ? " disabled" : ""}></label><label>Email<input data-account-field="email" type="email" value="${escapeHtml(account.email || "")}"${deleted ? " disabled" : ""}></label><label>Phone<input data-account-field="phone" type="tel" value="${escapeHtml(account.phone || "")}"${deleted ? " disabled" : ""}></label><label>Role<select data-account-field="role"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="customer"${account.role === "customer" ? " selected" : ""}>Customer</option><option value="translator_applicant"${account.role === "translator_applicant" ? " selected" : ""}>Translator applicant</option><option value="translator"${account.role === "translator" ? " selected" : ""}>Translator</option><option value="admin"${account.role === "admin" ? " selected" : ""}>Administrator</option></select></label><label>Status<select data-account-field="status"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="active"${account.status === "active" || !account.status ? " selected" : ""}>Active</option><option value="pending"${account.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${account.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></div><div class="admin-account-actions"><button type="button" data-save-account${deleted ? " disabled" : ""}>Save profile</button><button class="secondary reject-action" type="button" data-delete-account${deleted || isCurrentAdmin ? " disabled" : ""}>${deleted ? "Deleted" : "Delete account"}</button></div></article>`;
+        const awaitingApproval = !deleted && pendingIds.has(account.uid);
+        const approveButton = awaitingApproval ? `<button type="button" data-approve-interpreter>Approve interpreter</button>` : "";
+        return `<article class="admin-account-editor" data-admin-account="${escapeHtml(account.uid || "")}"><div class="admin-account-heading"><strong>${escapeHtml(account.displayName || account.email || "User")}</strong><span class="status-badge">${escapeHtml(awaitingApproval ? "awaiting approval" : deleted ? "deleted" : account.status || "active")}</span></div><div class="admin-account-fields"><label>Name<input data-account-field="displayName" value="${escapeHtml(account.displayName || "")}"${deleted ? " disabled" : ""}></label><label>Email<input data-account-field="email" type="email" value="${escapeHtml(account.email || "")}"${deleted ? " disabled" : ""}></label><label>Phone<input data-account-field="phone" type="tel" value="${escapeHtml(account.phone || "")}"${deleted ? " disabled" : ""}></label><label>Role<select data-account-field="role"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="customer"${account.role === "customer" ? " selected" : ""}>Customer</option><option value="translator_applicant"${account.role === "translator_applicant" ? " selected" : ""}>Translator applicant</option><option value="translator"${account.role === "translator" ? " selected" : ""}>Translator</option><option value="admin"${account.role === "admin" ? " selected" : ""}>Administrator</option></select></label><label>Status<select data-account-field="status"${deleted || isCurrentAdmin ? " disabled" : ""}><option value="active"${account.status === "active" || !account.status ? " selected" : ""}>Active</option><option value="pending"${account.status === "pending" ? " selected" : ""}>Pending</option><option value="suspended"${account.status === "suspended" ? " selected" : ""}>Suspended</option></select></label></div><div class="admin-account-actions">${approveButton}<button type="button" data-save-account${deleted ? " disabled" : ""}>Save profile</button><button class="secondary reject-action" type="button" data-delete-account${deleted || isCurrentAdmin ? " disabled" : ""}>${deleted ? "Deleted" : "Delete account"}</button></div></article>`;
     }).join("");
+    container.querySelectorAll("[data-approve-interpreter]").forEach(button => button.onclick = () => reviewInterpreter(button.closest("[data-admin-account]").dataset.adminAccount, "verified"));
     container.querySelectorAll("[data-save-account]").forEach(button => button.onclick = () => saveAdminAccount(button.closest("[data-admin-account]")));
     container.querySelectorAll("[data-delete-account]").forEach(button => button.onclick = () => deleteAdminAccount(button.closest("[data-admin-account]")));
 }
@@ -651,7 +792,7 @@ async function saveAdminAccount(editor) {
     const values = Object.fromEntries([...editor.querySelectorAll("[data-account-field]")].filter(field => !field.disabled).map(field => [field.dataset.accountField, field.value.trim()]));
     try {
         await apiFetch(`/api/admin/accounts/${encodeURIComponent(editor.dataset.adminAccount)}`, { method: "PATCH", body: JSON.stringify(values) });
-        $("adminStatus").textContent = "Account profile updated.";
+        $("adminStatus").textContent = values.role === "translator" ? "Account updated and translator approved." : "Account profile updated.";
         await loadAdminDashboard();
     } catch (error) {
         $("adminStatus").textContent = `Could not update account: ${error.message}`;
@@ -1135,6 +1276,7 @@ function renderInterpreterDirectory(profiles) {
         card.onclick = () => selectDirectoryProfile(profile, true);
         return card;
     }));
+    renderConceptMapSheet(profiles[0]);
 }
 
 function selectDirectoryProfile(profile, openProfile = false) {
@@ -1145,6 +1287,7 @@ function selectDirectoryProfile(profile, openProfile = false) {
         directoryMap.panTo(marker.getLatLng());
         marker.openPopup();
     }
+    renderConceptMapSheet(profile);
     if (openProfile && directoryView === "list") openPublicProfile(profile);
 }
 
@@ -1159,7 +1302,7 @@ function setDirectoryView(view) {
     });
     if (view !== "list") {
         initializeDirectoryMap();
-        window.setTimeout(() => { directoryMap.invalidateSize(); renderDirectoryMap(filteredDirectoryProfiles); }, 0);
+        window.setTimeout(() => { directoryMap.invalidateSize(); renderDirectoryMap(filteredDirectoryProfiles, true); }, 0);
     }
 }
 
@@ -1175,7 +1318,7 @@ function initializeDirectoryMap() {
     requestAnimationFrame(() => directoryMap?.invalidateSize({ pan: false }));
 }
 
-function renderDirectoryMap(profiles) {
+function renderDirectoryMap(profiles, fitToResults = false) {
     if (!directoryMap || !directoryMarkerLayer) return;
     directoryMap.invalidateSize({ pan: false });
     directoryMarkerLayer.clearLayers(); directoryMarkers.clear();
@@ -1184,26 +1327,56 @@ function renderDirectoryMap(profiles) {
         const location = profile.serviceLocation;
         if (!location?.showOnMap || location.latitude == null || location.longitude == null) return;
         const available = Boolean(profile.availability?.availableNow);
-        const marker = L.marker([location.latitude, location.longitude], { icon: L.divIcon({
-            className: "interpreter-map-marker-wrap", html: `<span class="interpreter-map-marker ${available ? "available" : "unavailable"}" aria-hidden="true"></span>`, iconSize: [28, 38], iconAnchor: [14, 38]
-        }) });
+        const marker = L.marker([location.latitude, location.longitude], { icon: interpreterMarkerIcon(profile) });
         const distance = profile.distanceMiles != null ? `${Number(profile.distanceMiles).toFixed(1)} miles away` : "Distance available after choosing your location";
-        const photo = profile.photoUrl ? `<img src="${escapeHtml(profile.photoUrl)}" alt="">` : `<span class="map-popup-avatar" aria-hidden="true">${escapeHtml(profileInitials(profile.displayName))}</span>`;
-        marker.bindPopup(`<article class="map-profile-popup"><header>${photo}<strong>${escapeHtml(profile.displayName)}</strong></header><span>${escapeHtml([...(profile.languages || []), ...(profile.dialects || [])].slice(0,3).join(" · "))}</span><span>${escapeHtml((profile.specialties || []).slice(0,2).join(" · "))}</span><span>${Number(profile.yearsExperience || 0)} years · ${Number(profile.rating || 0).toFixed(1)} ★ (${Number(profile.ratingCount || 0)})</span><span>${escapeHtml(profile.verificationStatus === "verified" ? "Verified" : "")}${available ? " · Available now" : ""}</span><span>${escapeHtml(distance)}</span><div><button type="button" data-map-profile="${escapeHtml(profile.id)}">View profile</button><button type="button" data-map-request="${escapeHtml(profile.id)}">Request interpreter</button></div></article>`);
+        const photoUrl = safeProfilePhotoUrl(profile.photoUrl);
+        const photo = photoUrl ? `<img alt="">` : `<span class="map-popup-avatar" aria-hidden="true">${escapeHtml(profileInitials(profile.displayName))}</span>`;
+        const popupContent = document.createElement("article");
+        popupContent.className = "map-profile-popup";
+        popupContent.innerHTML = `<header>${photo}<strong>${escapeHtml(profile.displayName)}</strong></header><span>${escapeHtml([...(profile.languages || []), ...(profile.dialects || [])].slice(0,3).join(" · "))}</span><span>${escapeHtml((profile.specialties || []).slice(0,2).join(" · "))}</span><span>${Number(profile.yearsExperience || 0)} years · ${Number(profile.rating || 0).toFixed(1)} ★ (${Number(profile.ratingCount || 0)})</span><span>${escapeHtml(profile.verificationStatus === "verified" ? "Verified" : "")}${available ? " · Available now" : ""}</span><span>${escapeHtml(distance)}</span><div><button type="button" data-map-profile="${escapeHtml(profile.id)}">View profile</button></div>`;
+        popupContent.querySelector("[data-map-profile]").onclick = event => {
+            event.preventDefault(); event.stopPropagation();
+            marker.closePopup();
+            openPublicProfile(profile);
+        };
+        const popupImage = popupContent.querySelector("img");
+        if (popupImage) {
+            popupImage.onerror = () => {
+                const fallback = document.createElement("span");
+                fallback.className = "map-popup-avatar";
+                fallback.setAttribute("aria-hidden", "true");
+                fallback.textContent = profileInitials(profile.displayName);
+                popupImage.replaceWith(fallback);
+            };
+            popupImage.src = photoUrl;
+        }
+        marker.bindPopup(popupContent);
         marker.on("click", () => selectDirectoryProfile(profile));
-        marker.on("popupopen", event => {
-            const popup = event.popup.getElement();
-            popup?.querySelector("[data-map-profile]")?.addEventListener("click", () => openPublicProfile(profile));
-            popup?.querySelector("[data-map-request]")?.addEventListener("click", () => { selectInterpreterForCall(profile); openDashboardPanel("home"); });
-        });
         directoryMarkers.set(profile.id, marker); directoryMarkerLayer.addLayer(marker); bounds.push([location.latitude, location.longitude]);
     });
+    const mappedCount = directoryMarkers.size;
+    $("interpreterMapStatus").textContent = mappedCount
+        ? `${mappedCount} mapped interpreter${mappedCount === 1 ? "" : "s"}. Zoom or pan to explore other areas.`
+        : "No matching interpreters have shared an approximate public area yet.";
+    if (directoryUserMarker) {
+        directoryMap.removeLayer(directoryUserMarker);
+        directoryUserMarker = null;
+    }
     if (directoryOrigin) {
-        if (directoryUserMarker) directoryMap.removeLayer(directoryUserMarker);
         directoryUserMarker = L.circleMarker([directoryOrigin.latitude, directoryOrigin.longitude], { radius: 8, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }).addTo(directoryMap).bindTooltip("Your approximate location");
         bounds.push([directoryOrigin.latitude, directoryOrigin.longitude]);
     }
-    if (bounds.length) directoryMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 11 });
+    if (fitToResults && bounds.length) directoryMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 11 });
+}
+
+async function showAllMappedTranslators() {
+    directoryOrigin = null;
+    $("directoryMode").value = "both";
+    $("directoryRadius").value = "anywhere";
+    $("directoryLocationStatus").textContent = "Showing every interpreter who shared an approximate public area.";
+    await refreshInterpreterDirectory();
+    setDirectoryView("map");
+    renderDirectoryMap(filteredDirectoryProfiles, true);
 }
 
 function useDirectoryLocation() {
@@ -1241,31 +1414,62 @@ async function searchCurrentMapArea() {
     await refreshInterpreterDirectory();
 }
 
+function closePublicProfile() {
+    if (!currentUser) {
+        show("heroView");
+        loadFeaturedProfiles();
+        window.requestAnimationFrame(() => $("featuredProfiles")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        return;
+    }
+    const panel = profileReturnPanel || "directory";
+    if (dashboardHistory[dashboardHistory.length - 1] !== panel) {
+        dashboardHistory = nextDashboardHistory(dashboardHistory, panel, "push");
+    }
+    show("dashboardView");
+    openDashboardPanel(panel, "back");
+}
+
 async function openPublicProfile(profile) {
     activeDirectoryProfile = profile;
+    profileReturnPanel = dashboardHistory[dashboardHistory.length - 1] || "directory";
+    const backLabel = $("backToDirectory")?.querySelector("span");
+    if (backLabel) backLabel.textContent = currentUser ? "Back" : "Back to interpreters";
     const available = Boolean(profile.availability?.availableNow);
     $("publicProfileName").textContent = profile.displayName || "Interpreter";
-    $("publicProfileHeadline").textContent = profile.specialties?.length
-        ? `${profile.specialties.slice(0, 2).join(" · ")} interpreter`
-        : `${(profile.languages || []).slice(0, 2).join(" · ") || "Professional"} interpreter`;
+    const specialtyLine = (profile.specialties || []).filter(Boolean).slice(0, 2).join(", ");
+    $("publicProfileHeadline").textContent = specialtyLine || (profile.languages || []).filter(Boolean).slice(0, 2).join(", ") || "Professional interpreter";
+    const verifiedMark = $("publicProfileVerified");
+    if (verifiedMark) {
+        const verified = profile.verificationStatus === "verified";
+        verifiedMark.hidden = !verified;
+        verifiedMark.classList.toggle("hidden", !verified);
+    }
     $("publicProfileAvailability").textContent = available ? "Available now" : "Currently unavailable";
     $("publicProfileAvailability").classList.toggle("available", available);
-    $("publicProfileRating").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
+    $("publicProfileRating").innerHTML = ratingMarkup(profile.rating, profile.ratingCount, false);
     $("publicProfileBio").textContent = profile.bio || "This interpreter has not added a professional bio yet.";
     setProfileAvatar($("publicProfileAvatar"), profile);
+    setProfileAvatar($("publicProfileSlotAvatar"), profile);
     renderProfileTags($("publicProfileLanguages"), "Languages", [...(profile.languages || []), ...(profile.dialects || [])]);
     renderProfileTags($("publicProfileSpecialties"), "Specialties", profile.specialties || []);
     $("publicProfileExperience").textContent = `${Number(profile.yearsExperience || 0)} years`;
     $("publicProfileCredentials").textContent = (profile.credentials || []).join(", ") || "Not listed";
     const serviceLocation = profile.serviceLocation || {};
     const publicArea = [serviceLocation.city, serviceLocation.state, serviceLocation.country].filter(Boolean).join(", ");
-    $("publicProfileLocation").textContent = profile.serviceOptions?.inPerson && publicArea
-        ? `${publicArea} · within ${Number(profile.serviceOptions.radiusMiles || 25)} miles`
+    $("publicProfileLocation").textContent = publicArea
+        ? `${publicArea}${profile.serviceOptions?.inPerson ? ` · within ${Number(profile.serviceOptions.radiusMiles || 25)} miles` : " · Remote service"}`
         : "Remote video";
     $("publicProfileVerification").textContent = profileVerificationLabel(profile);
-    $("publicProfileSchedule").textContent = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
+    const scheduleText = formatAvailabilitySchedule(profile.availability, "Schedule not listed");
+    $("publicProfileSchedule").textContent = `${available ? "Available now" : "Not available now"} · ${scheduleText}`;
     $("publicProfileReviewSummary").innerHTML = ratingMarkup(profile.rating, profile.ratingCount);
-    $("publicProfileReviews").innerHTML = "<p>Detailed community feedback will appear here as reviews are added.</p>";
+    renderProfileReviews(Array.isArray(profile.recentReviews) ? profile.recentReviews : []);
+    renderConceptProfile(profile);
+    const viewerIsInterpreter = isInterpreterRole(currentProfile?.role);
+    ["conceptRequestCall", "profileChatTranslator", "profileStartCall"].forEach(id => {
+        $(id)?.classList.toggle("hidden", viewerIsInterpreter);
+    });
+    if ($("profileCallStatus")) $("profileCallStatus").textContent = viewerIsInterpreter ? "Translators cannot call other translators." : "";
     show("profileView");
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -1320,13 +1524,57 @@ function ratingMarkup(rating, count = 0, includeCount = true) {
     return `<div class="profile-rating" aria-label="${value ? `${value.toFixed(1)} out of 5 stars` : "Not yet rated"}"><span class="rating-stars" aria-hidden="true">${stars}</span><span class="rating-value">${value ? value.toFixed(1) : "New"}</span>${countText}</div>`;
 }
 
+function safeProfilePhotoUrl(url) {
+    // Uploaded photos are same-origin file paths. Older profiles may still
+    // point at a public https image. Anything else stays on the initials.
+    const value = String(url || "").trim();
+    if (/^\/api\/files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/content$/i.test(value)) return value;
+    let parsed;
+    try { parsed = new URL(value); } catch (_) { return ""; }
+    if (parsed.username || parsed.password || parsed.protocol !== "https:") return "";
+    if (/[\s"'\\<>()]/.test(parsed.href)) return "";
+    return parsed.href;
+}
+
+let avatarRequestSerial = 0;
+
 function setProfileAvatar(element, profile) {
-    element.textContent = profileInitials(profile.displayName);
+    if (!element) return;
+    const initials = profileInitials(profile?.displayName);
+    const photoUrl = safeProfilePhotoUrl(profile?.photoUrl);
+    const requestId = String(++avatarRequestSerial);
+    element.dataset.avatarRequest = requestId;
+    element.textContent = initials;
     element.style.backgroundImage = "";
-    if (profile.photoUrl && /^https:\/\//i.test(profile.photoUrl)) {
-        element.style.backgroundImage = `url("${profile.photoUrl.replace(/"/g, "%22")}")`;
+    element.style.backgroundSize = "";
+    element.style.backgroundPosition = "";
+    element.style.backgroundRepeat = "";
+    element.classList.remove("has-photo");
+    if (!photoUrl) return;
+    const image = new Image();
+    image.onload = () => {
+        if (element.dataset.avatarRequest !== requestId) return;
+        element.style.backgroundImage = `url("${photoUrl}")`;
+        element.style.backgroundSize = "cover";
+        element.style.backgroundPosition = "center";
+        element.style.backgroundRepeat = "no-repeat";
         element.textContent = "";
-    }
+        element.classList.add("has-photo");
+    };
+    image.src = photoUrl;
+}
+
+function interpreterMarkerIcon(profile) {
+    const available = Boolean(profile?.availability?.availableNow);
+    const photoUrl = safeProfilePhotoUrl(profile?.photoUrl);
+    const state = available ? "available" : "unavailable";
+    const photoStyle = photoUrl ? ` style="--marker-photo:url('${photoUrl}')"` : "";
+    return L.divIcon({
+        className: "interpreter-map-marker-wrap",
+        html: `<span class="interpreter-map-marker ${state}${photoUrl ? " has-photo" : ""}"${photoStyle} aria-hidden="true"></span>`,
+        iconSize: photoUrl ? [42, 42] : [28, 38],
+        iconAnchor: photoUrl ? [21, 50] : [14, 38]
+    });
 }
 
 function profileInitials(name = "") {
@@ -1410,8 +1658,19 @@ async function saveProfile(e) {
     status.textContent = "Saving…";
     try {
         const phoneNormalized = normalizePhoneNumber(phone);
-        const result = await apiFetch("/api/accounts/me", { method: "PATCH", body: JSON.stringify({ displayName, phone }) });
-        currentProfile = { ...currentProfile, ...(result.account || {}), displayName, phone, phoneNormalized };
+        const serviceArea = $("profileServiceArea").value.trim();
+        const existingLocation = currentProfile.profileLocation || currentInterpreterProfile?.serviceLocation || {};
+        const savedArea = [existingLocation.city, existingLocation.state, existingLocation.country].filter(Boolean).join(", ");
+        let profileLocation = serviceArea ? existingLocation : {};
+        if (serviceArea && (serviceArea !== savedArea || !existingLocation.geohash)) {
+            const geocodeResponse = await fetch(`/api/discovery/geocode?q=${encodeURIComponent(serviceArea)}`);
+            const geocodePayload = await geocodeResponse.json().catch(() => ({}));
+            if (!geocodeResponse.ok) throw new Error(geocodePayload.error || "Could not locate that public area.");
+            profileLocation = geocodePayload.location;
+        }
+        if (serviceArea) profileLocation = { ...profileLocation, showOnMap: $("profileShowOnMap").checked };
+        const result = await apiFetch("/api/accounts/me", { method: "PATCH", body: JSON.stringify({ displayName, phone, profileLocation }) });
+        currentProfile = { ...currentProfile, ...(result.account || {}), displayName, phone, phoneNormalized, profileLocation };
         hydrateDashboardProfile();
         status.textContent = "Profile saved.";
     } catch (error) { status.textContent = `Could not save profile: ${error.message}`; }
@@ -1595,46 +1854,47 @@ function hydrateInterpreterProfile(profile = {}) {
     setInterpreterPhoto(p.photoUrl || "");
     updateInterpreterCompletion();
     renderInterpreterLifecycle(p);
+    hydrateDashboardProfile();
     renderTranslatorDashboard();
 }
 
 function renderCredentialDocuments(documents = []) {
     const container = $("credentialDocumentList");
-    const visibleDocuments = documents.filter(document => !pendingCredentialRemovalPaths.has(document.path));
+    const visibleDocuments = documents.filter(credentialDocument => !pendingCredentialRemovalPaths.has(credentialDocument.path));
     if (!visibleDocuments.length) {
         container.innerHTML = "<p>No credential documents uploaded yet.</p>";
         return;
     }
-    container.replaceChildren(...visibleDocuments.map(document => {
+    container.replaceChildren(...visibleDocuments.map(credentialDocument => {
         const row = document.createElement("span");
         row.className = "credential-document";
         const name = document.createElement("span");
-        name.textContent = document.name || "Credential document";
+        name.textContent = credentialDocument.name || "Credential document";
         const view = document.createElement("button");
         view.className = "text-button";
         view.type = "button";
         view.textContent = "View";
-        view.onclick = () => openInterpreterCredentialDocument(document, view);
+        view.onclick = () => openInterpreterCredentialDocument(credentialDocument, view);
         const remove = document.createElement("button");
         remove.className = "text-button reject-action";
         remove.type = "button";
         remove.textContent = "Remove";
         remove.onclick = () => {
-            if (document.path) pendingCredentialRemovalPaths.add(document.path);
+            if (credentialDocument.path) pendingCredentialRemovalPaths.add(credentialDocument.path);
             renderCredentialDocuments(documents);
             updateInterpreterCompletion();
-            $("interpreterProfileStatus").textContent = `${document.name || "Credential document"} will be removed when you save.`;
+            $("interpreterProfileStatus").textContent = `${credentialDocument.name || "Credential document"} will be removed when you save.`;
         };
         row.append(name, view, remove);
         return row;
     }));
 }
 
-async function openInterpreterCredentialDocument(document, button) {
-    if (!document.path) return;
+async function openInterpreterCredentialDocument(credentialDocument, button) {
+    if (!credentialDocument.path) return;
     button.disabled = true;
     try {
-        window.open(document.path, "_blank", "noopener");
+        window.open(credentialDocument.path, "_blank", "noopener");
     } catch (error) {
         $("interpreterProfileStatus").textContent = `Could not open credential document: ${error.message}`;
     } finally { button.disabled = false; }
@@ -1796,15 +2056,24 @@ function interpreterFormData() {
 }
 
 function interpreterWizardSteps(data = interpreterFormData()) {
+    // MySQL migration rows can legitimately omit nested values that Firestore
+    // used to materialize. Normalize them here because this calculator is used
+    // both with complete form data and with lightweight dashboard summaries.
+    const languages = Array.isArray(data?.languages) ? data.languages : [];
+    const specialties = Array.isArray(data?.specialties) ? data.specialties : [];
+    const credentials = Array.isArray(data?.credentials) ? data.credentials : [];
+    const availability = data?.availability && typeof data.availability === "object" ? data.availability : {};
+    const availabilityDays = Array.isArray(availability.days) ? availability.days : [];
+    const serviceOptions = data?.serviceOptions && typeof data.serviceOptions === "object" ? data.serviceOptions : {};
     const hasValidExperience = Number.isFinite(data.yearsExperience) && data.yearsExperience >= 0 && data.yearsExperience <= 80;
-    const hasValidSchedule = data.availability.days.length && data.availability.start && data.availability.end && data.availability.start < data.availability.end;
+    const hasValidSchedule = availabilityDays.length && availability.start && availability.end && availability.start < availability.end;
     const existingDocuments = (currentInterpreterProfile?.credentialDocuments || []).filter(document => !pendingCredentialRemovalPaths.has(document.path));
     const selectedDocuments = [...($("interpreterCredentialFiles").files || [])];
     return [
         { label: "Personal info", complete: Boolean(data.displayName && data.bio), message: "Add your full name and professional bio before continuing." },
-        { label: "Languages", complete: Boolean(data.languages.length && data.specialties.length), message: "Add at least one language and one specialty before continuing." },
-        { label: "Credentials", complete: Boolean(hasValidExperience && data.credentials.length && (existingDocuments.length || selectedDocuments.length)), message: "Add your years of experience, at least one credential, and a supporting document before continuing." },
-        { label: "Service location", complete: Boolean(data.serviceOptions.remote || (data.serviceOptions.inPerson && data.serviceArea)), message: "Choose remote or in-person service. In-person service requires a public city, state/province, or ZIP." },
+        { label: "Languages", complete: Boolean(languages.length && specialties.length), message: "Add at least one language and one specialty before continuing." },
+        { label: "Credentials", complete: Boolean(hasValidExperience && credentials.length && (existingDocuments.length || selectedDocuments.length)), message: "Add your years of experience, at least one credential, and a supporting document before continuing." },
+        { label: "Service location", complete: Boolean(serviceOptions.remote || (serviceOptions.inPerson && data.serviceArea)), message: "Choose remote or in-person service. In-person service requires a public city, state/province, or ZIP." },
         { label: "Availability", complete: Boolean(hasValidSchedule), message: "Choose at least one day and a valid start and end time." }
     ];
 }
@@ -1938,7 +2207,11 @@ async function saveInterpreterProfile(e, draft = false, submitForVerification = 
             if (!geocodeResponse.ok) throw new Error(geocodePayload.error || "Could not locate the public service area.");
             serviceLocation = geocodePayload.location;
         }
-        serviceLocation = data.serviceArea ? { ...serviceLocation, showOnMap: Boolean(data.showOnMap && data.serviceOptions.inPerson) } : {};
+        // Publishing an approximate service area is controlled by its own
+        // explicit consent checkbox. Remote interpreters may also choose to
+        // appear on the map; requiring in-person service silently discarded
+        // that consent and left otherwise valid coordinates invisible.
+        serviceLocation = data.serviceArea ? { ...serviceLocation, showOnMap: Boolean(data.showOnMap) } : {};
         const { phone, serviceArea, showOnMap, ...publicData } = data;
         const payload = {
             ...publicData, serviceLocation, uid: currentUser.uid, photoUrl,
@@ -2032,6 +2305,7 @@ async function createCall(e) {
             receiverHasUid: Boolean(receiver?.uid)
         });
         if (!receiver) throw new Error(`No FiniSpeak account was found with that ${receiverEmail ? "email" : "phone number"}. Ask them to save it in their profile, then try again.`);
+        if (isInterpreterRole(currentProfile?.role) && isInterpreterRole(receiver.role)) throw new Error("Translators cannot call other translators.");
         if (!["customer", "admin"].includes(receiver.role)) throw new Error("That contact belongs to an account that cannot receive customer calls.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
         const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
@@ -2065,6 +2339,47 @@ async function createCall(e) {
     }
 }
 
+async function startDirectTranslatorChat() {
+    const profile = activeDirectoryProfile;
+    const button = $("profileChatTranslator");
+    const status = $("profileCallStatus");
+    if (isInterpreterRole(currentProfile?.role)) {
+        if (status) status.textContent = "Translators cannot call other translators.";
+        return;
+    }
+    if (!profile?.id) return;
+    if (!currentUser) {
+        selectInterpreterForCall(profile);
+        openAuth(false, "customer");
+        $("authStatus").textContent = "Log in, then open this interpreter's profile to start a direct chat.";
+        return;
+    }
+    const attemptId = `translator-chat-${Date.now().toString(36)}-${++callAttemptSequence}`;
+    const originalButtonText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Starting chat…";
+    status.textContent = `Calling ${profile.displayName || "the translator"}…`;
+    try {
+        requireMediaCapture();
+        const created = await apiFetch("/api/calls/", {
+            method: "POST",
+            headers: { "Idempotency-Key": attemptId },
+            body: JSON.stringify({
+                receiverId: profile.id,
+                purpose: "translator_chat",
+                processingMode: selectedProcessingMode
+            })
+        });
+        await joinCall(created.callId, attemptId);
+        if (activeCallId) status.textContent = "";
+    } catch (error) {
+        status.textContent = error.message || "Could not start the chat. Please try again.";
+    } finally {
+        button.disabled = false;
+        button.textContent = originalButtonText;
+    }
+}
+
 async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
     let stage = "call-document-read";
     callLog(attemptId, stage, { callId });
@@ -2075,6 +2390,7 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
         const role = currentProfile.role;
         const guest = Array.isArray(call.guestIds) && call.guestIds.includes(currentUser.uid);
         const allowedCustomer = [call.callerId, call.receiverId].includes(currentUser.uid) || guest;
+        const directTranslatorChat = call.purpose === "translator_chat";
         stage = "participant-validation";
         callLog(attemptId, stage, {
             callId,
@@ -2082,26 +2398,26 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
             allowedCustomer,
             translatorAssigned: Boolean(call.translatorId)
         });
-        if (role !== "translator" && !allowedCustomer) throw new Error("You are not a participant in this call.");
-        if (role === "translator" && !guest) {
+        if ((role !== "translator" || directTranslatorChat) && !allowedCustomer) throw new Error("You are not a participant in this call.");
+        if (role === "translator" && !guest && !directTranslatorChat) {
             if (call.translatorId && call.translatorId !== currentUser.uid) throw new Error("Another translator has already joined.");
             stage = "translator-connect-update";
             await apiFetch(`/api/calls/${encodeURIComponent(callId)}/translator-claim`, { method: "POST", body: "{}" });
         }
-        activeCallId = callId; show("callView"); $("callIdLabel").textContent = callId;
+        activeCallId = callId; setCallPresentation("audio"); show("callView"); $("callIdLabel").textContent = callId;
         const storedMode = call.processingModes?.[currentUser.uid]; if (storedMode) selectedProcessingMode = storedMode; renderProcessingMode();
         resetDetectedLanguage();
         document.querySelector('.video-card[data-role="local"]').dataset.speaker = currentUser.uid;
         $("requestTranslatorButton").classList.toggle("hidden", role === "translator");
         $("requestTranslatorButton").disabled = false;
         stage = "media-permission";
-        callLog(attemptId, stage, { audio: true, video: true });
+        callLog(attemptId, stage, { audio: true, video: false });
         await startMedia();
         callLog(attemptId, "media-ready", {
             audioTracks: localStream?.getAudioTracks().length || 0,
             videoTracks: localStream?.getVideoTracks().length || 0
         });
-        currentCallRole = role === "translator" && !guest ? "translator" : (currentUser.uid === call.callerId ? "caller" : currentUser.uid === call.receiverId ? "receiver" : "guest");
+        currentCallRole = role === "translator" && !guest && !directTranslatorChat ? "translator" : (currentUser.uid === call.callerId ? "caller" : currentUser.uid === call.receiverId ? "receiver" : "guest");
         callExperience?.onJoined(call);
         if (processingModesEnabled && !storedMode && selectedProcessingMode !== "baseline") await apiFetch(`/api/calls/${encodeURIComponent(callId)}/processing-mode`, {method:"PATCH", body:JSON.stringify({processingMode:selectedProcessingMode})});
         stage = "participant-document-write";
@@ -2135,22 +2451,29 @@ async function startMedia() {
     if (localStream) {
         await bindLocalPreview(localStream);
         startCameraRelay();
+        const cameraLive = localStream.getVideoTracks().some(track => track.readyState === "live" && track.enabled);
+        setCallPresentation(cameraLive ? "video" : "audio");
         return;
     }
     requireMediaCapture();
-    localStream = await captureCallMedia();
+    localStream = await captureCallMedia({ video: false });
     for (const track of localStream.getVideoTracks()) watchCameraTrack(track);
     await bindLocalPreview(localStream);
-    document.querySelector('.video-card[data-role="local"]')?.classList.add("is-camera-on");
+    const cameraOn = localStream.getVideoTracks().some(track => track.readyState === "live" && track.enabled);
+    document.querySelector('.video-card[data-role="local"]')?.classList.toggle("is-camera-on", cameraOn);
+    setCallPresentation(cameraOn ? "video" : "audio");
     callExperience?.attachLocalStream(localStream);
     startCameraRelay();
 }
 
-async function captureCallMedia() {
-    const attempts = [
+async function captureCallMedia({ video = true } = {}) {
+    const attempts = video ? [
         { audio: { echoCancellation: true, noiseSuppression: true }, video: frontCamera },
         { audio: true, video: { facingMode: "user" } },
         { audio: false, video: { facingMode: "user" } }
+    ] : [
+        { audio: { echoCancellation: true, noiseSuppression: true }, video: false },
+        { audio: true, video: false }
     ];
     let stream = null;
     let failure = null;
@@ -2162,7 +2485,7 @@ async function captureCallMedia() {
             failure = error;
         }
     }
-    if (!stream) throw failure || new Error("Camera is unavailable on this device.");
+    if (!stream) throw failure || new Error(video ? "Camera is unavailable on this device." : "Microphone is unavailable on this device.");
     if (!stream.getAudioTracks().some(track => track.readyState === "live")) {
         try {
             const microphone = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -2203,20 +2526,24 @@ const watchedCameraTracks = new WeakSet();
 function watchCameraTrack(track) {
     if (!track || watchedCameraTracks.has(track)) return;
     watchedCameraTracks.add(track);
-    track.addEventListener("ended", () => { restartLocalCamera(); });
+    track.addEventListener("ended", () => {
+        if (suppressCameraRestart || !document.body.classList.contains("video-call")) return;
+        restartLocalCamera();
+    });
 }
 
 async function restartLocalCamera() {
-    if (!activeCallId || cameraRestart || callExperience?.isAvatar?.()) return;
-    if (Date.now() - lastCameraRestart < 2000) return;
+    if (!activeCallId || callExperience?.isAvatar?.()) return false;
+    if (cameraRestart) return cameraRestart;
+    if (Date.now() - lastCameraRestart < 2000) return false;
     const current = localStream?.getVideoTracks?.().find(track => track.readyState === "live" && track.enabled);
-    if (current && ($("localCapture")?.videoWidth > 0 || $("localVideo")?.videoWidth > 0)) return;
+    if (current && ($("localCapture")?.videoWidth > 0 || $("localVideo")?.videoWidth > 0)) return true;
     lastCameraRestart = Date.now();
     cameraRestart = (async () => {
         try {
             const fresh = await navigator.mediaDevices.getUserMedia({ audio: false, video: frontCamera });
             const track = fresh.getVideoTracks()[0];
-            if (!track || !localStream) { track?.stop(); return; }
+            if (!track || !localStream) { track?.stop(); return false; }
             for (const old of [...localStream.getVideoTracks()]) {
                 localStream.removeTrack(old);
                 old.stop();
@@ -2226,13 +2553,15 @@ async function restartLocalCamera() {
             await bindLocalPreview(localStream);
             replaceOutgoingVideo(track);
             callExperience?.markCamera?.(true);
+            return true;
         } catch (error) {
             console.warn("Camera restart failed", error);
+            return false;
         } finally {
             cameraRestart = null;
         }
     })();
-    await cameraRestart;
+    return cameraRestart;
 }
 
 function resumeLocalPreview() {
@@ -2240,6 +2569,7 @@ function resumeLocalPreview() {
     replayCallMedia();
     window.setTimeout(() => {
         if (!activeCallId) return;
+        if (!document.body.classList.contains("video-call")) return;
         const track = localStream?.getVideoTracks?.()[0];
         if (!track || track.readyState === "ended") restartLocalCamera();
     }, 400);
@@ -2340,7 +2670,16 @@ function watchCall(callId) {
         const callPayload = await apiFetch(`/api/calls/${encodeURIComponent(callId)}`);
         const call = callPayload.call;
         if (["ended", "declined", "cancelled"].includes(call.status)) {
-            cleanupCall(); show("dashboardView"); loadConversationHistory(); return;
+            const ended = call.status === "ended";
+            if (ended) {
+                lastSessionSnapshot = captureSessionSnapshot();
+                rememberEndedCall(callId);
+            }
+            cleanupCall();
+            show("dashboardView");
+            if (ended) openDashboardPanel("summary");
+            loadConversationHistory();
+            return;
         }
         const [participantPayload, transcriptPayload] = await Promise.all([
           apiFetch(`/api/sessions/${encodeURIComponent(callId)}/participants`),
@@ -2364,10 +2703,17 @@ function watchCall(callId) {
                         : "Customer call connected";
         const participantRows = participantPayload.participants || [];
         if (participantRows.some(person => person?.id === currentUser.uid && person.leftAt)) {
-            cleanupCall(); show("dashboardView"); loadConversationHistory(); return;
+            lastSessionSnapshot = captureSessionSnapshot();
+            rememberEndedCall(callId);
+            cleanupCall();
+            show("dashboardView");
+            openDashboardPanel("summary");
+            loadConversationHistory();
+            return;
         }
         const ids = new Set();
         rosterParticipants = peopleInCall(call, participantRows);
+        syncAudioCallFaces();
         const nextMembershipKey = rosterParticipants.map(person => person?.id).filter(Boolean).sort().join("|");
         if (callMembershipKey && nextMembershipKey !== callMembershipKey) {
             connectSignaling(callId);
@@ -2479,6 +2825,7 @@ function peopleInCall(call, participants) {
     ];
     for (const [idKey, nameKey, role] of roles) {
         const id = call?.[idKey];
+        if (role === "translator" && call?.translationStatus !== "connected" && !people.has(id)) continue;
         if (!id || people.has(id)) continue;
         people.set(id, { id, displayName: call[nameKey] || "Guest", role });
     }
@@ -3228,12 +3575,7 @@ function renderRequestMatchMap(profiles) {
     profiles.forEach(profile => {
         const location = profile.serviceLocation;
         if (!location?.showOnMap || location.latitude == null || location.longitude == null) return;
-        const available = Boolean(profile.availability?.availableNow);
-        const marker = L.marker([location.latitude, location.longitude], { icon: L.divIcon({
-            className: "interpreter-map-marker-wrap",
-            html: `<span class="interpreter-map-marker ${available ? "available" : "unavailable"}" aria-hidden="true"></span>`,
-            iconSize: [28, 38], iconAnchor: [14, 38]
-        }) });
+        const marker = L.marker([location.latitude, location.longitude], { icon: interpreterMarkerIcon(profile) });
         marker.bindPopup(`<strong>${escapeHtml(profile.displayName || "Interpreter")}</strong>`);
         marker.addTo(requestMatchMarkerLayer);
         bounds.push([location.latitude, location.longitude]);
@@ -3413,6 +3755,7 @@ function renderTranscript(rows) {
     const list = $("transcriptList");
     if (!rows.length) {
         list.innerHTML = '<p class="transcript-empty">Transcript lines from Customer 1, Customer 2, and the translator will appear here.</p>';
+        renderAudioTranscript(rows);
         return;
     }
     const localLanguage = [...rows].reverse().find(row => row.speakerId === currentUser?.uid && row.language);
@@ -3441,6 +3784,7 @@ function renderTranscript(rows) {
         list.appendChild(item);
     }
     list.scrollTop = list.scrollHeight;
+    renderAudioTranscript(rows);
 }
 
 function updateParticipantLanguageBadges(rows) {
@@ -3532,33 +3876,63 @@ function toggleMute() {
     const enabled = !tracks[0].enabled;
     for (const track of tracks) track.enabled = enabled;
     setToolLabel("muteButton", enabled ? "Mute" : "Unmute", !enabled, enabled ? "Mute microphone" : "Unmute microphone");
+    syncAudioMute(!enabled);
     if (enabled) playRemoteMedia();
     callExperience?.persistPresence()?.catch(error => console.warn(error));
 }
 async function toggleCamera() {
-    if (callExperience?.isAvatar?.()) { await callExperience.activateCamera(); return; }
-    const tracks = tracksInCall("video");
+    if (callExperience?.isAvatar?.()) {
+        await callExperience.activateCamera();
+        setCallPresentation("video");
+        return;
+    }
+    const tracks = tracksInCall("video").filter(track => track.readyState === "live");
     if (!tracks.length) {
-        await restartLocalCamera();
+        const started = await restartLocalCamera();
+        if (!started) {
+            if ($("callStatus")) $("callStatus").textContent = "Camera is unavailable on this device.";
+            setCallPresentation("audio");
+            return;
+        }
         setToolLabel("cameraButton", "Camera", false, "Turn camera off");
+        setCallPresentation("video");
+        callExperience?.persistPresence()?.catch(error => console.warn(error));
         return;
     }
     const enabled = !tracks[0].enabled;
-    for (const track of tracks) track.enabled = enabled;
+    if (enabled) {
+        for (const track of tracks) track.enabled = true;
+        setCallPresentation("video");
+    } else {
+        setCallPresentation("audio");
+        suppressCameraRestart = true;
+        try {
+            for (const track of tracks) {
+                track.stop();
+                localStream?.removeTrack(track);
+            }
+            for (const pc of peerConnections.values()) senderFor(pc, "video")?.replaceTrack(null).catch(() => {});
+        } finally {
+            suppressCameraRestart = false;
+        }
+    }
     setToolLabel("cameraButton", enabled ? "Camera" : "Camera off", !enabled, enabled ? "Turn camera off" : "Turn camera on");
     callExperience?.markCamera?.(enabled);
     callExperience?.persistPresence()?.catch(error => console.warn(error));
 }
 async function endCall() {
     const callId = activeCallId;
+    lastSessionSnapshot = captureSessionSnapshot();
+    rememberEndedCall(callId);
+    cleanupCall(); show("dashboardView"); openDashboardPanel("summary");
     if (callId) {
         try {
             await apiFetch(`/api/calls/${encodeURIComponent(callId)}/leave`, { method: "POST", body: "{}" });
         } catch (error) {
-            console.warn("Ending the call on the server failed", error);
+            console.warn("Leaving the call on the server failed", error);
         }
     }
-    cleanupCall(); show("dashboardView"); loadConversationHistory();
+    loadConversationHistory();
 }
 function cleanupListeners() { callUnsubs.forEach(u => u()); callUnsubs = []; }
 function cleanupCall(stopMedia = true) {
@@ -3590,6 +3964,7 @@ function cleanupCall(stopMedia = true) {
         if ($("localCapture")) $("localCapture").srcObject = null;
     }
     callExperience?.cleanup();
+    document.body.classList.remove("video-call");
     activeCallId = null; currentCallRole = null;
     activeTranslatorConnected = false;
     if (endingCallId) for (const key of [...routedLanguageCalls]) if (key.startsWith(`${endingCallId}:`)) routedLanguageCalls.delete(key);
@@ -3667,6 +4042,16 @@ function startDashboardListeners() {
             $("acceptIncomingCall").textContent = "Accept";
             openModal("incomingCallModal");
         } else if (currentProfile.role === "translator") {
+            const directChat = pending.purpose === "translator_chat" && pending.receiverId === currentUser.uid;
+            if (directChat) {
+                pendingIncomingCall = { ...pending, kind: "direct-translator" };
+                $("incomingCallEyebrow").textContent = "Incoming translator chat";
+                $("incomingCallTitle").textContent = `${pending.callerName || "Someone"} is calling you`;
+                $("incomingCallDetails").textContent = "Accept to chat directly. No other customer is included in this call.";
+                $("acceptIncomingCall").textContent = "Accept";
+                openModal("incomingCallModal");
+                return;
+            }
             const directInvite = pending.invitedTranslatorId && pending.invitedTranslatorId === currentUser.uid;
             if (!directInvite) {
                 clearPendingIncomingCall();
@@ -3701,7 +4086,7 @@ async function acceptIncomingCall() {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/experience`, {
                 method: "POST", body: JSON.stringify({ action: "accept-invite" })
             });
-        } else if (pending.kind === "customer") {
+        } else if (["customer", "direct-translator"].includes(pending.kind)) {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
                 method: "PATCH", body: JSON.stringify({ state: "connected" })
             });
@@ -3722,7 +4107,7 @@ async function declineIncomingCall() {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/experience`, {
                 method: "POST", body: JSON.stringify({ action: "decline-invite" })
             });
-        } else if (pending.kind === "customer") {
+        } else if (["customer", "direct-translator"].includes(pending.kind)) {
             await apiFetch(`/api/calls/${encodeURIComponent(pending.id)}/state`, {
                 method: "PATCH", body: JSON.stringify({ state: "declined" })
             });
@@ -3822,37 +4207,457 @@ async function submitInterpreterReview(event) {
     }
 }
 
+let historyTranscriptRequest = 0;
+
 async function openHistoryTranscript(call) {
+    if (!call?.id || (activeCallId && document.body.classList.contains("in-call"))) return;
+    const request = ++historyTranscriptRequest;
     $("historyTranscriptTitle").textContent = "Call transcript";
     const date = timestampDate(call.startedAt) || timestampDate(call.createdAt);
     $("historyTranscriptMeta").textContent = date ? date.toLocaleString() : "Previous conversation";
     const list = $("historyTranscriptList");
-    list.innerHTML = '<p class="transcript-empty">Loading transcript…</p>';
-    openModal("transcriptModal");
+    list.innerHTML = '<p class="app-transcript-empty">Loading transcript…</p>';
+    if ($("dashboardView")?.classList.contains("hidden")) show("dashboardView");
+    openDashboardPanel("transcript");
+    $("historyTranscriptTitle")?.focus();
     try {
         const payload = await apiFetch(`/api/calls/${encodeURIComponent(call.id)}/transcripts`);
+        if (request !== historyTranscriptRequest) return;
         const rows = payload.transcripts || [];
         rows.sort((a, b) => (profileTimestampMillis(a.createdAt) || a.clientCreatedAt || 0) - (profileTimestampMillis(b.createdAt) || b.clientCreatedAt || 0));
         renderTranscriptInto(list, rows);
     } catch (error) {
-        list.innerHTML = `<p class="status">Could not load transcript: ${escapeHtml(error.message)}</p>`;
+        if (request !== historyTranscriptRequest) return;
+        list.innerHTML = `<p class="app-transcript-empty">Could not load transcript: ${escapeHtml(error.message)}</p>`;
     }
 }
 
 function renderTranscriptInto(list, rows) {
     if (!rows.length) {
-        list.innerHTML = '<p class="transcript-empty">No transcript was saved for this conversation.</p>';
+        list.innerHTML = '<p class="app-transcript-empty">No transcript was saved for this conversation.</p>';
         return;
     }
-    list.innerHTML = "";
+    list.replaceChildren();
     for (const row of rows) {
-        const item = document.createElement("div"); item.className = "transcript-line";
-        const speaker = document.createElement("div"); speaker.className = "transcript-speaker";
-        const name = document.createElement("span"); name.textContent = row.speakerName || "Participant";
-        const role = document.createElement("span"); role.className = "transcript-role"; role.textContent = formatTranscriptRole(row.speakerRole);
-        const text = document.createElement("p"); text.className = "transcript-text"; text.textContent = row.text || "";
-        speaker.append(name, role); item.append(speaker, text); list.appendChild(item);
+        const item = document.createElement("article");
+        item.className = "app-transcript-line";
+        const speaker = document.createElement("div");
+        speaker.className = "app-transcript-speaker";
+        const name = document.createElement("span");
+        name.className = "app-transcript-name";
+        name.textContent = row.speakerName || "Participant";
+        const role = document.createElement("span");
+        role.className = "app-transcript-role";
+        role.textContent = formatTranscriptRole(row.speakerRole);
+        const text = document.createElement("p");
+        text.className = "app-transcript-text";
+        text.textContent = row.text || "";
+        speaker.append(name, role);
+        item.append(speaker, text);
+        list.appendChild(item);
     }
+}
+
+let conceptCategory = "Education";
+let lastSessionSnapshot = null;
+let lastEndedCall = null;
+let conceptMatchedProfile = null;
+
+function setConceptCategory(name) {
+    conceptCategory = name || "Education";
+    document.querySelectorAll("[data-discovery-category], [data-concept-category], [data-audio-category]").forEach(button => {
+        const value = button.dataset.discoveryCategory || button.dataset.conceptCategory || button.dataset.audioCategory;
+        const active = value === conceptCategory;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+    });
+}
+
+function openConceptCategory(name) {
+    setConceptCategory(name);
+    if ($("dashboardView")?.classList.contains("hidden")) show("dashboardView");
+    if (name === "Education") openDashboardPanel("classroom");
+    else if (name === "Personal") openDashboardPanel("home");
+    else {
+        openDashboardPanel("directory");
+        if ($("directorySearch")) $("directorySearch").value = "Business";
+        filterInterpreterDirectory();
+    }
+}
+
+function renderConceptMapSheet(profile) {
+    const sheet = $("conceptMapSheet");
+    if (!sheet) return;
+    if (!profile) { sheet.hidden = true; return; }
+    sheet.hidden = false;
+    sheet.dataset.profileId = profile.id || "";
+    $("conceptSheetName").textContent = profile.displayName || "Interpreter";
+    const rating = Number(profile.rating || 0);
+    const filled = rating ? Math.max(1, Math.min(5, Math.round(rating))) : 5;
+    $("conceptSheetStars").textContent = `${"★".repeat(filled)}${"☆".repeat(5 - filled)}`;
+    const meta = [...(profile.dialects || []), ...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2).join(" · ");
+    $("conceptSheetMeta").textContent = meta || "Verified interpreter";
+    setProfileAvatar($("conceptSheetAvatar"), profile);
+}
+
+function renderConceptProfile(profile) {
+    const languages = $("conceptProfileLanguages");
+    if (!languages) return;
+    const badges = [...(profile.languages || []), ...(profile.dialects || [])].filter(Boolean).slice(0, 3);
+    languages.innerHTML = badges.map(value => `<span>${escapeHtml(value)}</span>`).join("");
+    const availability = profile.availability || {};
+    const time = availability.start && availability.end
+        ? `${formatAvailabilityTime(availability.start)} – ${formatAvailabilityTime(availability.end)}`
+        : "11:00 AM – 12:00 PM";
+    $("conceptProfileSchedule").textContent = time;
+    const slotMeta = $("profileSlotMeta");
+    if (slotMeta) {
+        const detail = [...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2).join(", ");
+        slotMeta.textContent = detail || "Live session";
+    }
+    const today = new Date();
+    $("conceptProfileWeek").innerHTML = Array.from({ length: 5 }, (_, offset) => {
+        const date = new Date(today);
+        date.setDate(today.getDate() + offset);
+        const label = offset === 0 ? "Today" : String(date.getDate());
+        return offset === 0 ? `<b>${label}</b>` : `<span>${label}</span>`;
+    }).join("");
+}
+
+function formatSessionClock(date) {
+    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function updateReturnToCall() {
+    $("returnToCall")?.classList.toggle("hidden", !activeCallId || document.body.classList.contains("in-call"));
+}
+
+function setCallPresentation(mode) {
+    document.body.classList.toggle("video-call", mode === "video");
+    $("audioVideoButton")?.setAttribute("aria-pressed", String(mode === "video"));
+    syncAudioCallFaces();
+}
+
+function syncAudioMute(muted) {
+    const button = $("audioMuteButton");
+    if (!button) return;
+    button.classList.toggle("is-muted", muted);
+    button.setAttribute("aria-pressed", String(muted));
+    button.setAttribute("aria-label", muted ? "Unmute microphone" : "Mute microphone");
+}
+
+function syncAudioCallFaces() {
+    const other = [...peerProfiles.values()].find(profile => profile?.displayName) || activeDirectoryProfile || selectedInterpreterProfile;
+    const self = currentProfile || { displayName: "You" };
+    if ($("audioCallNameA")) $("audioCallNameA").textContent = other?.displayName || "Waiting";
+    if ($("audioCallNameB")) $("audioCallNameB").textContent = self.displayName || "You";
+    setProfileAvatar($("audioCallAvatarA"), other || { displayName: "Waiting" });
+    setProfileAvatar($("audioCallAvatarB"), self);
+}
+
+function renderAudioTranscript(rows) {
+    const list = $("audioTranscript");
+    if (!list) return;
+    if (!rows?.length) {
+        list.innerHTML = '<p class="audio-transcript-empty">Live transcription appears here as people speak.</p>';
+        return;
+    }
+    const viewerLanguage = callExperience?.viewerLanguage?.() || "en";
+    list.replaceChildren();
+    for (const row of rows) {
+        const name = String(row.speakerName || "Speaker").trim().split(/\s+/)[0] || "Speaker";
+        const line = document.createElement("div");
+        line.className = "audio-line";
+        const speaker = document.createElement("span");
+        speaker.className = "audio-speaker";
+        speaker.textContent = name;
+        const text = document.createElement("p");
+        text.textContent = row.text || "";
+        line.append(speaker, text);
+        list.appendChild(line);
+        const translated = row.translations?.[viewerLanguage]?.text || "";
+        if (translated && translated !== row.text) {
+            const extra = document.createElement("div");
+            extra.className = "audio-line is-translation";
+            const who = document.createElement("span");
+            who.className = "audio-speaker";
+            who.textContent = name;
+            const copy = document.createElement("p");
+            copy.textContent = translated;
+            extra.append(who, copy);
+            list.appendChild(extra);
+        }
+    }
+    list.scrollTop = list.scrollHeight;
+}
+
+function flagKeyMoment() {
+    const when = $("audioCallDuration")?.textContent || $("callDuration")?.textContent || "";
+    const latest = [...($("audioTranscript")?.querySelectorAll("p") || [])].map(item => item.textContent.trim()).filter(Boolean).at(-1) || "";
+    const line = `Key moment ${when}${latest ? `: ${latest}` : ""}`.trim();
+    const notes = $("callNotes");
+    if (notes) {
+        notes.value = [notes.value.trim(), line].filter(Boolean).join("\n");
+        notes.dispatchEvent(new Event("input"));
+    }
+    if ($("audioCallNote") && notes) $("audioCallNote").value = notes.value;
+    $("audioFlagMoment")?.classList.add("is-flagged");
+}
+
+function bookFromAudioCall() {
+    const profile = activeDirectoryProfile || selectedInterpreterProfile || [...peerProfiles.values()].find(item => item?.id);
+    if (profile) activeDirectoryProfile = profile;
+    show("dashboardView");
+    openDashboardPanel("schedule");
+}
+
+function rememberEndedCall(callId) {
+    if (!callId) return;
+    const other = [...peerProfiles.values()].find(profile => profile?.id);
+    lastEndedCall = {
+        id: callId,
+        translatorId: selectedInterpreterProfile?.id || activeDirectoryProfile?.id || other?.id || ""
+    };
+}
+
+function captureSessionSnapshot() {
+    const otherProfile = [...peerProfiles.values()].find(profile => profile?.displayName) || activeDirectoryProfile || selectedInterpreterProfile || null;
+    const lines = [...($("transcriptList")?.querySelectorAll(".transcript-line") || [])].slice(-6).map(line => line.innerText.trim()).filter(Boolean);
+    const startedMs = callExperience?.startedAt?.() || Date.now();
+    const start = new Date(Number.isFinite(startedMs) ? startedMs : Date.now());
+    return {
+        selfName: currentProfile?.displayName || "You",
+        selfPhoto: currentProfile?.photoUrl || "",
+        otherName: otherProfile?.displayName || "Participant",
+        otherPhoto: otherProfile?.photoUrl || "",
+        tutorName: selectedInterpreterProfile?.displayName || activeDirectoryProfile?.displayName || otherProfile?.displayName || "Your interpreter",
+        language: (selectedInterpreterProfile?.languages || activeDirectoryProfile?.languages || otherProfile?.languages || [])[0] || "Session",
+        when: `${formatSessionClock(start)} – ${formatSessionClock(new Date())}`,
+        lines
+    };
+}
+
+async function ensureDirectoryProfiles() {
+    if (directoryProfiles.length) return directoryProfiles;
+    try { directoryProfiles = await fetchDirectoryProfiles(); } catch (error) { console.warn("Concept directory load failed:", error); }
+    return directoryProfiles;
+}
+
+function paintConceptAvatar(element, profile, fallback) {
+    if (!element) return;
+    if (!profile) { element.textContent = fallback || "FS"; element.style.backgroundImage = ""; return; }
+    setProfileAvatar(element, profile);
+}
+
+function renderLessonScreen() {
+    ensureDirectoryProfiles().then(profiles => {
+        const tutor = activeDirectoryProfile || profiles[0];
+        if (!tutor) return;
+        conceptMatchedProfile = tutor;
+        paintConceptAvatar($("conceptTutorAvatar"), tutor, "IG");
+        $("conceptTutorName").textContent = tutor.displayName || "Your tutor";
+        const rating = Number(tutor.rating || 4.9);
+        $("conceptTutorStars").innerHTML = `${"★".repeat(Math.max(1, Math.round(rating)))} <span>${rating.toFixed(1)}</span>`;
+        $("conceptTutorBadge").textContent = tutor.verificationStatus === "verified" ? "Verified" : "Tutor";
+        $("conceptLessonTopic").textContent = (tutor.specialties || [])[0] || "Intermediate Vocabulary";
+    });
+}
+
+function renderScheduleScreen() {
+    const month = $("conceptScheduleMonth");
+    const grid = $("conceptScheduleGrid");
+    if (!month || !grid) return;
+    const now = new Date();
+    month.textContent = now.toLocaleString(undefined, { month: "long", year: "numeric" });
+    const year = now.getFullYear();
+    const monthIndex = now.getMonth();
+    const first = new Date(year, monthIndex, 1).getDay();
+    const days = new Date(year, monthIndex + 1, 0).getDate();
+    const labels = ["S", "M", "T", "W", "T", "F", "S"];
+    grid.replaceChildren();
+    labels.forEach(label => {
+        const cell = document.createElement("span");
+        cell.textContent = label;
+        grid.appendChild(cell);
+    });
+    for (let blank = 0; blank < first; blank += 1) grid.appendChild(document.createElement("span"));
+    for (let day = 1; day <= days; day += 1) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = String(day);
+        if (day === now.getDate()) button.className = "active";
+        button.onclick = () => {
+            grid.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
+            $("conceptSlotLabel").textContent = `${button.textContent} · 11:00 AM – 12:00 PM`;
+        };
+        grid.appendChild(button);
+    }
+    const profile = activeDirectoryProfile || selectedInterpreterProfile;
+    $("conceptSlotMeta").textContent = profile ? [...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2).join(", ") || "Live session" : "Legal, Business";
+}
+
+function renderGoalScreen() {
+    const profile = activeDirectoryProfile || conceptMatchedProfile || directoryProfiles[0];
+    if (!profile) return;
+    conceptMatchedProfile = profile;
+    $("conceptGoalName").textContent = profile.displayName || "Interpreter";
+    paintConceptAvatar($("conceptGoalAvatar"), profile, "AC");
+}
+
+function renderLiveScreen() {
+    const profile = activeDirectoryProfile || conceptMatchedProfile;
+    if (!profile) return;
+    $("conceptLiveName").textContent = profile.displayName || "Interpreter";
+    paintConceptAvatar($("conceptLiveAvatarA"), profile, "AC");
+    paintConceptAvatar($("conceptLiveAvatarB"), { displayName: currentProfile?.displayName || "You" }, "You");
+}
+
+function scoreProfile(profile) {
+    const language = ($("conceptMatchLanguage")?.value || "").toLowerCase();
+    const goal = ($("conceptMatchGoal")?.value || "").toLowerCase();
+    const blob = [profile.displayName, profile.bio, ...(profile.languages || []), ...(profile.dialects || []), ...(profile.specialties || [])].filter(Boolean).join(" ").toLowerCase();
+    let score = 72 + Math.min(12, Number(profile.rating || 0) * 2);
+    if (language && blob.includes(language)) score += 12;
+    goal.split(/\s+/).filter(word => word.length > 3).forEach(word => { if (blob.includes(word)) score += 4; });
+    if (profile.verificationStatus === "verified") score += 6;
+    return Math.min(99, Math.round(score));
+}
+
+function renderAutoMatchScreen() {
+    const list = $("conceptMatchList");
+    if (!list) return;
+    ensureDirectoryProfiles().then(profiles => {
+        const ranked = [...profiles].sort((a, b) => scoreProfile(b) - scoreProfile(a)).slice(0, 2);
+        conceptMatchedProfile = ranked[0] || null;
+        if (!ranked.length) {
+            list.innerHTML = '<p class="transcript-empty">No interpreters are available to match yet.</p>';
+            return;
+        }
+        list.innerHTML = ranked.map(profile => {
+            const tags = [...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2);
+            const quote = profile.bio ? `"${profile.bio.slice(0, 42)}${profile.bio.length > 42 ? "…" : ""}"` : "Highly recommended";
+            return `<article class="concept-match-card"><div class="concept-avatar">${escapeHtml(profileInitials(profile.displayName))}</div><div><strong>${escapeHtml(profile.displayName || "Interpreter")}</strong><div class="concept-stars">${"★".repeat(Math.max(1, Math.round(Number(profile.rating || 5))))}</div><div class="concept-lang-badges">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join("")}</div><p>${escapeHtml(quote)}</p></div><span class="match-score">${scoreProfile(profile)}% Match</span></article>`;
+        }).join("");
+        ranked.forEach((profile, index) => paintConceptAvatar(list.querySelectorAll(".concept-avatar")[index], profile));
+    });
+}
+
+function renderSummaryScreen() {
+    const snapshot = lastSessionSnapshot;
+    if (!snapshot) return;
+    $("conceptSummaryLeft").textContent = snapshot.otherName;
+    $("conceptSummaryRight").textContent = snapshot.selfName;
+    $("conceptSummaryTutor").textContent = snapshot.tutorName;
+    $("conceptSummaryLanguage").textContent = snapshot.language;
+    if (snapshot.when) $("conceptSummaryWhen").textContent = snapshot.when;
+    paintConceptAvatar($("conceptSummaryAvatarA"), { displayName: snapshot.otherName, photoUrl: snapshot.otherPhoto }, "FS");
+    paintConceptAvatar($("conceptSummaryAvatarB"), { displayName: snapshot.selfName, photoUrl: snapshot.selfPhoto }, "You");
+    paintConceptAvatar($("conceptSummaryTutorAvatar"), { displayName: snapshot.tutorName }, "CC");
+    if (snapshot.lines.length) {
+        $("conceptTranscriptHits").innerHTML = snapshot.lines.map(line => `<p>${escapeHtml(line)}</p>`).join("");
+    }
+}
+
+function renderEducationScreen() {
+    const list = $("educationHistory");
+    if (!list) return;
+    const rows = [...historyCalls.values()].sort((a, b) => callMillis(b) - callMillis(a)).slice(0, 4);
+    if (!rows.length) return;
+    list.innerHTML = rows.map(call => {
+        const other = (currentUser?.uid === call.callerId ? call.receiverName : call.callerName) || call.translatorName || "FiniSpeak session";
+        const date = timestampDate(call.startedAt) || timestampDate(call.createdAt);
+        const when = date ? date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "Recent";
+        return `<article><div><strong>${escapeHtml(other)}</strong><small>${escapeHtml(when)}</small></div><div><strong>${escapeHtml(call.language || "Session")}</strong><small>${escapeHtml(call.status || "Completed")}</small></div></article>`;
+    }).join("");
+}
+
+function bindConceptScreens() {
+    const activateGroup = selector => {
+        document.querySelectorAll(selector).forEach(button => {
+            button.onclick = () => {
+                button.parentElement.querySelectorAll("button").forEach(item => {
+                    const active = item === button;
+                    item.classList.toggle("active", active);
+                    item.setAttribute("aria-pressed", String(active));
+                });
+            };
+        });
+    };
+    activateGroup("[data-duration]");
+    activateGroup("[data-goal-duration]");
+    activateGroup("[data-live-duration]");
+    activateGroup("[data-lesson-topic]");
+    $("conceptTutorProfile").onclick = () => { if (conceptMatchedProfile || activeDirectoryProfile) openPublicProfile(conceptMatchedProfile || activeDirectoryProfile); };
+    $("conceptBookLesson").onclick = () => openDashboardPanel("schedule");
+    $("conceptRequestInstant").onclick = () => {
+        if (isInterpreterRole(currentProfile?.role) && activeDirectoryProfile) {
+            if ($("conceptScheduleStatus")) $("conceptScheduleStatus").textContent = "Translators cannot call other translators.";
+            if ($("profileCallStatus")) $("profileCallStatus").textContent = "Translators cannot call other translators.";
+            return;
+        }
+        if (activeDirectoryProfile) startDirectTranslatorChat();
+        else {
+            openDashboardPanel("home");
+            if ($("conceptMoreTools")) $("conceptMoreTools").open = true;
+            $("receiverEmail")?.focus();
+        }
+    };
+    $("conceptConfirmSchedule").onclick = () => {
+        $("conceptScheduleStatus").textContent = `Session held for ${$("conceptSlotLabel").textContent}. Request an instant call when everyone is ready.`;
+    };
+    $("conceptGoalBook").onclick = () => {
+        if ($("conceptMatchGoal")) $("conceptMatchGoal").value = $("conceptGoalInput").value;
+        openDashboardPanel("match");
+    };
+    $("conceptLiveBook").onclick = () => openDashboardPanel("schedule");
+    $("conceptQuickBook").onclick = () => {
+        if (conceptMatchedProfile) activeDirectoryProfile = conceptMatchedProfile;
+        openDashboardPanel("schedule");
+    };
+    $("conceptMatchProfile").onclick = () => { if (conceptMatchedProfile) openPublicProfile(conceptMatchedProfile); };
+    $("conceptRerunMatch").onclick = () => renderAutoMatchScreen();
+    $("conceptMatchLanguage").onchange = () => renderAutoMatchScreen();
+    $("conceptMatchGoal").oninput = () => renderAutoMatchScreen();
+    $("openIntelligenceHub").onclick = () => openDashboardPanel("intelligence");
+    $("educationBookParent").onclick = () => {
+        $("conceptGoalInput").value = "Parent meeting";
+        openDashboardPanel("goal");
+    };
+    $("educationLiveSupport").onclick = () => openDashboardPanel("live");
+    $("conceptViewTranscript").onclick = () => {
+        if (lastEndedCall?.id) openHistoryTranscript(lastEndedCall);
+        else openDashboardPanel("live");
+    };
+    $("conceptEmailSummary").onclick = () => {
+        const body = lastSessionSnapshot?.lines?.join("\n") || $("conceptLiveTranscript")?.innerText || "FiniSpeak session summary";
+        window.location.href = `mailto:?subject=${encodeURIComponent("FiniSpeak session summary")}&body=${encodeURIComponent(body)}`;
+    };
+    $("conceptBookAgain").onclick = () => openDashboardPanel("directory");
+    $("conceptContinueSession").onclick = () => openDashboardPanel("lesson");
+    $("conceptTranscriptSearch").oninput = () => {
+        const query = $("conceptTranscriptSearch").value.trim().toLowerCase();
+        const lines = lastSessionSnapshot?.lines || [...$("conceptLiveTranscript").querySelectorAll("p")].map(item => item.textContent);
+        const hits = lines.filter(line => !query || line.toLowerCase().includes(query));
+        $("conceptTranscriptHits").innerHTML = hits.map(line => `<p>${escapeHtml(line)}</p>`).join("");
+    };
+    document.querySelectorAll("[data-rate]").forEach(button => {
+        button.onclick = () => {
+            const value = Number(button.dataset.rate);
+            document.querySelectorAll("[data-rate]").forEach(star => star.classList.toggle("active", Number(star.dataset.rate) <= value));
+            if ($("reviewRating")) $("reviewRating").value = String(value);
+            if (lastEndedCall?.translatorId) openReviewModal(lastEndedCall);
+        };
+    });
+    $("conceptRequestCall").onclick = () => $("profileChatTranslator").click();
+    $("conceptScheduleSession").onclick = () => {
+        if (!currentUser) {
+            openAuth(false, "customer");
+            $("authStatus").textContent = "Log in to schedule a session.";
+            return;
+        }
+        show("dashboardView");
+        openDashboardPanel("schedule");
+    };
 }
 
 function escapeHtml(value) {

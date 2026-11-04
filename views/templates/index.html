@@ -7,8 +7,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261018-mobile-call-details">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261102-map-pin-photo">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261101-in-app-transcript">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261101-main">
 </head>
 <body>
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -94,6 +95,7 @@
 
     <section id="authView" class="panel hidden">
         <div class="card narrow">
+            <button id="authBack" class="screen-back" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg><span>Back</span></button>
             <div class="section-heading"><span class="eyebrow">FiniSpeak account</span><h2 id="authTitle">Sign in</h2></div>
             <form id="authForm">
                 <label id="nameField" class="hidden">Name<input id="displayName" autocomplete="name"></label>
@@ -113,7 +115,7 @@
 
     <section id="dashboardView" class="panel hidden">
         <div class="app-shell">
-            <aside class="dashboard-sidebar" aria-label="Account navigation">
+            <aside id="dashboardSidebar" class="dashboard-sidebar" aria-label="Account navigation">
                 <div class="sidebar-user">
                     <div id="profileInitials" class="profile-avatar" aria-hidden="true">FS</div>
                     <div><strong id="sidebarName">FiniSpeak</strong><span id="sidebarRole">Customer</span></div>
@@ -132,24 +134,34 @@
 
             <div class="dashboard-content">
                 <header class="mobile-app-header">
-                    <div class="mobile-app-brand"><span aria-hidden="true">◎</span><strong>FiniSpeak</strong></div>
-                    <button class="mobile-settings-button" type="button" data-open-panel="settings" aria-label="Open settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></button>
+                    <div class="mobile-app-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
+                    <div class="concept-header-actions">
+                        <button id="returnToCall" class="hidden" type="button">Return to call</button>
+                        <button id="conceptSearchButton" class="mobile-settings-button" type="button" aria-label="Search translators"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button>
+                        <button id="conceptMenuButton" class="mobile-settings-button" type="button" aria-label="Open account menu" aria-expanded="false" aria-controls="dashboardSidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg></button>
+                    </div>
                 </header>
+                <button id="dashboardBackButton" class="screen-back hidden" type="button" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg><span>Back</span></button>
                 <div id="dashboardHome" class="dashboard-panel">
                     <div class="dashboard-heading"><div><span class="eyebrow">Welcome back</span><h2 id="welcomeName">FiniSpeak</h2><p id="accountRole"></p></div><span id="accountStatusBadge" class="status-badge">Active</span></div>
-                    <section class="app-action-hub" aria-labelledby="appActionTitle">
+                    <section class="app-action-hub concept-welcome" aria-labelledby="appActionTitle">
                         <p class="app-greeting">Hello, <strong id="appWelcomeName">there</strong></p>
                         <h2 id="appActionTitle">What do you need today?</h2>
-                        <div class="app-primary-actions">
-                            <button type="button" data-open-panel="directory"><span class="app-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5M11 8v6M8 11h6"/></svg></span><span><strong>Find an interpreter</strong><small>Search languages and specialties</small></span><span class="app-action-arrow" aria-hidden="true">›</span></button>
-                            <button id="openStartCall" type="button"><span class="app-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7.5 4.5h-2A1.5 1.5 0 0 0 4 6c0 7.7 6.3 14 14 14a1.5 1.5 0 0 0 1.5-1.5v-2l-4.2-1-1.1 2a12.2 12.2 0 0 1-7.7-7.7l2-1.1z"/></svg></span><span><strong>Start a call</strong><small>Connect and request live help</small></span><span class="app-action-arrow" aria-hidden="true">›</span></button>
+                        <div class="app-primary-actions concept-welcome-actions">
+                            <button id="openFindTranslator" type="button" data-open-panel="directory"><span class="concept-btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4M4 20v-4h4"/></svg></span><span>Find a Translator</span></button>
+                            <button id="openLanguageLesson" type="button" data-open-panel="lesson"><span class="concept-btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 9.5 12 5l9 4.5-9 4.5L3 9.5z"/><path d="M7 12.2V16c0 .8 2.2 2.5 5 2.5s5-1.7 5-2.5v-3.8"/><path d="M21 10v6"/></svg></span><span id="openLanguageLessonLabel">Book a Language Lesson</span></button>
+                            <button id="openDirectCall" type="button"><span class="concept-btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h2.2l1.2 3-1.7 1a11 11 0 0 0 5.8 5.8l1-1.7 3 1.2V15a1.5 1.5 0 0 1-1.5 1.5A13.5 13.5 0 0 1 5.5 5 1.5 1.5 0 0 1 7 3.5z"/></svg></span><span>Call Another User</span></button>
                         </div>
-                        <div class="app-category-row" aria-label="Browse common needs">
+                        <p class="concept-blurb">FiniSpeak connects you with verified bilingual speakers fluent in specific languages and dialects, ensuring precise and professional communication for your needs.</p>
+                        <div class="app-category-row concept-inline-categories" aria-label="Browse common needs">
                             <button type="button" data-discovery-category="Business">Business</button>
-                            <button type="button" data-discovery-category="Education">Education</button>
+                            <button type="button" data-discovery-category="Education" class="active" aria-pressed="true">Education</button>
                             <button type="button" data-discovery-category="Personal">Personal</button>
                         </div>
+                        <button id="openStartCall" class="concept-text-action" type="button">Start a call</button>
                     </section>
+                    <details id="conceptMoreTools" class="concept-more-tools">
+                        <summary>Start a call or review recent conversations</summary>
                     <div class="dashboard-grid">
                         <div class="card call-start-card" id="callStartCard">
                             <div id="customerTools">
@@ -168,30 +180,31 @@
                                 </form>
                                 <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
                             </div>
-                            <div id="translatorTools" class="hidden translator-workspace">
-                                <div class="translator-hero-row">
-                                    <div><span class="eyebrow">Interpreter workspace</span><h3>Your interpreter dashboard</h3><p>Manage your availability, profile, verification, and interpretation sessions from one place.</p></div>
-                                    <label class="availability-switch"><input id="dashboardAvailableNow" type="checkbox"><span><strong id="dashboardAvailabilityLabel">Unavailable</strong><small>Accept new requests</small></span></label>
-                                </div>
-                                <div class="translator-stat-grid">
-                                    <div class="translator-stat"><span>Profile</span><strong id="dashboardProfileCompletion">0%</strong><small id="dashboardProfileCompletionText">Finish onboarding</small></div>
-                                    <div class="translator-stat"><span>Verification</span><strong id="dashboardVerification">Unverified</strong><small>Credential review status</small></div>
-                                    <div class="translator-stat"><span>Rating</span><strong id="dashboardRating">New</strong><small id="dashboardRatingCount">No reviews yet</small></div>
-                                    <div class="translator-stat"><span>Experience</span><strong id="dashboardExperience">0 yrs</strong><small>Interpreter experience</small></div>
-                                </div>
-                                <div class="translator-summary-grid">
-                                    <div class="translator-summary"><span class="eyebrow">Languages & dialects</span><p id="dashboardLanguages">Add your languages and dialects.</p></div>
-                                    <div class="translator-summary"><span class="eyebrow">Specialties</span><p id="dashboardSpecialties">Add your specialties.</p></div>
-                                    <div class="translator-summary"><span class="eyebrow">Schedule</span><p id="dashboardSchedule">Add your availability schedule.</p></div>
-                                </div>
-                                <div class="translator-actions"><button type="button" data-open-panel="interpreter">Edit interpreter profile</button><span id="translatorRequestStatus" class="request-ready">Waiting for interpretation requests…</span></div>
-                            </div>
                         </div>
                         <div class="card history-card">
                             <div class="section-heading"><span class="eyebrow">Your activity</span><h3>Recent conversations</h3></div>
                             <p>Open a session to review its saved transcript.</p>
                             <div id="conversationHistory" class="conversation-history"><p class="transcript-empty">Loading conversations…</p></div>
                         </div>
+                    </div>
+                    </details>
+                    <div id="translatorTools" class="hidden translator-workspace concept-translator-home">
+                        <div class="translator-hero-row">
+                            <div><span class="eyebrow">Interpreter workspace</span><h3>Your interpreter dashboard</h3><p>Manage your availability, profile, verification, and interpretation sessions from one place.</p></div>
+                            <label class="availability-switch"><input id="dashboardAvailableNow" type="checkbox"><span><strong id="dashboardAvailabilityLabel">Unavailable</strong><small>Accept new requests</small></span></label>
+                        </div>
+                        <div class="translator-stat-grid">
+                            <div class="translator-stat"><span>Profile</span><strong id="dashboardProfileCompletion">0%</strong><small id="dashboardProfileCompletionText">Finish onboarding</small></div>
+                            <div class="translator-stat"><span>Verification</span><strong id="dashboardVerification">Unverified</strong><small>Credential review status</small></div>
+                            <div class="translator-stat"><span>Rating</span><strong id="dashboardRating">New</strong><small id="dashboardRatingCount">No reviews yet</small></div>
+                            <div class="translator-stat"><span>Experience</span><strong id="dashboardExperience">0 yrs</strong><small>Interpreter experience</small></div>
+                        </div>
+                        <div class="translator-summary-grid">
+                            <div class="translator-summary"><span class="eyebrow">Languages & dialects</span><p id="dashboardLanguages">Add your languages and dialects.</p></div>
+                            <div class="translator-summary"><span class="eyebrow">Specialties</span><p id="dashboardSpecialties">Add your specialties.</p></div>
+                            <div class="translator-summary"><span class="eyebrow">Schedule</span><p id="dashboardSchedule">Add your availability schedule.</p></div>
+                        </div>
+                        <div class="translator-actions"><button type="button" data-open-panel="interpreter">Edit interpreter profile</button><span id="translatorRequestStatus" class="request-ready">Waiting for interpretation requests…</span></div>
                     </div>
                     <p id="dashboardStatus" class="status" aria-live="polite"></p>
                 </div>
@@ -203,6 +216,8 @@
                             <div class="profile-field"><label for="profileDisplayName">Display name</label><input id="profileDisplayName" autocomplete="name" required></div>
                             <div class="profile-field"><label for="profileEmail">Email</label><input id="profileEmail" type="email" disabled aria-describedby="emailHelp"><p id="emailHelp" class="field-help">Your sign-in email cannot be changed here yet.</p></div>
                             <div class="profile-field"><label for="profilePhone">Phone number for in-app calls</label><div class="phone-input-group"><select id="profilePhoneCountry" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select><input id="profilePhone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="317 555 0123" aria-describedby="profilePhoneHelp"></div><p id="profilePhoneHelp" class="field-help">Other FiniSpeak users can enter this number to reach you inside the app. FiniSpeak does not place telephone-network calls.</p></div>
+                            <div class="profile-field"><label for="profileServiceArea">Approximate public area</label><input id="profileServiceArea" placeholder="Indianapolis, IN" autocomplete="address-level2" aria-describedby="profileServiceAreaHelp"><p id="profileServiceAreaHelp" class="field-help">Add a city, state/province, or ZIP—not a street address. For verified interpreters, this can place an approximate marker on the directory map.</p></div>
+                            <label class="inline-check"><input id="profileShowOnMap" type="checkbox"> Show my approximate public area on the interpreter map</label>
                             <div class="profile-field"><label for="profileRole">Account type</label><input id="profileRole" disabled></div>
                             <button type="submit">Save profile</button>
                         </form>
@@ -211,9 +226,18 @@
                 </div>
 
                 <div id="dashboardDirectory" class="dashboard-panel hidden">
-                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search nearby or remote profiles and compare expertise, ratings, and availability.</p></div><div class="directory-view-switch" role="group" aria-label="Directory view"><button id="directoryListView" class="secondary active" type="button" aria-pressed="true">List</button><button id="directoryMapView" class="secondary" type="button" aria-pressed="false">Map</button><button id="directorySplitView" class="secondary" type="button" aria-pressed="false">Split</button></div></div>
+                    <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search nearby or remote profiles and compare expertise, ratings, and availability.</p></div></div>
                     <div class="directory-filters card" aria-label="Interpreter filters">
-                        <label class="directory-search" for="directorySearch">Search<input id="directorySearch" type="search" placeholder="Name, language, specialty, or keyword"></label>
+                        <label class="directory-search" for="directorySearch"><span class="filter-label">Search</span><input id="directorySearch" type="search" placeholder="Find a Translator by Language/Dialect"></label>
+                        <div class="concept-filter-chips" aria-label="Quick translator filters">
+                            <button type="button" data-concept-chip="Spanish">Spanish</button>
+                            <button type="button" data-concept-chip="Medellín">Medellín</button>
+                            <button type="button" data-concept-chip="Legal">Legal</button>
+                            <button type="button" data-concept-chip="Medical">Medical</button>
+                        </div>
+                        <details class="concept-advanced-filters">
+                            <summary>More filters</summary>
+                            <div class="concept-advanced-grid">
                         <label for="directoryLanguage">Language<select id="directoryLanguage"><option value="">All languages</option></select></label>
                         <label for="directoryDialect">Dialect<select id="directoryDialect"><option value="">All dialects</option></select></label>
                         <label for="directorySpecialty">Specialty<select id="directorySpecialty"><option value="">All specialties</option></select></label>
@@ -223,12 +247,15 @@
                         <label for="directorySort">Sort by<select id="directorySort"><option value="top-rated">Top rated</option><option value="experience">Most experienced</option><option value="name">Name</option></select></label>
                         <label class="directory-available"><input id="directoryAvailable" type="checkbox"> Available now</label>
                         <label class="directory-available"><input id="directoryVerified" type="checkbox"> Verified only</label>
+                            </div>
+                            <div class="directory-view-switch" role="group" aria-label="Directory view"><button id="directoryListView" class="secondary active" type="button" aria-pressed="true">List</button><button id="directoryMapView" class="secondary" type="button" aria-pressed="false">Map</button><button id="directorySplitView" class="secondary" type="button" aria-pressed="false">Split</button></div>
+                            <div class="directory-location-bar card"><button id="useMyLocation" type="button">Use my location</button><form id="manualLocationForm"><label for="manualLocation">Or enter a city, state, or ZIP<span class="location-entry"><input id="manualLocation" placeholder="Indianapolis, IN"><button class="secondary" type="submit">Search</button></span></label></form><span id="directoryLocationStatus" role="status" aria-live="polite">Location is optional for remote search.</span></div>
+                            <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p><div class="directory-map-actions"><button id="showAllMapped" class="secondary" type="button">Show all mapped translators</button><button id="searchMapArea" class="secondary hidden" type="button">Search this area</button></div></div>
+                        </details>
                     </div>
-                    <div class="directory-location-bar card"><button id="useMyLocation" type="button">Use my location</button><form id="manualLocationForm"><label for="manualLocation">Or enter a city, state, or ZIP<span class="location-entry"><input id="manualLocation" placeholder="Indianapolis, IN"><button class="secondary" type="submit">Search</button></span></label></form><span id="directoryLocationStatus" role="status" aria-live="polite">Location is optional for remote search.</span></div>
-                    <div class="directory-results-heading"><p id="directoryResultCount">Loading interpreters…</p><button id="searchMapArea" class="secondary hidden" type="button">Search this area</button></div>
                     <div id="directoryResultsLayout" class="directory-results-layout list-view">
                         <div id="interpreterDirectory" class="interpreter-directory" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading profiles…</div></div>
-                        <div id="interpreterMapPanel" class="interpreter-map-panel hidden"><div id="interpreterMap" aria-label="Map of interpreter service areas" role="application"></div><p class="map-privacy-note">Locations are approximate public service areas. Your precise location is never shared.</p></div>
+                        <div id="interpreterMapPanel" class="interpreter-map-panel hidden"><div id="interpreterMap" aria-label="Map of interpreter service areas" role="application"></div><article id="conceptMapSheet" class="concept-map-sheet" hidden><div class="concept-sheet-person"><div id="conceptSheetAvatar" class="concept-avatar" aria-hidden="true">LM</div><div><strong id="conceptSheetName">Interpreter</strong><div id="conceptSheetStars" class="concept-stars" aria-hidden="true">★★★★★</div><small id="conceptSheetMeta">Language · Specialty</small></div></div><button id="conceptViewProfile" type="button">View Profile</button></article><p id="interpreterMapStatus" class="map-status" role="status" aria-live="polite"></p><p class="map-privacy-note">Locations are approximate public service areas. Your precise location is never shared.</p></div>
                     </div>
                 </div>
 
@@ -291,6 +318,21 @@
                 </div>
 
                 <div id="dashboardClassroom" class="dashboard-panel hidden">
+                    <section class="concept-screen concept-education" aria-labelledby="educationPortalTitle">
+                        <div class="concept-education-top"><h2 id="educationPortalTitle">Education Portal</h2><button id="openIntelligenceHub" type="button" aria-label="Open Intelligence Hub"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8L4.2 7l2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21v4h-.2a1.7 1.7 0 0 0-1.4 1z"/></svg></button></div>
+                        <h3>Verified Translator Pool</h3>
+                        <button id="educationBookParent" class="concept-soft" type="button">Book for Parent Meeting</button>
+                        <button id="educationLiveSupport" class="concept-primary-block" type="button">Live Classroom Support</button>
+                        <h3>Student History</h3>
+                        <div id="educationHistory" class="concept-history-list" aria-live="polite">
+                            <article><div><strong>Joseph Brown</strong><small>January, Screen</small></div><div><strong>English</strong><small>Parent/teacher con.</small></div></article>
+                            <article><div><strong>Maria Gomez</strong><small>March 10, 2024</small></div><div><strong>Spanish</strong><small>IEP Meeting</small></div></article>
+                        </div>
+                        <h3>Transcript Archive</h3>
+                        <div class="concept-archive-row"><span>Compliance Metrics</span><span class="concept-ferpa">FERPA-Ready</span></div>
+                    </section>
+                    <details class="classroom-roadmap">
+                        <summary>Classroom roadmap</summary>
                     <div class="dashboard-heading"><div><span class="eyebrow">Language Classroom</span><h2>Learn with an avatar or a teacher</h2><p>Students will be able to attend language classes taught by AI avatars or by human translators who choose to teach. This page is a placeholder. Classes are not open, and billing is not active.</p></div><span class="status-badge pending-badge">Placeholder</span></div>
                     <div class="classroom-grid">
                         <article class="card"><span class="eyebrow">Classes</span><h3>Create, browse, and join</h3><p>Schedule a class, look through upcoming lessons, and join when the classroom opens.</p><span class="classroom-placeholder">Placeholder</span></article>
@@ -311,6 +353,140 @@
                             <article class="card"><span class="eyebrow">Progress</span><h3>Lessons that follow you</h3><p>Later lessons will use what you have already practiced.</p><span class="classroom-placeholder">Placeholder</span></article>
                             <article class="card"><span class="eyebrow">Your calls</span><h3>Practice real phrases</h3><p>Phrases from earlier calls can be used for practice only with the student's permission. Nothing is pulled from a call automatically.</p><span class="classroom-placeholder">Placeholder</span></article>
                         </div>
+                    </section>
+                    </details>
+                </div>
+
+                <div id="dashboardLesson" class="dashboard-panel hidden">
+                    <section class="concept-screen" aria-labelledby="lessonTitle">
+                        <h2 id="lessonTitle">Book a Language Lesson</h2>
+                        <p class="concept-kicker">Your Tutors</p>
+                        <article class="concept-person-card">
+                            <div id="conceptTutorAvatar" class="concept-avatar">IG</div>
+                            <div class="concept-person-copy"><strong id="conceptTutorName">Your tutor</strong><div id="conceptTutorStars" class="concept-stars">★★★★★ <span>4.9</span></div><span id="conceptTutorBadge" class="concept-verified">C2 Verified</span></div>
+                            <button id="conceptTutorProfile" type="button">View Profile</button>
+                        </article>
+                        <p class="concept-kicker">Continue Learning</p>
+                        <div class="concept-progress-card"><span class="concept-progress-icon" aria-hidden="true">📘</span><div><strong id="conceptLessonTopic">Intermediate Vocabulary</strong><span id="conceptLessonProgress" class="concept-progress-bar"><span style="width:62%"></span></span></div></div>
+                        <p class="concept-kicker">Choose a Topic</p>
+                        <div id="conceptLessonTopics" class="concept-topic-row" role="group" aria-label="Lesson topic">
+                            <button type="button" class="active" data-lesson-topic="Conversation Practice">Conversation Practice</button>
+                            <button type="button" data-lesson-topic="Grammar">Grammar</button>
+                        </div>
+                        <button id="conceptBookLesson" class="concept-primary-block" type="button">Book Again</button>
+                    </section>
+                </div>
+
+                <div id="conceptSchedulePanel" class="dashboard-panel hidden">
+                    <section class="concept-screen" aria-labelledby="scheduleTitle">
+                        <h2 id="scheduleTitle">Schedule a Session</h2>
+                        <p id="conceptScheduleMonth" class="concept-month">April 2024</p>
+                        <div id="conceptScheduleGrid" class="concept-calendar" aria-label="Choose a day"></div>
+                        <label class="concept-field" for="conceptSessionType">Session type<select id="conceptSessionType"><option>Audio</option><option>Video</option></select></label>
+                        <p class="concept-kicker">Select a Duration</p>
+                        <div class="concept-duration" role="group" aria-label="Session duration">
+                            <button type="button" data-duration="30">30 min</button>
+                            <button type="button" data-duration="60" class="active" aria-pressed="true">60 min</button>
+                            <button type="button" data-duration="90">90 min</button>
+                        </div>
+                        <div class="concept-slot"><span>Today</span><strong id="conceptSlotLabel">11:00 AM – 12:00 PM</strong><small id="conceptSlotMeta">Legal, Business</small></div>
+                        <button id="conceptRequestInstant" class="concept-primary-block" type="button">Request Instant Call</button>
+                        <button id="conceptConfirmSchedule" class="concept-primary-block" type="button">Schedule a Session</button>
+                        <p id="conceptScheduleStatus" class="status" role="status"></p>
+                    </section>
+                </div>
+
+                <div id="dashboardGoal" class="dashboard-panel hidden">
+                    <section class="concept-screen concept-goal" aria-labelledby="goalTitle">
+                        <h2 id="goalTitle">Session Goal</h2>
+                        <label class="concept-field" for="conceptGoalInput">Goal<input id="conceptGoalInput" value="Translate contract" maxlength="160"></label>
+                        <div class="concept-goal-person"><div><strong id="conceptGoalName">Ana Castillo</strong></div><div id="conceptGoalAvatar" class="concept-avatar">AC</div></div>
+                        <label class="concept-field" for="conceptGoalWhen">1. Date and Time<input id="conceptGoalWhen" value="April 28, 2026 at 10:00 AM"></label>
+                        <label class="concept-field" for="conceptGoalType">2. Session Type<select id="conceptGoalType"><option>Video</option><option>Audio</option></select></label>
+                        <p class="concept-kicker">4. Duration</p>
+                        <div class="concept-duration" role="group" aria-label="Goal session duration">
+                            <button type="button" data-goal-duration="30">30 min</button>
+                            <button type="button" data-goal-duration="60">60 min</button>
+                            <button type="button" data-goal-duration="90" class="active" aria-pressed="true">90 min</button>
+                        </div>
+                        <button id="conceptGoalBook" class="concept-primary-block" type="button">Book Session</button>
+                    </section>
+                </div>
+
+                <div id="dashboardLive" class="dashboard-panel hidden">
+                    <section class="concept-screen concept-live" aria-labelledby="liveTitle">
+                        <h2 id="liveTitle" class="sr-only">Real time transcription</h2>
+                        <div class="concept-live-photos" aria-hidden="true"><div id="conceptLiveAvatarA" class="concept-live-photo">AC</div><div id="conceptLiveAvatarB" class="concept-live-photo concept-live-photo-alt">JS</div></div>
+                        <div class="concept-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+                        <div class="concept-live-head"><strong id="conceptLiveName">Ana Castillo</strong><label class="concept-flag">Flag Moment<input id="conceptFlagMoment" type="checkbox" role="switch"></label></div>
+                        <div class="concept-live-columns"><span>1. Date and Time</span><span>Notepad</span></div>
+                        <div id="conceptLiveTranscript" class="concept-live-transcript">
+                            <p><strong>Ana.</strong> I’ll translate the contract for you. Let’s start with the first section.</p>
+                            <p><strong>Joseph.</strong> Traduciré el contrato para usted. Comencemos con la primera sección.</p>
+                            <p><strong>Ana.</strong> The contract outlines the terms of the agreement.</p>
+                        </div>
+                        <div class="concept-duration" role="group" aria-label="Transcription session length">
+                            <button type="button" data-live-duration="30">30 min</button>
+                            <button type="button" data-live-duration="60" class="active" aria-pressed="true">60 min</button>
+                            <button type="button" data-live-duration="90">90 min</button>
+                        </div>
+                        <button id="conceptLiveBook" class="concept-primary-block" type="button">Book Session</button>
+                    </section>
+                </div>
+
+                <div id="dashboardMatch" class="dashboard-panel hidden">
+                    <section class="concept-screen" aria-labelledby="matchTitle">
+                        <div class="concept-match-filters"><label for="conceptMatchLanguage">Language<select id="conceptMatchLanguage"><option>Spanish</option><option>English</option><option>Arabic</option><option>Mandarin</option><option>French</option></select></label><label for="conceptMatchGoal">Session Goal<input id="conceptMatchGoal" value="Translate contract"></label></div>
+                        <h2 id="matchTitle">Top Matches</h2>
+                        <div id="conceptMatchList" class="concept-match-list" aria-live="polite"></div>
+                        <div class="concept-match-actions"><button id="conceptQuickBook" type="button">Quick Book</button><button id="conceptMatchProfile" class="secondary" type="button">View Profile</button></div>
+                        <p class="concept-match-note">Matches update as specialty and rating change.</p>
+                        <button id="conceptRerunMatch" class="text-button" type="button">Re-run match with updated criteria</button>
+                    </section>
+                </div>
+
+                <div id="dashboardSummary" class="dashboard-panel hidden">
+                    <section class="concept-screen" aria-labelledby="summaryScreenTitle">
+                        <h2 id="summaryScreenTitle">Session Summary</h2>
+                        <div class="concept-summary-people"><div><div id="conceptSummaryAvatarA" class="concept-avatar">FS</div><strong id="conceptSummaryLeft">Participant</strong></div><div><div id="conceptSummaryAvatarB" class="concept-avatar">You</div><strong id="conceptSummaryRight">You</strong></div></div>
+                        <p id="conceptSummaryWhen" class="concept-when"></p>
+                        <button id="conceptViewTranscript" class="concept-primary-block" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4.5 4.5V20a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M14 3.5V8h4.5M8.5 13h7M8.5 16.5h5"/></svg>View Transcription</button>
+                        <button id="conceptEmailSummary" class="text-button" type="button">Send via Email</button>
+                        <p class="summary-rate-title">Rate the translation</p>
+                        <div id="conceptRating" class="concept-rate" role="group" aria-label="Rate the translation"><button type="button" data-rate="1" aria-label="1 star">★</button><button type="button" data-rate="2" aria-label="2 stars">★</button><button type="button" data-rate="3" aria-label="3 stars">★</button><button type="button" data-rate="4" aria-label="4 stars">★</button><button type="button" data-rate="5" aria-label="5 stars">★</button></div>
+                        <button id="conceptBookAgain" class="concept-primary-block" type="button">Book Again</button>
+                        <div class="concept-post-summary">
+                            <h3>Post-Session Summary</h3>
+                            <p>Smart tag auto-generator for topics discussed: helps with rebooking relevance and transcript searchability.</p>
+                            <div class="concept-summary-tutor"><div id="conceptSummaryTutorAvatar" class="concept-avatar">CC</div><div><strong id="conceptSummaryTutor">Clara Chen</strong><small id="conceptSummaryLanguage">Chinese</small></div></div>
+                            <p class="concept-kicker">Topics Discussed</p>
+                            <div id="conceptSummaryTopics" class="concept-topic-cloud"><span class="topic-green">Homework Help</span><span class="topic-gold">Job Interview Prep</span><span class="topic-purple">Parent-Teacher Discussion</span><span class="topic-orange">Tutoring</span><span class="topic-pink">School Project</span></div>
+                            <label class="concept-field" for="conceptTranscriptSearch">Search transcript<input id="conceptTranscriptSearch" type="search" placeholder="Search transcript"></label>
+                            <div id="conceptTranscriptHits" class="concept-transcript-hits"></div>
+                            <h3>Rebooking Intelligence</h3>
+                            <p>Need a follow-up on algebra?</p>
+                            <button id="conceptContinueSession" type="button">Continue Session</button>
+                        </div>
+                    </section>
+                </div>
+
+                <div id="dashboardIntelligence" class="dashboard-panel hidden">
+                    <section class="concept-screen concept-intel" aria-labelledby="intelTitle">
+                        <h2 id="intelTitle">Intelligence Hub</h2>
+                        <p>Insights and analytics for interpreted language sessions.</p>
+                        <h3>Session Trends</h3>
+                        <div class="concept-heat" role="img" aria-label="Session trends by topic across four weeks. Activity rises from week one to week four.">
+                            <div class="concept-heat-head"><span></span><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div>
+                            <div class="concept-heat-row"><span>College Prep</span><i class="h1"></i><i class="h2"></i><i class="h4"></i><i class="h5"></i></div>
+                            <div class="concept-heat-row"><span>Homework</span><i class="h2"></i><i class="h3"></i><i class="h4"></i><i class="h5"></i></div>
+                            <div class="concept-heat-row"><span>Business</span><i class="h1"></i><i class="h3"></i><i class="h4"></i><i class="h5"></i></div>
+                            <div class="concept-heat-row"><span>Travel</span><i class="h2"></i><i class="h3"></i><i class="h4"></i><i class="h5"></i></div>
+                            <div class="concept-heat-row"><span>Immigration Help</span><i class="h1"></i><i class="h2"></i><i class="h4"></i><i class="h5"></i></div>
+                        </div>
+                        <h3>Translation Accuracy</h3>
+                        <div class="concept-rings"><div class="ring ring-a"><strong>92%</strong></div><div class="ring ring-b"><strong>87%</strong></div><div class="ring ring-c"><strong>95%</strong></div></div>
+                        <h3>User Feedback</h3>
+                        <div class="concept-feedback"><span>Clear</span><span class="feedback-gold">Helpful phrasing</span><span class="feedback-blue">Clear</span></div>
                     </section>
                 </div>
 
@@ -378,18 +554,53 @@
                     </div>
                     <p id="adminStatus" class="status" role="status" aria-live="polite"></p>
                 </div>
+
+                <div id="dashboardTranscript" class="dashboard-panel hidden">
+                    <section class="concept-screen app-transcript" aria-labelledby="historyTranscriptTitle">
+                        <span class="eyebrow">Previous conversation</span>
+                        <h2 id="historyTranscriptTitle" tabindex="-1">Call transcript</h2>
+                        <p id="historyTranscriptMeta" class="app-transcript-when"></p>
+                        <div id="historyTranscriptList" class="app-transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Previous call transcript"></div>
+                    </section>
+                </div>
+                <nav class="concept-tabbar" aria-label="Session category">
+                    <button type="button" data-concept-category="Business">Business</button>
+                    <button type="button" data-concept-category="Education" class="active" aria-pressed="true">Education</button>
+                    <button type="button" data-concept-category="Personal">Personal</button>
+                </nav>
             </div>
         </div>
     </section>
 
     <section id="profileView" class="panel profile-detail-view hidden">
         <div class="profile-detail-shell">
-            <button id="backToDirectory" class="text-button profile-back" type="button">← Back to interpreters</button>
+            <div class="concept-profile-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong><button id="profileSearchButton" class="mobile-settings-button" type="button" aria-label="Search translators"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button></div>
+            <button id="backToDirectory" class="screen-back profile-back" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg><span>Back to interpreters</span></button>
             <article class="profile-detail-card">
-                <div class="profile-detail-hero">
-                    <div id="publicProfileAvatar" class="public-profile-avatar" aria-hidden="true">FS</div>
-                    <div class="profile-detail-heading"><span id="publicProfileAvailability" class="availability-pill">Availability unknown</span><h1 id="publicProfileName">Interpreter</h1><p id="publicProfileHeadline">Professional FiniSpeak interpreter</p><div id="publicProfileRating" class="profile-rating"></div></div>
-                    <button id="profileStartCall" type="button">Start a call</button>
+                <div class="profile-overview">
+                    <div class="profile-overview-top">
+                        <div id="publicProfileAvatar" class="public-profile-avatar" aria-hidden="true">FS</div>
+                        <div class="profile-overview-copy">
+                            <div class="profile-name-row"><h1 id="publicProfileName">Interpreter</h1><span id="publicProfileVerified" class="profile-verified hidden"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7.5"/></svg>Verified</span></div>
+                            <div id="conceptProfileLanguages" class="concept-lang-badges"></div>
+                            <div id="publicProfileRating" class="profile-rating"></div>
+                            <p id="publicProfileHeadline" class="profile-specialty-line">Professional interpreter</p>
+                            <span id="publicProfileAvailability" class="availability-pill">Availability unknown</span>
+                        </div>
+                    </div>
+                    <div class="concept-week" id="conceptProfileWeek" aria-label="Upcoming days"></div>
+                    <div class="profile-slot">
+                        <div id="publicProfileSlotAvatar" class="concept-avatar profile-slot-avatar" aria-hidden="true">FS</div>
+                        <span class="profile-slot-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span>
+                        <div><strong id="conceptProfileSchedule">11:00 AM – 12:00 PM</strong><small id="profileSlotMeta">Session</small></div>
+                    </div>
+                    <div class="profile-call-actions">
+                        <button id="conceptRequestCall" class="profile-primary" type="button">Request Instant Call</button>
+                        <button id="conceptScheduleSession" class="profile-primary" type="button">Schedule a Session</button>
+                        <button id="profileChatTranslator" class="secondary" type="button">Chat with translator</button>
+                        <button id="profileStartCall" class="secondary" type="button">Start a call with another person</button>
+                        <p id="profileCallStatus" class="status" role="status" aria-live="polite"></p>
+                    </div>
                 </div>
                 <div class="profile-detail-grid">
                     <div class="profile-main-content">
@@ -400,11 +611,45 @@
                     <aside class="profile-facts card"><h3>Profile details</h3><dl><div><dt>Experience</dt><dd id="publicProfileExperience">—</dd></div><div><dt>Credentials</dt><dd id="publicProfileCredentials">—</dd></div><div><dt>Service location</dt><dd id="publicProfileLocation">Remote only</dd></div><div><dt>Schedule</dt><dd id="publicProfileSchedule">—</dd></div><div><dt>Verification</dt><dd id="publicProfileVerification">—</dd></div></dl></aside>
                 </div>
             </article>
+            <nav class="concept-tabbar concept-tabbar-profile" aria-label="Session category">
+                <button type="button" data-concept-category="Business">Business</button>
+                <button type="button" data-concept-category="Education" class="active" aria-pressed="true">Education</button>
+                <button type="button" data-concept-category="Personal">Personal</button>
+            </nav>
         </div>
     </section>
 
     <section id="callView" class="call-view hidden">
         <video id="localCapture" class="local-capture" autoplay muted playsinline webkit-playsinline aria-hidden="true"></video>
+        <section id="audioCall" class="audio-call" aria-label="Audio call">
+            <div class="audio-call-shell">
+                <div class="audio-call-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
+                <div class="audio-call-scroll">
+                    <div class="audio-call-people">
+                        <div><div id="audioCallAvatarA" class="concept-avatar" aria-hidden="true">FS</div><strong id="audioCallNameA">Waiting</strong></div>
+                        <div><div id="audioCallAvatarB" class="concept-avatar" aria-hidden="true">You</div><strong id="audioCallNameB">You</strong></div>
+                    </div>
+                    <p id="audioCallDuration" class="audio-call-timer">00:00</p>
+                    <div class="audio-call-controls" role="toolbar" aria-label="Audio call controls">
+                        <button id="audioMuteButton" class="audio-round" type="button" aria-pressed="false" aria-label="Mute microphone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8 21h8"/></svg></button>
+                        <button id="audioHangupButton" class="audio-round audio-hangup" type="button" aria-label="End call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.6.6 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 7a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11 11 0 0 0 .6 3.6 1 1 0 0 1-.25 1L6.6 10.8Z"/></svg></button>
+                        <button id="audioVideoButton" class="audio-round" type="button" aria-pressed="false" aria-label="Turn camera on"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/></svg></button>
+                    </div>
+                    <h2 class="audio-transcript-title">Live transcription</h2>
+                    <div id="audioTranscript" class="audio-transcript" role="log" aria-live="polite" aria-relevant="additions text"><p class="audio-transcript-empty">Live transcription appears here as people speak.</p></div>
+                    <div class="audio-note-row">
+                        <input id="audioCallNote" type="text" maxlength="4000" placeholder="Add a note..." aria-label="Add a note">
+                        <button id="audioFlagMoment" class="audio-flag" type="button">Flag Key Moment</button>
+                    </div>
+                    <button id="audioBookNow" class="audio-book" type="button">Book Now</button>
+                </div>
+                <nav class="concept-tabbar audio-call-tabs" aria-label="Session category">
+                    <button type="button" data-audio-category="Business">Business</button>
+                    <button type="button" data-audio-category="Education" class="active" aria-pressed="true">Education</button>
+                    <button type="button" data-audio-category="Personal">Personal</button>
+                </nav>
+            </div>
+        </section>
         <div id="callShell" class="call-shell subs-both is-transcript-collapsed are-call-details-collapsed" data-pane="video">
             <div class="call-frame">
                 <section id="smartInterpreter" class="smart-interpreter" hidden aria-hidden="true">
@@ -500,7 +745,7 @@
                             <div class="documents-list">
                                 <button id="uploadDocument" type="button">Upload document</button>
                                 <p class="documents-hint">PDF, Word, or text</p>
-                                <input id="documentFile" type="file" accept=".txt,.md,.csv,.text,.json,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+                                <input id="documentFile" class="sr-only" type="file" accept=".txt,.md,.csv,.text,.json,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" tabindex="-1" aria-label="Choose a document to upload">
                                 <ul id="documentList"></ul>
                             </div>
                             <div class="documents-editor">
@@ -572,17 +817,6 @@
                 <button id="declineIncomingCall" class="danger" type="button">Decline</button>
                 <button id="acceptIncomingCall" type="button">Accept</button>
             </div>
-        </div>
-    </div>
-
-    <div id="transcriptModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="historyTranscriptTitle" aria-describedby="historyTranscriptMeta">
-        <div class="modal-card transcript-modal-card">
-            <div class="transcript-header">
-                <div><span class="eyebrow">Previous conversation</span><h2 id="historyTranscriptTitle">Call transcript</h2></div>
-                <button id="closeTranscriptModal" class="secondary" type="button">Close</button>
-            </div>
-            <p id="historyTranscriptMeta"></p>
-            <div id="historyTranscriptList" class="transcript-list history-transcript-list" role="log" aria-label="Previous call transcript"></div>
         </div>
     </div>
 
@@ -757,6 +991,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261018-mobile-call-details"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261102-map-pin-photo"></script>
 </body>
 </html>

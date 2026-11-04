@@ -40,6 +40,19 @@ def test_email_verification_bypass_enabled():
     return os.getenv("FINISPEAK_TEST_DEPLOYMENT", "").strip().lower() == "true"
 
 
+def local_development_sign_in_enabled():
+    """Skip outbound email verification for the local SQLite app, never for tests or production."""
+    if os.getenv("FINISPEAK_ENV", "development").strip().lower() != "development":
+        return False
+    try:
+        if current_app.testing:
+            return False
+        uri = str(current_app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+    except RuntimeError:
+        return False
+    return uri.startswith("sqlite")
+
+
 def _now():
     return datetime.now(timezone.utc)
 
@@ -174,7 +187,7 @@ def authenticate_password(email, password):
         raise AuthenticationError("Email or password is incorrect.")
     credential.failed_attempts, credential.locked_until, credential.updated_at = 0, None, now
     if not credential.email_verified_at:
-        if test_email_verification_bypass_enabled():
+        if test_email_verification_bypass_enabled() or local_development_sign_in_enabled():
             credential.email_verified_at = now
         else:
             db.session.commit()

@@ -55,6 +55,14 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn('id="muteButton" class="secondary" type="button" aria-pressed="false"', self.html)
         self.assertIn('id="cameraButton" class="secondary" type="button" aria-pressed="false"', self.html)
 
+    def test_call_document_upload_uses_mobile_picker_and_resets_between_calls(self):
+        self.assertIn('id="documentFile" class="sr-only" type="file"', self.html)
+        self.assertNotIn('id="documentFile" type="file"', self.html)
+        script = (Path(__file__).parents[1] / "views/static/js/call-experience.js").read_text()
+        self.assertIn('typeof input.showPicker === "function"', script)
+        self.assertIn('deps.$("uploadDocument").onclick = openDocumentPicker', script)
+        self.assertIn('state.activeDocumentId = null', script[script.index("function cleanup()"):])
+
     def test_call_stage_keeps_interpreter_and_participant_grid(self):
         self.assertLess(self.html.index('id="smartInterpreter"'), self.html.index('class="call-nav"'))
         self.assertIn('id="smartInterpreterWave"', self.html)
@@ -117,6 +125,7 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn("onRemotePartial", script)
         self.assertIn("function attachRemoteTrack", app)
         self.assertIn("function peopleInCall", app)
+        self.assertIn('call?.translationStatus !== "connected"', app)
         self.assertIn("nextMembershipKey !== callMembershipKey", app)
         self.assertIn("cameraRelay?.reconnect?.()", app)
         self.assertIn('callMembershipKey = ""', app)
@@ -167,7 +176,9 @@ class AccessibilityRegressionTests(unittest.TestCase):
 
     def test_transcripts_are_named_logs(self):
         self.assertIn('id="transcriptList" class="transcript-list" role="log"', self.html)
-        self.assertIn('id="historyTranscriptList" class="transcript-list history-transcript-list" role="log"', self.html)
+        self.assertIn('id="dashboardTranscript"', self.html)
+        self.assertIn('id="historyTranscriptList" class="app-transcript-list" role="log"', self.html)
+        self.assertNotIn('id="transcriptModal"', self.html)
 
     def test_experimental_processing_controls_are_hidden_and_stateful(self):
         self.assertNotIn('id="preCallProcessingModes"', self.html)

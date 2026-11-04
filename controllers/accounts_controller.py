@@ -2,8 +2,30 @@ from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
+from services.geo_service import encode_geohash, validate_coordinates
 
 AccountModel = repository_proxy("accounts")
+
+
+def _profile_location(value):
+    if value in (None, {}):
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("Profile location must be a public city, state/province, or ZIP.")
+    try:
+        latitude, longitude = validate_coordinates(value.get("latitude"), value.get("longitude"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Profile location must include valid approximate coordinates.") from exc
+    return {
+        "label": str(value.get("label") or "").strip()[:255],
+        "city": str(value.get("city") or "").strip()[:160],
+        "state": str(value.get("state") or "").strip()[:160],
+        "country": str(value.get("country") or "").strip()[:160],
+        "latitude": round(latitude, 3),
+        "longitude": round(longitude, 3),
+        "geohash": encode_geohash(latitude, longitude),
+        "showOnMap": bool(value.get("showOnMap", False)),
+    }
 
 
 def current():
@@ -40,7 +62,10 @@ def update_current():
     if not display_name or len(display_name) > 160 or len(phone) > 64:
         return jsonify({"error": "A valid displayName and phone are required"}), 400
     try:
-        account = AccountModel.update_profile(identity["uid"], {"displayName": display_name, "phone": phone})
+        changes = {"displayName": display_name, "phone": phone}
+        if "profileLocation" in data:
+            changes["profileLocation"] = _profile_location(data.get("profileLocation"))
+        account = AccountModel.update_profile(identity["uid"], changes)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return (jsonify({"account": account}), 200) if account else (jsonify({"error": "Account not found"}), 404)

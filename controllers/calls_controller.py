@@ -22,11 +22,19 @@ CallModel = repository_proxy("calls")
 ParticipantModel = repository_proxy("participants")
 TranslatorModel = repository_proxy("translators")
 TranscriptModel = repository_proxy("transcripts")
+INTERPRETER_ROLES = {"translator", "translator_applicant"}
+TRANSLATOR_CALL_BLOCKED = "Translators cannot call other translators."
+
+
+def _is_interpreter(account):
+    return (account or {}).get("role") in INTERPRETER_ROLES
 
 
 def create():
     data = json_body()
     receiver_id = data.get("receiverId")
+    purpose = str(data.get("purpose") or "").strip()
+    direct_translator_chat = purpose == "translator_chat"
 
     if not receiver_id:
         return jsonify({"error": "receiverId is required"}), 400
@@ -37,9 +45,27 @@ def create():
         return error
     if identity["uid"] == receiver_id:
         return jsonify({"error": "You cannot call yourself."}), 400
-    receiver = AccountModel.get(receiver_id)
-    if not receiver or receiver.get("status", "active") != "active" or receiver.get("role") not in {"customer", "admin"}:
-        return jsonify({"error": "The receiving customer account is unavailable."}), 404
+    if direct_translator_chat and _is_interpreter(identity):
+        return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
+    if direct_translator_chat:
+        public_translator = TranslatorModel.get(receiver_id)
+        translator_record = TranslatorModel.get(receiver_id, public=False) if public_translator else None
+        receiver_id = (translator_record or {}).get("uid") or receiver_id
+        if identity["uid"] == receiver_id:
+            return jsonify({"error": "You cannot call yourself."}), 400
+        receiver = AccountModel.get(receiver_id)
+        if (not public_translator or not receiver or receiver.get("status", "active") != "active"
+                or receiver.get("role") not in {"translator", "admin"}):
+            return jsonify({"error": "That translator is unavailable."}), 404
+    else:
+        receiver = AccountModel.get(receiver_id)
+        if _is_interpreter(identity) and _is_interpreter(receiver):
+            return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
+        if not receiver or receiver.get("status", "active") != "active" or receiver.get("role") not in {"customer", "admin"}:
+            return jsonify({"error": "The receiving customer account is unavailable."}), 404
+
+    if _is_interpreter(identity) and data.get("translatorId"):
+        return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
 
     translator = None
     translator_id = data.get("translatorId")
@@ -60,7 +86,7 @@ def create():
             language=data.get("language"),
             dialect=data.get("dialect"),
             specialty=data.get("specialty"),
-            purpose=str(data.get("purpose") or "").strip(),
+            purpose=purpose,
             scheduled_at=data.get("scheduledAt"),
             idempotency_key=idempotency_key,
             processing_mode=processing_mode,
@@ -111,8 +137,8 @@ def detail(call_id):
 def leave(call_id):
     """Hang up for the person who pressed End Call.
 
-    The caller or the person they called ends the conversation for everyone
-    still connected. A guest or interpreter leaves on their own.
+    Every participant leaves independently. The stored call is ended only
+    after the final active participant has left.
     """
     identity, error = identity_or_response()
     if error:
@@ -124,13 +150,15 @@ def leave(call_id):
     if identity.get("role") != "admin" and not CallModel.is_participant(call, uid):
         return jsonify({"error": "You cannot make this call-state change."}), 403
     ParticipantModel.mark_left(call_id, uid)
-    ends_for_everyone = uid in {call.get("callerId"), call.get("receiverId")}
     try:
-        if ends_for_everyone:
+        updated = CallModel.release_member(call_id, uid) or call
+        active_participants = [
+            participant for participant in ParticipantModel.for_call(call_id)
+            if participant.get("uid") != uid and not participant.get("leftAt")
+        ]
+        if not active_participants:
             updated = CallModel.transition(call_id, "ended")
-        else:
-            updated = CallModel.release_member(call_id, uid)
-        return jsonify({"call": updated or call})
+        return jsonify({"call": updated or call, "left": True})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
 
@@ -166,6 +194,12 @@ def _translator_request_visible(call, uid):
     return bool(invited) and invited == uid
 
 
+def _direct_translator_chat_visible(call, uid):
+    return (call.get("purpose") == "translator_chat"
+            and call.get("receiverId") == uid
+            and call.get("status") == "ringing")
+
+
 def request_translator(call_id):
     identity, error = identity_or_response()
     if error:
@@ -184,6 +218,8 @@ def request_translator(call_id):
             return jsonify({"error": "This interpretation request was sent to another interpreter."}), 403
         updated = CallModel.request_translator(call_id, decline_translator_id=identity["uid"])
         return (jsonify({"call": updated}), 200) if updated else (jsonify({"error": "Call not found."}), 404)
+    if _is_interpreter(identity):
+        return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
     if identity.get("role") != "admin" and identity["uid"] not in {call.get("callerId"), call.get("receiverId")}:
         return jsonify({"error": "Call not found or access denied."}), 404
     if call.get("status") in {"ended", "declined", "cancelled"}:
@@ -368,6 +404,7 @@ def pending_requests():
     if identity.get("role") != "admin" and not TranslatorModel.get(identity["uid"]):
         return jsonify({"error": "Only a verified interpreter can view requests."}), 403
     uid = identity["uid"]
-    calls = [call for call in CallModel.all() if _translator_request_visible(call, uid)]
-    calls.sort(key=lambda call: 0 if str(call.get("invitedTranslatorId") or "") == uid else 1)
+    calls = [call for call in CallModel.all()
+             if _direct_translator_chat_visible(call, uid) or _translator_request_visible(call, uid)]
+    calls.sort(key=lambda call: 0 if _direct_translator_chat_visible(call, uid) else 1)
     return jsonify({"calls": calls})
