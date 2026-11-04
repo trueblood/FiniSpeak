@@ -1,4 +1,4 @@
-import { createCallExperience } from "./call-experience.js?v=20261103-call-followup";
+import { createCallExperience } from "./call-experience.js?v=20261104-call-photos";
 import { createCameraRelay } from "./camera-relay.js?v=20261018-membership-refresh";
 import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 
@@ -1556,29 +1556,91 @@ function safeProfilePhotoUrl(url) {
 }
 
 let avatarRequestSerial = 0;
+const callFacePhotos = new Map();
+const callFacePhotoRequests = new Set();
+
+function rememberCallFacePhoto(id, name, photoUrl) {
+    const safe = safeProfilePhotoUrl(photoUrl);
+    if (!safe) return "";
+    if (id) callFacePhotos.set(`id:${id}`, safe);
+    const normalized = String(name || "").trim().toLocaleLowerCase();
+    if (normalized) callFacePhotos.set(`name:${normalized}`, safe);
+    return safe;
+}
+
+function lookupCallFacePhoto(person) {
+    if (!person) return "";
+    const id = person.id || person.uid || "";
+    const name = String(person.displayName || "").trim().toLocaleLowerCase();
+    const direct = rememberCallFacePhoto(id, person.displayName, person.photoUrl);
+    if (direct) return direct;
+    if (id && callFacePhotos.has(`id:${id}`)) return callFacePhotos.get(`id:${id}`);
+    if (name && callFacePhotos.has(`name:${name}`)) return callFacePhotos.get(`name:${name}`);
+    const profiles = [currentInterpreterProfile, currentProfile, selectedInterpreterProfile, activeDirectoryProfile, ...directoryProfiles];
+    interpreterProfileCache.forEach(profile => profiles.push(profile));
+    for (const profile of profiles) {
+        if (!profile) continue;
+        const profileId = profile.id || profile.uid || "";
+        const profileName = String(profile.displayName || "").trim().toLocaleLowerCase();
+        if ((id && profileId === id) || (name && profileName && profileName === name)) {
+            const saved = rememberCallFacePhoto(profileId || id, profile.displayName || person.displayName, profile.photoUrl);
+            if (saved) return saved;
+        }
+    }
+    return "";
+}
+
+function ensureCallFacePhoto(person) {
+    const id = person?.id || person?.uid || "";
+    if (!id || lookupCallFacePhoto(person) || callFacePhotoRequests.has(id)) return;
+    callFacePhotoRequests.add(id);
+    apiFetch(`/api/translators/${encodeURIComponent(id)}`).then(profile => {
+        if (profile) interpreterProfileCache.set(id, profile);
+        rememberCallFacePhoto(id, profile?.displayName || person.displayName, profile?.photoUrl);
+        syncAudioCallFaces();
+    }).catch(() => {});
+}
 
 function setProfileAvatar(element, profile) {
     if (!element) return;
+    const id = profile?.id || profile?.uid || "";
+    const faceId = id || String(profile?.displayName || "");
     const initials = profileInitials(profile?.displayName);
-    const photoUrl = safeProfilePhotoUrl(profile?.photoUrl);
+    const photoUrl = lookupCallFacePhoto(profile);
+    if (!photoUrl && element.dataset.faceId === faceId && element.classList.contains("has-photo")) return;
+    if (photoUrl && element.dataset.photoFailed === photoUrl && element.dataset.faceId === faceId && element.dataset.avatarReady === "1") return;
+    if (element.dataset.faceId === faceId && element.dataset.photoUrl === (photoUrl || "") && element.dataset.avatarReady === "1") return;
+    element.dataset.faceId = faceId;
+    element.dataset.photoUrl = photoUrl || "";
+    element.dataset.avatarReady = "1";
+    if (!photoUrl || element.dataset.photoFailed === photoUrl) {
+        element.textContent = initials;
+        element.style.backgroundImage = "";
+        element.classList.remove("has-photo");
+        return;
+    }
+    element.style.backgroundImage = `url("${photoUrl}")`;
+    element.style.backgroundSize = "cover";
+    element.style.backgroundPosition = "center";
+    element.style.backgroundRepeat = "no-repeat";
+    element.textContent = "";
+    element.classList.add("has-photo");
     const requestId = String(++avatarRequestSerial);
     element.dataset.avatarRequest = requestId;
-    element.textContent = initials;
-    element.style.backgroundImage = "";
-    element.style.backgroundSize = "";
-    element.style.backgroundPosition = "";
-    element.style.backgroundRepeat = "";
-    element.classList.remove("has-photo");
-    if (!photoUrl) return;
     const image = new Image();
     image.onload = () => {
         if (element.dataset.avatarRequest !== requestId) return;
-        element.style.backgroundImage = `url("${photoUrl}")`;
-        element.style.backgroundSize = "cover";
-        element.style.backgroundPosition = "center";
-        element.style.backgroundRepeat = "no-repeat";
-        element.textContent = "";
         element.classList.add("has-photo");
+        delete element.dataset.photoFailed;
+    };
+    image.onerror = () => {
+        if (element.dataset.avatarRequest !== requestId) return;
+        element.dataset.photoFailed = photoUrl;
+        element.dataset.photoUrl = "";
+        element.dataset.avatarReady = "";
+        element.textContent = initials;
+        element.style.backgroundImage = "";
+        element.classList.remove("has-photo");
     };
     image.src = photoUrl;
 }
@@ -2961,7 +3023,7 @@ function ensureParticipantTile(participant) {
         card = document.createElement("article");
         card.className = "video-card";
         card.dataset.peer = participant.id;
-        card.innerHTML = '<video autoplay muted playsinline></video><canvas class="avatar-canvas is-hidden" aria-hidden="true"></canvas><div class="video-slate"><strong></strong><span>Camera</span></div><span class="speaking-indicator" aria-hidden="true"></span><div class="video-label"><span class="video-role"></span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name"></span></div><p class="tile-subtitle" hidden></p>';
+        card.innerHTML = '<video autoplay muted playsinline></video><canvas class="avatar-canvas is-hidden" aria-hidden="true"></canvas><div class="call-face-photo concept-avatar" aria-hidden="true"></div><div class="video-slate"><strong></strong><span>Camera</span></div><span class="speaking-indicator" aria-hidden="true"></span><div class="video-label"><span class="video-role"></span><span class="video-label-separator" aria-hidden="true">·</span><span class="video-name"></span></div><p class="tile-subtitle" hidden></p>';
         $("videoGrid").appendChild(card);
     }
     const role = ["translator", "caller", "receiver"].includes(participant.role) ? participant.role : "guest";
@@ -2973,6 +3035,7 @@ function ensureParticipantTile(participant) {
     card.querySelector(".video-slate strong").textContent = name;
     const video = card.querySelector("video");
     card.classList.toggle("is-camera-on", remoteVideoVisible(video));
+    setProfileAvatar(card.querySelector(".call-face-photo"), { ...participant, id: participant.id });
 }
 
 function peerSender(remoteUid) {
@@ -4003,6 +4066,8 @@ function cleanupCall(stopMedia = true) {
     window.clearTimeout(captionBroadcastTimer); captionBroadcastTimer = null; pendingCaptionText = ""; lastCaptionText = "";
     cleanupListeners(); peerConnections.forEach(pc => pc.close()); peerConnections.clear();
     peerProfiles.clear();
+    callFacePhotos.clear();
+    callFacePhotoRequests.clear();
     peerDebug.clear();
     rosterParticipants = [];
     rosterTranscripts = [];
@@ -4414,13 +4479,36 @@ function syncAudioMute(muted) {
     button.setAttribute("aria-label", muted ? "Unmute microphone" : "Mute microphone");
 }
 
+function remoteCallFace() {
+    const entry = [...peerProfiles.entries()].find(([, profile]) => profile?.displayName);
+    if (entry) return { ...entry[1], id: entry[1].id || entry[0] };
+    return activeDirectoryProfile || selectedInterpreterProfile || null;
+}
+
+function selfCallFace() {
+    const id = currentUser?.uid || currentProfile?.id || currentProfile?.uid || currentInterpreterProfile?.id || currentInterpreterProfile?.uid || "";
+    return {
+        ...(currentProfile || {}),
+        id,
+        displayName: currentProfile?.displayName || "You",
+        photoUrl: currentInterpreterProfile?.photoUrl || currentProfile?.photoUrl || ""
+    };
+}
+
 function syncAudioCallFaces() {
-    const other = [...peerProfiles.values()].find(profile => profile?.displayName) || activeDirectoryProfile || selectedInterpreterProfile;
-    const self = currentProfile || { displayName: "You" };
+    const other = remoteCallFace() || { displayName: "Waiting" };
+    const self = selfCallFace();
     if ($("audioCallNameA")) $("audioCallNameA").textContent = other?.displayName || "Waiting";
     if ($("audioCallNameB")) $("audioCallNameB").textContent = self.displayName || "You";
     setProfileAvatar($("audioCallAvatarA"), other || { displayName: "Waiting" });
     setProfileAvatar($("audioCallAvatarB"), self);
+    setProfileAvatar($("localFacePhoto"), self);
+    document.querySelectorAll("[data-peer]").forEach(card => {
+        const id = card.dataset.peer;
+        setProfileAvatar(card.querySelector(".call-face-photo"), { ...(peerProfiles.get(id) || {}), id });
+    });
+    ensureCallFacePhoto(other);
+    ensureCallFacePhoto(self);
 }
 
 function renderAudioTranscript(rows) {
@@ -4670,6 +4758,8 @@ async function renderSessionInterpreter(call) {
         try {
             profile = await apiFetch(`/api/translators/${encodeURIComponent(interpreterId)}`);
             if (profile?.id || profile?.uid) interpreterProfileCache.set(interpreterId, profile);
+            rememberCallFacePhoto(interpreterId, profile?.displayName, profile?.photoUrl);
+            syncAudioCallFaces();
         } catch (error) {
             profile = null;
         }
@@ -4699,15 +4789,15 @@ function rememberEndedCall(callId) {
 }
 
 function captureSessionSnapshot() {
-    const otherProfile = [...peerProfiles.values()].find(profile => profile?.displayName) || activeDirectoryProfile || selectedInterpreterProfile || null;
+    const otherProfile = remoteCallFace();
     const lines = [...($("transcriptList")?.querySelectorAll(".transcript-line") || [])].slice(-6).map(line => line.innerText.trim()).filter(Boolean);
     const startedMs = callExperience?.startedAt?.() || Date.now();
     const start = new Date(Number.isFinite(startedMs) ? startedMs : Date.now());
     return {
         selfName: currentProfile?.displayName || "You",
-        selfPhoto: currentProfile?.photoUrl || "",
+        selfPhoto: lookupCallFacePhoto(selfCallFace()) || "",
         otherName: otherProfile?.displayName || "Participant",
-        otherPhoto: otherProfile?.photoUrl || "",
+        otherPhoto: lookupCallFacePhoto(otherProfile) || "",
         tutorName: selectedInterpreterProfile?.displayName || activeDirectoryProfile?.displayName || otherProfile?.displayName || "Your interpreter",
         language: (selectedInterpreterProfile?.languages || activeDirectoryProfile?.languages || otherProfile?.languages || [])[0] || "Session",
         when: `${formatSessionClock(start)} – ${formatSessionClock(new Date())}`,

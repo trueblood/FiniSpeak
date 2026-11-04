@@ -294,10 +294,12 @@ body.in-call.video-call #audioCall { display:none; }
 .audio-call-brand { display:flex; align-items:center; gap:8px; flex:none; padding:16px 18px 4px; font-size:1.35rem; letter-spacing:-.03em; }
 .audio-call-brand .concept-globe { width:32px; height:32px; }
 .audio-call-scroll { flex:1; min-height:0; overflow:auto; padding:8px 18px 12px; }
-.audio-call-people { display:flex; justify-content:center; gap:36px; margin-top:8px; text-align:center; }
+.audio-call-people { flex:none; display:flex; justify-content:center; gap:36px; margin-top:8px; padding:0 18px; text-align:center; }
 .audio-call-people .concept-avatar { width:104px; height:104px; margin:0 auto 8px; font-size:1.4rem; }
 .audio-call-people strong { display:block; color:#0b6cff; font-size:1.15rem; font-weight:750; }
-.audio-call-timer { margin:14px 0 6px; text-align:center; color:#111827; font-size:2.7rem; font-weight:800; letter-spacing:-.04em; line-height:1; }
+.audio-call-timer { flex:none; margin:14px 0 6px; text-align:center; color:#111827; font-size:2.7rem; font-weight:800; letter-spacing:-.04em; line-height:1; }
+.video-card > .call-face-photo { display:none; position:absolute; z-index:4; top:12px; left:12px; width:52px; height:52px; border:2px solid #fff; box-shadow:0 6px 16px rgba(0,0,0,.35); pointer-events:none; }
+.video-card > .call-face-photo.has-photo { display:grid; }
 .audio-call-controls { display:flex; align-items:center; justify-content:center; gap:22px; margin:8px 0 16px; }
 button.audio-round { width:62px; height:62px; display:grid; place-items:center; padding:0; border-radius:50%; background:#f3f4f6; color:#111827; }
 button.audio-round svg { width:26px; height:26px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }

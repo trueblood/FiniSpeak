@@ -215,6 +215,24 @@ class AccessibilityRegressionTests(unittest.TestCase):
         self.assertIn(".request-best-matches { display:block;", styles)
         self.assertNotIn(".request-best-matches,.request-map-options { display:none; }", styles)
 
+    def test_call_profile_photos_stay_visible(self):
+        people = self.html.index('class="audio-call-people"')
+        timer = self.html.index('id="audioCallDuration"')
+        scroll = self.html.index('class="audio-call-scroll"')
+        self.assertLess(people, timer)
+        self.assertLess(timer, scroll)
+        self.assertIn('id="localFacePhoto" class="call-face-photo concept-avatar"', self.html)
+        app = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
+        styles = (Path(__file__).parents[1] / "views/static/css/call.css").read_text()
+        paint = app[app.index("function setProfileAvatar"):app.index("function interpreterMarkerIcon")]
+        self.assertIn("function lookupCallFacePhoto", app)
+        self.assertIn("function ensureCallFacePhoto", app)
+        self.assertIn('element.classList.contains("has-photo")', paint)
+        self.assertIn("element.dataset.photoUrl === (photoUrl || \"\")", paint)
+        self.assertIn("currentInterpreterProfile?.photoUrl", app)
+        self.assertIn(".audio-call-people { flex:none;", styles)
+        self.assertIn(".video-card > .call-face-photo.has-photo { display:grid; }", styles)
+
     def test_every_phone_input_has_a_country_code_selector(self):
         self.assertEqual(self.html.count('type="tel"'), 5)
         self.assertEqual(self.html.count('data-phone-country'), 5)
