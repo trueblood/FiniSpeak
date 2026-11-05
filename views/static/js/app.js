@@ -10,6 +10,8 @@ const show = (id) => {
     document.body.classList.toggle("dashboard-mode", id === "dashboardView");
     document.body.classList.toggle("profile-mode", id === "profileView");
     document.body.classList.toggle("in-call", id === "callView");
+    document.body.classList.toggle("landing-mode", id === "heroView");
+    if (id === "heroView") document.querySelector(".landing-phone-scroll")?.scrollTo({ top: 0 });
     updateReturnToCall();
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
@@ -193,6 +195,32 @@ function bindUI() {
         openDashboardPanel("home");
     };
     $("landingCta").onclick = () => openAuth(true, "customer");
+    $("landingLogin").onclick = () => $("authNav").click();
+    $("landingSearch").onclick = () => $("browseNav").click();
+    $("landingLesson").onclick = () => {
+        if (!currentUser) {
+            openAuth(true, "customer");
+            $("authStatus").textContent = "Create an account to book a language lesson.";
+            return;
+        }
+        show("dashboardView");
+        openDashboardPanel("lesson");
+    };
+    document.querySelectorAll("[data-landing-category]").forEach(button => {
+        button.onclick = () => {
+            const name = button.dataset.landingCategory;
+            setConceptCategory(name);
+            if (currentUser) {
+                openConceptCategory(name);
+                return;
+            }
+            if ($("featuredSearch")) {
+                $("featuredSearch").value = name === "Personal" ? "" : name;
+                filterFeaturedProfiles();
+            }
+            $("featuredProfiles")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
+    });
     $("translatorSignup").onclick = () => openAuth(true, "translator");
     $("homeNav").onclick = () => show("heroView");
     $("browseNav").onclick = openInterpreterDirectory;
@@ -480,7 +508,12 @@ function openInterpreterDirectory() {
     openDashboardPanel("directory");
 }
 
-function openAuth(signup, role) { setAuthMode(signup); $("role").value = role; show("authView"); }
+function openAuth(signup, role) {
+    setAuthMode(signup);
+    $("role").value = role;
+    if ($("authStatus")) $("authStatus").textContent = "";
+    show("authView");
+}
 function setAuthMode(signup) {
     signupMode = signup;
     $("authTitle").textContent = signup ? "Create account" : "Sign in";
@@ -544,6 +577,7 @@ async function handleAuthState(user) {
     document.body.classList.toggle("signed-in", Boolean(user));
     if (!user) document.body.classList.remove("nav-open");
     $("authNav").textContent = user ? "Log out" : "Log in";
+    if ($("landingLogin")) $("landingLogin").textContent = user ? "Log out" : "Log in";
     if (!user) {
         currentProfile = null;
         currentInterpreterProfile = null;
@@ -4398,8 +4432,8 @@ let conceptMatchedProfile = null;
 
 function setConceptCategory(name) {
     conceptCategory = name || "Education";
-    document.querySelectorAll("[data-discovery-category], [data-concept-category], [data-audio-category]").forEach(button => {
-        const value = button.dataset.discoveryCategory || button.dataset.conceptCategory || button.dataset.audioCategory;
+    document.querySelectorAll("[data-discovery-category], [data-concept-category], [data-audio-category], [data-landing-category]").forEach(button => {
+        const value = button.dataset.discoveryCategory || button.dataset.conceptCategory || button.dataset.audioCategory || button.dataset.landingCategory;
         const active = value === conceptCategory;
         button.classList.toggle("active", active);
         button.setAttribute("aria-pressed", String(active));
