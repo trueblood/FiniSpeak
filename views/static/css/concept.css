@@ -32,7 +32,8 @@ body.dashboard-mode .dashboard-content {
 body.dashboard-mode .dashboard-content > .screen-back { flex:none; align-self:flex-start; margin:0 0 8px; }
 body.dashboard-mode .dashboard-panel:not(.hidden) { flex:1 1 auto; min-height:0; overflow:auto; padding-bottom:16px; }
 body.dashboard-mode .dashboard-panel { width:100%; }
-body.dashboard-mode .mobile-app-header {
+body.dashboard-mode .mobile-app-header,
+body.landing-mode .mobile-app-header {
   min-height:64px;
   display:flex;
   align-items:center;
@@ -45,12 +46,15 @@ body.dashboard-mode .mobile-app-header {
   flex:none;
   z-index:30;
 }
-body.dashboard-mode .mobile-app-brand { display:flex; align-items:center; gap:8px; color:#111827; font-size:1.2rem; letter-spacing:-.03em; }
+body.dashboard-mode .mobile-app-brand,
+body.landing-mode .mobile-app-brand { display:flex; align-items:center; gap:8px; color:#111827; font-size:1.2rem; letter-spacing:-.03em; }
 body.dashboard-mode .mobile-app-brand > span,
 .concept-globe { width:28px; height:28px; display:grid; place-items:center; border-radius:50%; background:#0b6cff; color:#fff; }
 .concept-globe svg,.mobile-settings-button svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .concept-header-actions { display:flex; gap:8px; }
-body.dashboard-mode .mobile-settings-button { width:36px; height:36px; display:grid; place-items:center; padding:0; border-radius:50%; background:#f3f4f6; color:#111827; }
+body.dashboard-mode .mobile-settings-button,
+body.landing-mode .mobile-settings-button { width:36px; height:36px; display:grid; place-items:center; padding:0; border-radius:50%; background:#f3f4f6; color:#111827; }
+body.landing-mode .mobile-settings-button:hover { background:#e5e7eb; color:#111827; }
 body.dashboard-mode .dashboard-sidebar {
   position:fixed;
   z-index:90;
@@ -96,6 +100,7 @@ body.dashboard-mode .dashboard-nav-item { display:flex; min-height:44px; justify
 .concept-duration button.active,
 .concept-topic-row button.active,
 body.dashboard-mode .concept-inline-categories button.active,
+body.landing-mode .concept-inline-categories button.active,
 body.dashboard-mode .concept-filter-chips button.active,
 body.dashboard-mode .concept-duration button.active,
 body.dashboard-mode .concept-topic-row button.active,
@@ -106,10 +111,14 @@ body.dashboard-mode .concept-tabbar button.active {
 
 body.dashboard-mode #dashboardHome > .dashboard-heading,
 body.dashboard-mode .app-greeting { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
-body.dashboard-mode .concept-welcome { margin:0; padding:6px 2px 8px; border:0; background:transparent; box-shadow:none; }
-body.dashboard-mode .concept-welcome h2 { max-width:11ch; margin:6px 0 22px; color:#111827; font-size:2.35rem; line-height:.98; letter-spacing:-.045em; font-weight:850; }
-body.dashboard-mode .concept-welcome-actions { display:flex; flex-direction:column; gap:12px; }
-body.dashboard-mode .concept-welcome-actions > button {
+body.dashboard-mode .concept-welcome,
+body.landing-mode .concept-welcome { margin:0; padding:6px 2px 8px; border:0; background:transparent; box-shadow:none; }
+body.dashboard-mode .concept-welcome h2,
+body.landing-mode .concept-welcome h2 { max-width:11ch; margin:6px 0 22px; color:#111827; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:2.35rem; line-height:.98; letter-spacing:-.045em; font-weight:850; }
+body.dashboard-mode .concept-welcome-actions,
+body.landing-mode .concept-welcome-actions { display:flex; flex-direction:column; gap:12px; margin:0; }
+body.dashboard-mode .concept-welcome-actions > button,
+body.landing-mode .concept-welcome-actions > button {
   width:100%;
   min-height:58px;
   display:flex;
@@ -125,16 +134,20 @@ body.dashboard-mode .concept-welcome-actions > button {
   font-weight:800;
   text-align:center;
 }
-body.dashboard-mode .concept-welcome-actions > button:hover { background:#0057e0; transform:none; }
+body.dashboard-mode .concept-welcome-actions > button:hover,
+body.landing-mode .concept-welcome-actions > button:hover { background:#0057e0; transform:none; color:#fff; }
 body.dashboard-mode #openStartCall,
 .concept-text-action { width:100%; min-height:42px; margin-top:8px; background:transparent; color:#0b6cff; box-shadow:none; }
-body.dashboard-mode #openStartCall:hover { background:#eff6ff; }
+body.dashboard-mode #openStartCall:hover,
+body.landing-mode #translatorSignup:hover { background:#eff6ff; }
 .concept-btn-icon { width:22px; height:22px; display:grid; place-items:center; }
 .concept-btn-icon svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 body.dashboard-mode #openStartCall .concept-btn-icon { display:none; }
 .concept-blurb { margin:18px 0 16px; color:#24527a; font-size:.92rem; line-height:1.45; font-weight:650; }
-body.dashboard-mode .concept-inline-categories { justify-content:center; margin-top:4px; }
+body.dashboard-mode .concept-inline-categories,
+body.landing-mode .concept-inline-categories { justify-content:center; margin-top:4px; }
 body.dashboard-mode .concept-inline-categories button,
+body.landing-mode .concept-inline-categories button,
 .concept-filter-chips button,
 .concept-duration button,
 .concept-topic-row button {
@@ -389,7 +402,7 @@ body.signed-in.profile-mode .concept-tabbar-profile { flex:none; padding:8px 18p
   body.landing-mode .landing-phone { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
 }
 
-/* Public landing uses the same phone frame as the signed-in concept screens. */
+/* Public landing reuses the signed-in phone shell. Welcome type, buttons, chips, and header come from the shared concept rules above. */
 body.landing-mode { background:#e7ebf0; }
 body.landing-mode .site-header { display:none; }
 body.landing-mode #heroView {
@@ -411,100 +424,20 @@ body.landing-mode .landing-phone {
   overflow:hidden;
   box-shadow:0 28px 70px rgba(15,23,42,.18);
 }
-body.landing-mode .landing-phone-header {
-  min-height:64px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  flex:none;
-  padding:14px 16px 8px;
-  background:#fff;
-}
-body.landing-mode .mobile-app-brand { display:flex; align-items:center; gap:8px; color:#111827; font-size:1.2rem; letter-spacing:-.03em; }
-body.landing-mode .mobile-settings-button { width:36px; height:36px; display:grid; place-items:center; padding:0; border-radius:50%; background:#f3f4f6; color:#111827; }
-body.landing-mode .mobile-settings-button:hover { background:#e5e7eb; color:#111827; }
-body.landing-mode #landingLogin {
-  min-height:36px;
-  padding:6px 14px;
-  border-radius:999px;
-  background:#0b6cff;
-  color:#fff;
-  font-size:.92rem;
-  font-weight:800;
-}
-body.landing-mode #landingLogin:hover { background:#0057e0; }
-body.landing-mode .landing-phone-scroll { flex:1; min-height:0; overflow:auto; padding:4px 18px 16px; }
-body.landing-mode .landing-hero {
+body.landing-mode .landing-phone > .dashboard-content {
+  flex:1;
   min-height:0;
-  display:block;
-  padding:6px 2px 8px;
-  background:transparent;
-}
-body.landing-mode .landing-hero h1 {
-  max-width:11ch;
-  margin:6px 0 22px;
-  color:#111827;
-  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  font-size:2.35rem;
-  font-weight:850;
-  line-height:.98;
-  letter-spacing:-.045em;
-}
-body.landing-mode .concept-welcome-actions { display:flex; flex-direction:column; gap:12px; margin:0; }
-body.landing-mode .concept-welcome-actions > button {
-  width:100%;
-  min-height:58px;
   display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:10px;
-  padding:14px 16px;
-  border:0;
-  border-radius:16px;
-  background:#0b6cff;
-  color:#fff;
-  box-shadow:none;
-  font-size:1.05rem;
-  font-weight:800;
+  flex-direction:column;
+  overflow:hidden;
+  padding:4px 18px 0;
 }
-body.landing-mode .concept-welcome-actions > button:hover,
-body.landing-mode .landing-hero #browseHero,
-body.landing-mode .landing-hero #browseHero:hover,
-body.landing-mode .landing-hero #landingLesson,
-body.landing-mode .landing-hero #landingLesson:hover,
-body.landing-mode .landing-hero #startCall,
-body.landing-mode .landing-hero #startCall:hover {
-  background:#0b6cff;
-  color:#fff;
-  border-color:transparent;
-}
-body.landing-mode .concept-welcome-actions > button:hover,
-body.landing-mode .landing-hero #browseHero:hover,
-body.landing-mode .landing-hero #landingLesson:hover,
-body.landing-mode .landing-hero #startCall:hover { background:#0057e0; }
-body.landing-mode .concept-blurb { margin:18px 0 16px; color:#24527a; font-size:.92rem; line-height:1.45; font-weight:650; }
-body.landing-mode .concept-inline-categories { display:flex; justify-content:center; gap:8px; flex-wrap:nowrap; margin-top:4px; }
-body.landing-mode .concept-inline-categories button { flex:1 1 0; min-width:0; padding:10px 8px; }
-body.landing-mode .eyebrow { color:#0b6cff; }
-body.landing-mode .concept-inline-categories button,
-body.landing-mode .landing-tabbar button {
-  border:0;
-  border-radius:999px;
-  background:#eceff3;
-  color:#1f2937;
-  font-weight:750;
-}
-body.landing-mode .concept-inline-categories button:hover,
-body.landing-mode .landing-tabbar button:hover { background:#e5e7eb; color:#1f2937; }
-body.landing-mode .concept-inline-categories button.active,
-body.landing-mode .landing-tabbar button.active,
-body.landing-mode .concept-inline-categories button.active:hover,
-body.landing-mode .landing-tabbar button.active:hover { background:#0b6cff; color:#fff; }
-body.landing-mode #translatorSignup { width:100%; min-height:42px; margin-top:8px; border:0; background:transparent; color:#0b6cff; box-shadow:none; }
-body.landing-mode #translatorSignup:hover { background:#eff6ff; }
+body.landing-mode .landing-phone-scroll { flex:1; min-height:0; overflow:auto; padding:0 0 16px; }
+body.landing-mode .concept-welcome-actions > button { border:0; }
+body.landing-mode #translatorSignup { border:0; }
 body.landing-mode .hero-visual {
   min-height:0;
-  margin:18px 0 8px;
+  margin:0 0 8px;
   padding:0;
   display:flex;
   flex-direction:column;
@@ -515,58 +448,92 @@ body.landing-mode .hero-visual {
   box-shadow:none;
 }
 body.landing-mode .hero-visual::before { display:none; }
-body.landing-mode .hero-visual-header { color:#111827; font-size:.92rem; }
-body.landing-mode .hero-visual-header > strong { color:#166534; }
+body.landing-mode .hero-visual-header { color:#111827; font-size:.95rem; font-weight:800; }
+body.landing-mode .hero-visual-header > strong { display:flex; align-items:center; gap:6px; color:#166534; font-size:.78rem; }
 body.landing-mode .hero-match-card {
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:0;
+  padding:12px;
   border:1px solid #e6ebf1;
   border-radius:16px;
   background:#fff;
   color:#111827;
   box-shadow:none;
+  text-align:left;
 }
 body.landing-mode .hero-match-card:hover:not(:disabled),
 body.landing-mode .hero-match-card:focus-visible { border-color:#93c5fd; background:#fff; transform:none; box-shadow:none; }
-body.landing-mode .hero-match-avatar { border-radius:50%; }
-body.landing-mode .hero-match-details { border:1px solid #e6ebf1; border-radius:12px; background:#f8fafc; }
-body.landing-mode .hero-match-details span { color:#334155; }
-body.landing-mode .hero-match-details span + span { border-left:1px solid #e6ebf1; }
+body.landing-mode .hero-match-avatar { width:64px; height:64px; border-radius:50%; }
+body.landing-mode .hero-match-details { display:flex; flex-wrap:wrap; gap:8px 14px; margin:0 0 12px; padding:0 4px; border:0; border-radius:0; background:transparent; }
+body.landing-mode .hero-match-details span { padding:0; color:#64748b; font-size:.78rem; font-weight:650; text-align:left; }
+body.landing-mode .hero-match-details span + span { border:0; }
 body.landing-mode .landing-directory-section,
-body.landing-mode .landing-section { padding:18px 0; background:transparent; }
+body.landing-mode .landing-section,
+body.landing-mode .landing-cta { padding:8px 0 18px; background:transparent; }
 body.landing-mode .directory-section-heading { display:block; }
 body.landing-mode .section-intro { margin-bottom:16px; }
-body.landing-mode .section-intro h2,
-body.landing-mode .directory-section-heading .section-intro h2,
-body.landing-mode .landing-cta h2 {
-  margin:.2rem 0 .4rem;
-  color:#111827;
-  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  font-size:1.45rem;
-  font-weight:850;
-  letter-spacing:-.04em;
+body.landing-mode .concept-screen h2 { font-weight:850; }
+body.landing-mode .directory-availability-note { width:100%; margin:0 0 12px; border-radius:16px; box-shadow:none; }
+body.landing-mode .featured-filter-panel {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:10px;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
 }
-body.landing-mode .directory-availability-note { width:100%; margin:0 0 12px; }
-body.landing-mode .featured-filter-panel,
+body.landing-mode .featured-search { position:relative; margin:0; font-size:1rem; font-weight:600; }
+body.landing-mode .filter-label { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+body.landing-mode .featured-search input { min-height:46px; border:0; border-radius:999px; background:#f2f4f7; padding-left:16px; }
+body.landing-mode .featured-filter-panel select { border-radius:12px; background:#f8fafc; }
+body.landing-mode .featured-available { border:0; border-radius:12px; background:#f3f4f6; }
 body.landing-mode .featured-interpreter-grid,
 body.landing-mode .feature-grid { grid-template-columns:minmax(0,1fr); }
-body.landing-mode .workflow-tabs { display:grid; width:100%; }
-body.landing-mode .workflow-tab { width:100%; }
-body.landing-mode .feature-card { padding:16px; border-radius:16px; box-shadow:none; }
-body.landing-mode .landing-cta {
-  margin:8px 0 12px;
-  padding:18px;
-  display:flex;
-  flex-direction:column;
-  align-items:stretch;
-  gap:14px;
-  border-radius:18px;
-  background:#0b6cff;
+body.landing-mode .landing-profile-card { width:100%; margin:8px 0; box-shadow:none; text-align:left; }
+body.landing-mode .landing-profile-card:hover { transform:none; box-shadow:none; }
+body.landing-mode .workflow-tabs { display:flex; flex-wrap:nowrap; width:100%; gap:8px; margin:0 0 16px; padding:0; border:0; border-radius:0; background:transparent; }
+body.landing-mode .workflow-tab { flex:1 1 0; width:auto; min-height:40px; padding:8px 6px; border:0; box-shadow:none; font-size:.82rem; white-space:nowrap; }
+body.landing-mode .workflow-tab span[aria-hidden="true"] { display:none; }
+body.landing-mode .feature-card { padding:12px; border:1px solid #e6ebf1; border-radius:16px; box-shadow:none; }
+body.landing-mode .feature-number { border-radius:12px; background:#eceff3; color:#111827; }
+body.landing-mode .landing-cta { margin:8px 0 16px; display:block; }
+body.landing-mode #landingCta,
+body.landing-mode #landingCta:hover { width:100%; min-height:58px; border:0; border-radius:16px; background:#0b6cff; color:#fff; font-size:1.05rem; font-weight:800; }
+body.landing-mode #landingCta:hover { background:#0057e0; }
+body.landing-mode #authView {
+  min-height:100dvh;
+  display:grid;
+  place-items:center;
+  padding:18px 12px;
+  background:transparent;
 }
-body.landing-mode .landing-cta .eyebrow { color:#dbeafe; }
-body.landing-mode .landing-cta h2 { color:#fff; }
-body.landing-mode .landing-cta button { background:#fff; color:#0b6cff; }
-body.landing-mode .landing-cta button:hover { background:#eff6ff; }
-body.landing-mode .landing-tabbar { padding:8px 16px 14px; }
+body.landing-mode #authView .card.narrow {
+  width:min(420px,100%);
+  max-width:none;
+  height:min(880px,calc(100dvh - 28px));
+  margin:0;
+  overflow:auto;
+  border:10px solid #151515;
+  border-radius:38px;
+  box-shadow:0 28px 70px rgba(15,23,42,.18);
+  padding:18px;
+}
+body.landing-mode #authView h2 { color:#111827; font-size:2rem; letter-spacing:-.04em; font-weight:850; }
+body.landing-mode #authView input,
+body.landing-mode #authView select { border-radius:12px; background:#f8fafc; }
+body.landing-mode #authSubmit { width:100%; min-height:52px; border:0; border-radius:14px; background:#0b6cff; color:#fff; font-weight:800; }
+body.landing-mode #authSubmit:hover { background:#0057e0; }
+body.landing-mode #authToggle,
+body.landing-mode #forgotPassword { border:0; background:transparent; color:#0b6cff; }
+body.landing-mode #clearFeaturedFilters { border:0; background:transparent; color:#0b6cff; }
 @media (max-width:700px) {
-  body.landing-mode #heroView { padding:0; }
-  body.landing-mode .landing-phone { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
+  body.landing-mode #heroView,
+  body.landing-mode #authView { padding:0; }
+  body.landing-mode .landing-phone,
+  body.landing-mode #authView .card.narrow { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
 }

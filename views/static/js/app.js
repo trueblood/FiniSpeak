@@ -10,7 +10,7 @@ const show = (id) => {
     document.body.classList.toggle("dashboard-mode", id === "dashboardView");
     document.body.classList.toggle("profile-mode", id === "profileView");
     document.body.classList.toggle("in-call", id === "callView");
-    document.body.classList.toggle("landing-mode", id === "heroView");
+    document.body.classList.toggle("landing-mode", id === "heroView" || id === "authView");
     if (id === "heroView") document.querySelector(".landing-phone-scroll")?.scrollTo({ top: 0 });
     updateReturnToCall();
 };
@@ -577,7 +577,7 @@ async function handleAuthState(user) {
     document.body.classList.toggle("signed-in", Boolean(user));
     if (!user) document.body.classList.remove("nav-open");
     $("authNav").textContent = user ? "Log out" : "Log in";
-    if ($("landingLogin")) $("landingLogin").textContent = user ? "Log out" : "Log in";
+    if ($("landingLogin")) $("landingLogin").setAttribute("aria-label", user ? "Log out" : "Log in");
     if (!user) {
         currentProfile = null;
         currentInterpreterProfile = null;
@@ -1175,22 +1175,22 @@ function renderFeaturedProfiles(profiles) {
     container.replaceChildren(...profiles.map(profile => {
         const card = document.createElement("button");
         card.type = "button";
-        card.className = "interpreter-card featured-interpreter-card";
+        card.className = "concept-person-card landing-profile-card";
         card.setAttribute("aria-label", `View ${profile.displayName || "interpreter"}'s public profile`);
         const languages = [...(profile.languages || []), ...(profile.dialects || [])].slice(0, 2);
         const specialties = (profile.specialties || []).slice(0, 2);
         const tags = [...languages, ...specialties];
         const available = Boolean(profile.availability?.availableNow);
+        const verified = profileVerificationLabel(profile) === "Verified";
         card.innerHTML = `
-            <div class="directory-avatar">${escapeHtml(profileInitials(profile.displayName))}</div>
-            <div>
-                <div class="interpreter-card-header"><div><h3>${escapeHtml(profile.displayName)}${profileVerificationLabel(profile) === "Verified" ? ' <span class="verified-mark" aria-label="Verified interpreter">✓</span>' : ""}</h3>${ratingMarkup(profile.rating, profile.ratingCount)}</div><span class="availability-pill${available ? " available" : ""}">${available ? "Available" : "View schedule"}</span></div>
-                <p class="card-bio">${escapeHtml(profile.bio || "Professional FiniSpeak interpreter profile.")}</p>
-                <div class="directory-tags">${tags.map(tag => `<span class="directory-tag">${escapeHtml(tag)}</span>`).join("")}</div>
-                <div class="directory-meta"><span>${Number(profile.yearsExperience || 0)} years experience</span><span>${escapeHtml(profileVerificationLabel(profile))}</span></div>
-                <span class="featured-profile-login">View public profile →</span>
-            </div>`;
-        setProfileAvatar(card.querySelector(".directory-avatar"), profile);
+            <div class="concept-avatar">${escapeHtml(profileInitials(profile.displayName))}</div>
+            <div class="concept-person-copy">
+                <strong>${escapeHtml(profile.displayName || "Interpreter")}</strong>
+                <div class="concept-stars">${"★".repeat(Math.max(1, Math.round(Number(profile.rating || 0) || 5)))} <span>${available ? "Available" : "View schedule"}</span></div>
+                <small>${escapeHtml(tags.join(" · ") || "Professional interpreter")}</small>
+            </div>
+            ${verified ? '<span class="concept-verified">Verified</span>' : ""}`;
+        setProfileAvatar(card.querySelector(".concept-avatar"), profile);
         card.onclick = () => openPublicProfile(profile);
         return card;
     }));

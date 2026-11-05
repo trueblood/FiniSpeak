@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261103-call-followup">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261105-landing-layout-2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261105-landing-match">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261104-call-photos">
 </head>
 <body class="landing-mode">
@@ -25,51 +25,52 @@
 <main id="mainContent" tabindex="-1">
     <section id="heroView" class="landing-view">
         <div class="landing-phone">
-        <header class="landing-phone-header">
+        <div class="dashboard-content">
+        <header class="mobile-app-header">
             <div class="mobile-app-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
             <div class="concept-header-actions">
                 <button id="landingSearch" class="mobile-settings-button" type="button" aria-label="Find an interpreter"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button>
-                <button id="landingLogin" type="button">Log in</button>
+                <button id="landingLogin" class="mobile-settings-button" type="button" aria-label="Log in"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 19.2c.8-3.2 3-4.8 7-4.8s6.2 1.6 7 4.8"/></svg></button>
             </div>
         </header>
         <div class="landing-phone-scroll">
-        <div class="landing-hero concept-welcome">
-            <h1>What do you need today?</h1>
-            <div class="concept-welcome-actions">
+        <section class="app-action-hub concept-welcome" aria-labelledby="landingTitle">
+            <h2 id="landingTitle">What do you need today?</h2>
+            <div class="app-primary-actions concept-welcome-actions">
                 <button id="browseHero" type="button"><span class="concept-btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4M4 20v-4h4"/></svg></span><span>Find a Translator</span></button>
                 <button id="landingLesson" type="button"><span class="concept-btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 9.5 12 5l9 4.5-9 4.5L3 9.5z"/><path d="M7 12.2V16c0 .8 2.2 2.5 5 2.5s5-1.7 5-2.5v-3.8"/><path d="M21 10v6"/></svg></span><span>Book a Language Lesson</span></button>
                 <button id="startCall" type="button"><span class="concept-btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h2.2l1.2 3-1.7 1a11 11 0 0 0 5.8 5.8l1-1.7 3 1.2V15a1.5 1.5 0 0 1-1.5 1.5A13.5 13.5 0 0 1 5.5 5 1.5 1.5 0 0 1 7 3.5z"/></svg></span><span>Call Another User</span></button>
             </div>
             <p class="concept-blurb">FiniSpeak connects you with verified bilingual speakers fluent in specific languages and dialects, ensuring precise and professional communication for your needs.</p>
-            <div class="concept-inline-categories" aria-label="Browse common needs">
+            <div class="app-category-row concept-inline-categories" aria-label="Browse common needs">
                 <button type="button" data-landing-category="Business" aria-pressed="false">Business</button>
                 <button type="button" data-landing-category="Education" class="active" aria-pressed="true">Education</button>
                 <button type="button" data-landing-category="Personal" aria-pressed="false">Personal</button>
             </div>
             <button id="translatorSignup" class="concept-text-action" type="button">Join as an interpreter</button>
             <p id="status" class="status" aria-live="polite"></p>
+        </section>
+        <div id="featuredProfiles" class="landing-directory-section concept-screen">
             <div class="hero-visual" aria-label="FiniSpeak interpreter matching preview">
                 <div class="hero-visual-header"><span>Interpreter network</span><strong><span class="live-dot"></span> Available now</strong></div>
-                <button id="heroPrimaryProfile" class="hero-match-card hero-match-primary" type="button" disabled aria-label="Loading featured interpreter profile">
-                    <span id="heroPrimaryAvatar" class="hero-match-avatar">MV</span>
-                    <span><strong id="heroPrimaryName">Marisol Vega</strong><small id="heroPrimarySummary">Spanish · Healthcare</small></span>
-                    <span id="heroPrimaryVerified" class="hero-verified" aria-label="Verified interpreter">✓</span>
+                <button id="heroPrimaryProfile" class="hero-match-card hero-match-primary concept-person-card" type="button" disabled aria-label="Loading featured interpreter profile">
+                    <span id="heroPrimaryAvatar" class="hero-match-avatar concept-avatar">MV</span>
+                    <span class="concept-person-copy"><strong id="heroPrimaryName">Marisol Vega</strong><small id="heroPrimarySummary">Spanish · Healthcare</small></span>
+                    <span id="heroPrimaryVerified" class="hero-verified concept-verified" aria-label="Verified interpreter">✓</span>
                 </button>
                 <div id="heroPrimaryDetails" class="hero-match-details"><span id="heroPrimaryRegion">Mexican &amp; Central American</span><span id="heroPrimaryRating">4.9 rating</span><span id="heroPrimaryExperience">9 years</span></div>
-                <button id="heroSecondaryProfile" class="hero-match-card" type="button" disabled aria-label="Loading featured interpreter profile">
-                    <span id="heroSecondaryAvatar" class="hero-match-avatar hero-match-avatar-blue">KH</span>
-                    <span><strong id="heroSecondaryName">Karim Haddad</strong><small id="heroSecondarySummary">Arabic · Legal</small></span>
-                    <span id="heroSecondaryVerified" class="hero-verified" aria-label="Verified interpreter">✓</span>
+                <button id="heroSecondaryProfile" class="hero-match-card concept-person-card" type="button" disabled aria-label="Loading featured interpreter profile">
+                    <span id="heroSecondaryAvatar" class="hero-match-avatar concept-avatar">KH</span>
+                    <span class="concept-person-copy"><strong id="heroSecondaryName">Karim Haddad</strong><small id="heroSecondarySummary">Arabic · Legal</small></span>
+                    <span id="heroSecondaryVerified" class="hero-verified concept-verified" aria-label="Verified interpreter">✓</span>
                 </button>
             </div>
-        </div>
-        <div id="featuredProfiles" class="landing-directory-section">
             <div class="directory-section-heading">
-                <div class="section-intro"><span class="eyebrow">Interpreter network</span><h2>Start with a strong match</h2><p>Browse verified profiles and compare language coverage, specialties, experience, ratings, and availability before creating an account.</p></div>
+                <div class="section-intro"><span class="concept-kicker">Interpreter network</span><h2>Start with a strong match</h2><p>Browse verified profiles and compare language coverage, specialties, experience, ratings, and availability before creating an account.</p></div>
                 <div class="directory-availability-note"><span class="live-dot"></span><div><strong id="featuredAvailableCount">Checking availability…</strong><span>Profiles update automatically</span></div></div>
             </div>
             <div class="featured-filter-panel" aria-label="Filter public interpreter profiles">
-                <label class="featured-search" for="featuredSearch">Search<input id="featuredSearch" type="search" placeholder="Name, language, region, or specialty"></label>
+                <label class="featured-search directory-search" for="featuredSearch"><span class="filter-label">Search</span><input id="featuredSearch" type="search" placeholder="Find a Translator by Language/Dialect"></label>
                 <label for="featuredLanguage">Language<select id="featuredLanguage"><option value="">All languages</option></select></label>
                 <label for="featuredSpecialty">Specialty<select id="featuredSpecialty"><option value="">All specialties</option></select></label>
                 <label class="featured-available"><input id="featuredAvailable" type="checkbox"> Available now</label>
@@ -77,9 +78,9 @@
             <div class="directory-results-heading"><p id="featuredResultCount">Loading interpreter profiles…</p><button id="clearFeaturedFilters" class="text-button" type="button">Clear filters</button></div>
             <div id="featuredInterpreters" class="interpreter-directory featured-interpreter-grid" aria-live="polite"><div class="directory-loading"><span class="button-spinner" aria-hidden="true"></span>Loading interpreter profiles…</div></div>
         </div>
-        <div class="landing-section">
-            <div class="section-intro"><span class="eyebrow">How FiniSpeak works</span><h2>Choose how you want to connect</h2><p>Start a new conversation, add an interpreter to a call already in progress, or plan a session for later.</p></div>
-            <div class="workflow-tabs" role="tablist" aria-label="Choose a FiniSpeak workflow">
+        <div class="landing-section concept-screen">
+            <div class="section-intro"><span class="concept-kicker">How FiniSpeak works</span><h2>Choose how you want to connect</h2><p>Start a new conversation, add an interpreter to a call already in progress, or plan a session for later.</p></div>
+            <div class="workflow-tabs concept-filter-chips" role="tablist" aria-label="Choose a FiniSpeak workflow">
                 <button id="startCallTab" class="workflow-tab active" type="button" role="tab" aria-selected="true" aria-controls="startCallSteps" tabindex="0"><span aria-hidden="true">📹</span> Start a Call</button>
                 <button id="addCallTab" class="workflow-tab" type="button" role="tab" aria-selected="false" aria-controls="addCallSteps" tabindex="-1"><span aria-hidden="true">📞</span> Add to My Call</button>
                 <button id="scheduleTab" class="workflow-tab" type="button" role="tab" aria-selected="false" aria-controls="scheduleSteps" tabindex="-1"><span aria-hidden="true">📅</span> Schedule</button>
@@ -100,13 +101,14 @@
                 <article class="feature-card"><span class="feature-number">03</span><h3>Connect when it’s time</h3><p>Join the scheduled FiniSpeak session with your interpreter.</p></article>
             </div>
         </div>
-        <div class="landing-cta"><div><span class="eyebrow">Ready when language gets in the way</span><h2>Make your next conversation easier.</h2></div><button id="landingCta" type="button">Create your account</button></div>
+        <div class="landing-cta concept-screen"><span class="concept-kicker">Ready when language gets in the way</span><h2>Make your next conversation easier.</h2><button id="landingCta" type="button">Create your account</button></div>
         </div>
-        <nav class="concept-tabbar landing-tabbar" aria-label="Browse common needs">
+        <nav class="concept-tabbar" aria-label="Browse common needs">
             <button type="button" data-landing-category="Business" aria-pressed="false">Business</button>
             <button type="button" data-landing-category="Education" class="active" aria-pressed="true">Education</button>
             <button type="button" data-landing-category="Personal" aria-pressed="false">Personal</button>
         </nav>
+        </div>
         </div>
     </section>
 
@@ -1040,6 +1042,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261105-landing-layout-2"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261105-landing-match"></script>
 </body>
 </html>
