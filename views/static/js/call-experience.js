@@ -507,7 +507,8 @@ export function createCallExperience(deps) {
     }
 
     function callLayoutIsMobile() {
-        return window.matchMedia("(max-width: 900px)").matches;
+        // The video call always lives in the phone shell, including on a wide desktop.
+        return true;
     }
 
     function setControlsCollapsed(collapsed, pinned) {
@@ -538,7 +539,7 @@ export function createCallExperience(deps) {
 
     function openDocuments() {
         showDocuments();
-        if (window.matchMedia("(max-width: 900px)").matches) {
+        if (callLayoutIsMobile()) {
             deps.$("callShell").dataset.pane = "documents";
             document.querySelectorAll("[data-call-pane]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.callPane === "documents")));
         }

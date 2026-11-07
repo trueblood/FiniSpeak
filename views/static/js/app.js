@@ -1,4 +1,4 @@
-import { createCallExperience } from "./call-experience.js?v=20261104-call-photos";
+import { createCallExperience } from "./call-experience.js?v=20261107-video-phone";
 import { createCameraRelay } from "./camera-relay.js?v=20261018-membership-refresh";
 import { applyMeshSignal, attachMeshHandlers, isOfferer, liveReceiver, normalizeIceConfiguration, resendLocalOffer, sendOffer, shouldForceRelay, shouldSendOffer } from "./webrtc-mesh.js?v=20261018-turn-failover";
 

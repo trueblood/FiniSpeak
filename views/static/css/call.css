@@ -14,7 +14,8 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
 .call-details-toggle { display:none; }
 .call-nav-meta .call-nav-modes,.call-nav-meta p,.call-nav-meta #translationIndicator { display:none !important; }
 .call-nav h2 { margin:0; color:#fff; font-size:1rem; }
-.call-nav .eyebrow,.call-nav p,.call-frame .eyebrow { color:#f5a65b; }
+.call-nav .eyebrow,.call-frame .eyebrow { color:#93c5fd; }
+.call-nav-brand .concept-globe { width:28px; height:28px; flex:none; }
 .call-nav p { margin:0; color:#a7b3c4; display:flex; align-items:center; gap:6px; min-width:0; }
 .call-nav code { background:rgba(255,255,255,.08); color:#fff; max-width:11rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; vertical-align:bottom; }
 .call-pill,.connection-pill { display:inline-flex; align-items:center; border-radius:999px; padding:6px 10px; background:rgba(255,255,255,.08); color:#d7e0ea; font-size:.75rem; font-weight:750; white-space:nowrap; }
@@ -203,9 +204,8 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
 .avatar-style-row button { padding:8px 12px; border-radius:999px; background:#10151d; color:#fff; border:1px solid rgba(255,255,255,.12); }
 .call-mobile-switch { display:none; }
 
-@media (max-width:900px) {
-    body.in-call .call-view { padding:0; }
-    .call-frame { border-radius:0; padding:8px 10px 10px; gap:8px; overflow:hidden; }
+/* The video call always uses the phone layout. The shell is 420px wide even on a desktop monitor. */
+.call-frame { padding:8px 10px 10px; gap:8px; overflow:hidden; }
     .call-nav { grid-template-columns:minmax(0,1fr); gap:8px; }
     .call-nav-brand { flex:1 1 160px; }
     .call-nav h2 { font-size:1rem; }
@@ -224,8 +224,8 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
     .call-shell[data-pane="video"] .video-stage,.call-shell[data-pane="interpreter"] .ai-panel,.call-shell[data-pane="transcript"] .ai-panel,.call-shell[data-pane="documents"] .documents-panel { display:flex; flex:1; min-height:0; overflow:auto; }
     .call-shell[data-pane="transcript"] .transcript-card { display:flex; }
     .call-shell[data-pane="transcript"] .ai-panel > :not(.transcript-card) { display:none; }
-    .call-shell[data-pane="video"] .video-stage { overflow:hidden; border-radius:18px; padding:8px 8px 110px; }
-    .call-shell[data-pane="video"] .call-frame.is-controls-collapsed .video-stage { padding-bottom:110px; }
+    .call-shell[data-pane="video"] .video-stage { overflow:hidden; border-radius:18px; padding:8px 8px 156px; }
+    .call-shell[data-pane="video"] .call-frame.is-controls-collapsed .video-stage { padding-bottom:156px; }
     .call-view .video-grid { position:relative; min-height:0; }
     .smart-interpreter { grid-template-columns:minmax(0,1fr) auto; padding:8px 10px; }
     .smart-wave { display:none; }
@@ -258,8 +258,7 @@ body.in-call .call-view { height:100dvh; padding:8px; overflow:hidden; backgroun
     .interpreter-body,.document-panes,.documents-layout { grid-template-columns:1fr; }
     .expand-transcript { top:auto; bottom:12px; }
     .video-stage::after { display:none; }
-    .call-view .video-card { min-height:0; }
-}
+.call-view .video-card { min-height:0; }
 @media (max-width:900px) and (orientation:landscape) {
     .call-frame { gap:6px; padding:6px 8px; }
     .call-nav { flex-wrap:wrap; align-items:center; row-gap:4px; }
@@ -288,7 +287,17 @@ body.in-call:not(.video-call) { background:#e7ebf0; overflow:auto; }
 body.in-call:not(.video-call) main { height:auto; min-height:100dvh; }
 body.in-call:not(.video-call) .call-view { height:auto; min-height:100dvh; display:grid; place-items:center; padding:18px 12px; overflow:visible; background:transparent; }
 body.in-call:not(.video-call) #callShell { display:none; }
+body.in-call.video-call { background:#e7ebf0; }
+body.in-call.video-call main { height:auto; min-height:100dvh; }
+body.in-call.video-call .call-view { height:auto; min-height:100dvh; display:grid; place-items:center; padding:18px 12px; overflow:visible; background:transparent; }
 body.in-call.video-call #audioCall { display:none; }
+body.in-call.video-call #callShell { width:min(420px,100%); height:min(880px,calc(100dvh - 28px)); background:#141922; border:10px solid #151515; border-radius:38px; box-shadow:0 28px 70px rgba(15,23,42,.18); overflow:hidden; }
+body.in-call.video-call .call-frame { height:100%; border:0; border-radius:0; box-shadow:none; background:#141922; }
+body.in-call.video-call .floating-controls { display:grid; grid-template-columns:auto minmax(0,1fr) auto; grid-template-areas:"switch switch switch" "hide tools end"; align-items:center; }
+body.in-call.video-call .call-mobile-switch { grid-area:switch; width:auto; justify-content:center; }
+body.in-call.video-call #toggleCallControls { grid-area:hide; }
+body.in-call.video-call .call-control-tools { grid-area:tools; min-width:0; }
+body.in-call.video-call #endCallButton { grid-area:end; }
 .audio-call { width:min(420px,100%); }
 .audio-call-shell { display:flex; flex-direction:column; width:100%; max-height:min(880px,calc(100dvh - 28px)); overflow:hidden; background:#fff; border:10px solid #151515; border-radius:38px; box-shadow:0 28px 70px rgba(15,23,42,.18); color:#111827; }
 .audio-call-brand { display:flex; align-items:center; gap:8px; flex:none; padding:16px 18px 4px; font-size:1.35rem; letter-spacing:-.03em; }
@@ -325,7 +334,10 @@ button.audio-book { width:100%; min-height:52px; border-radius:14px; background:
 button.audio-book:hover { background:#0057e0; }
 .audio-call-tabs { padding:8px 18px 16px; }
 @media (max-width:700px) {
-  body.in-call:not(.video-call) .call-view { padding:0; }
-  .audio-call { width:100%; }
-  .audio-call-shell { height:100dvh; max-height:100dvh; border:0; border-radius:0; box-shadow:none; }
+  body.in-call:not(.video-call) .call-view,
+  body.in-call.video-call .call-view { padding:0; }
+  .audio-call,
+  body.in-call.video-call #callShell { width:100%; height:100dvh; }
+  .audio-call-shell,
+  body.in-call.video-call #callShell { max-height:100dvh; border:0; border-radius:0; box-shadow:none; }
 }

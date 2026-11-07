@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261103-call-followup">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261105-landing-match">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261104-call-photos">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261107-video-phone">
 </head>
 <body class="landing-mode">
 <a class="skip-link" href="#mainContent">Skip to main content</a>
@@ -697,7 +697,7 @@
                     </div>
                 </section>
                 <header class="call-nav">
-                    <div class="call-nav-brand"><span class="brand-mark" aria-hidden="true">F</span><div><span class="eyebrow">FiniSpeak live call</span><h2 id="callTitle">Connecting…</h2></div></div>
+                    <div class="call-nav-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><div><span class="eyebrow">FiniSpeak</span><h2 id="callTitle">Connecting…</h2></div></div>
                     <div class="call-nav-options" aria-label="Call display options">
                         <button id="expandTranscript" class="secondary expand-transcript" type="button">Transcript</button>
                         <button id="toggleCallDetails" class="secondary call-details-toggle" type="button" aria-expanded="false" aria-controls="callDetailsMeta callDetailsSettings">Show call details</button>
@@ -847,12 +847,12 @@
                         <button id="subtitleButton" class="secondary" type="button" aria-pressed="true" title="Toggle subtitles" aria-label="Toggle subtitles">Subtitles</button>
                         <button id="signAccessButton" class="secondary" type="button" title="Open sign language accessibility" aria-label="Open sign language accessibility">Sign</button>
                         <button id="screenShareButton" class="secondary" type="button" aria-pressed="false" title="Share screen" aria-label="Share screen">Share</button>
-                        <nav id="callMobileSwitch" class="call-mobile-switch" aria-label="Call sections">
-                            <button type="button" data-call-pane="video" aria-pressed="true">Video</button>
-                            <button type="button" data-call-pane="interpreter" aria-pressed="false">Interpreter</button>
-                            <button type="button" data-call-pane="documents" aria-pressed="false">Documents</button>
-                        </nav>
                     </div>
+                    <nav id="callMobileSwitch" class="call-mobile-switch" aria-label="Call sections">
+                        <button type="button" data-call-pane="video" aria-pressed="true">Video</button>
+                        <button type="button" data-call-pane="interpreter" aria-pressed="false">Interpreter</button>
+                        <button type="button" data-call-pane="documents" aria-pressed="false">Documents</button>
+                    </nav>
                     <button id="endCallButton" class="danger" type="button" title="End call" aria-label="End call">End Call</button>
                 </div>
             </div>
