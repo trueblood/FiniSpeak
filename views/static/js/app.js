@@ -4275,6 +4275,11 @@ function setConceptCategory(name) {
 
 function openConceptCategory(name) {
     setConceptCategory(name);
+    if (!currentUser) {
+        openAuth(false, "customer");
+        $("authStatus").textContent = "Log in to browse sessions by category.";
+        return;
+    }
     if ($("dashboardView")?.classList.contains("hidden")) show("dashboardView");
     if (name === "Education") openDashboardPanel("classroom");
     else if (name === "Personal") openDashboardPanel("home");
