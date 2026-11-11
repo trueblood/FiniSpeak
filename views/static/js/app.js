@@ -191,6 +191,13 @@ function bindUI() {
     $("forgotPassword").onclick = requestPasswordReset;
     $("authForm").onsubmit = submitAuth;
     $("callForm").onsubmit = createCall;
+    document.querySelectorAll("[data-dial]").forEach(button => {
+        button.onclick = () => appendDialDigit(button.dataset.dial);
+    });
+    $("dialBackspace").onclick = backspaceDialDigit;
+    $("receiverPhone").addEventListener("input", () => clearDialFriendSelection());
+    $("receiverPhoneCountry").addEventListener("change", () => setDialNationalDigits(dialNationalDigits()));
+    $("dialManageFriends").onclick = () => openDashboardPanel("friends");
     $("copyCallId").onclick = async () => {
         if (!activeCallId) return;
         await navigator.clipboard.writeText(activeCallId);
@@ -363,9 +370,7 @@ function bindUI() {
             return;
         }
         selectInterpreterForCall(activeDirectoryProfile);
-        show("dashboardView");
-        openDashboardPanel("home");
-        $("receiverEmail")?.focus();
+        showCallDialPad();
     };
     $("profileChatTranslator").onclick = startDirectTranslatorChat;
 }
@@ -391,13 +396,17 @@ function setCustomerCallActionsVisible(visible) {
     if (summary) summary.textContent = "Start a call or review recent conversations";
 }
 
-function openDirectCall() {
+function showCallDialPad() {
     show("dashboardView");
     openDashboardPanel("home");
     const more = $("conceptMoreTools");
     if (more) more.open = true;
     $("callStartCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => $("receiverEmail")?.focus(), 250);
+    window.setTimeout(() => $("receiverPhone")?.focus(), 250);
+}
+
+function openDirectCall() {
+    showCallDialPad();
 }
 
 function openModal(id) {
@@ -635,6 +644,7 @@ function hydrateDashboardProfile() {
     $("profileShowOnMap").checked = Boolean(profileLocation.showOnMap);
     $("profileRole").value = roleLabel;
     $("settingsEmail").textContent = currentProfile.email || currentUser?.email || "";
+    loadFriends().catch(error => console.warn("Friends unavailable:", error));
 }
 
 let dashboardHistory = ["home"];
@@ -813,13 +823,80 @@ async function deleteAdminAccount(editor) {
     }
 }
 
+let savedFriends = [];
+
+function dialNationalDigits() {
+    return ($("receiverPhone")?.value || "").replace(/\D/g, "").slice(0, 15);
+}
+
+function formatDialNumber(digits) {
+    const country = $("receiverPhoneCountry")?.value || "+1";
+    if (country === "+1") {
+        const area = digits.slice(0, 3);
+        const prefix = digits.slice(3, 6);
+        const line = digits.slice(6, 10);
+        const extra = digits.slice(10);
+        if (digits.length <= 3) return area;
+        if (digits.length <= 6) return `(${area}) ${prefix}`;
+        return `(${area}) ${prefix}-${line}${extra}`;
+    }
+    return digits.replace(/(\d{3})(?=\d)/g, "$1 ").trim();
+}
+
+function clearDialFriendSelection() {
+    if ($("receiverEmail")) $("receiverEmail").value = "";
+    if ($("dialTargetName")) $("dialTargetName").textContent = "";
+}
+
+function setDialNationalDigits(digits) {
+    const input = $("receiverPhone");
+    if (!input) return;
+    input.value = formatDialNumber(String(digits || "").replace(/\D/g, "").slice(0, 15));
+}
+
+function appendDialDigit(value) {
+    if (!/^\d$/.test(value || "")) return;
+    clearDialFriendSelection();
+    setDialNationalDigits(dialNationalDigits() + value);
+}
+
+function backspaceDialDigit() {
+    clearDialFriendSelection();
+    setDialNationalDigits(dialNationalDigits().slice(0, -1));
+}
+
+function applyFriendToDialPad(friend) {
+    if (!friend) return;
+    const phone = friend.savedPhone || friend.phone || "";
+    const name = friend.nickname || friend.displayName || friend.email || "Friend";
+    clearDialFriendSelection();
+    if (phone) {
+        setPhoneFieldValue("receiverPhone", phone);
+        setDialNationalDigits(dialNationalDigits());
+        if ($("dialTargetName")) $("dialTargetName").textContent = name;
+    } else if (friend.email) {
+        if ($("receiverPhone")) $("receiverPhone").value = "";
+        if ($("receiverEmail")) $("receiverEmail").value = friend.email;
+        if ($("dialTargetName")) $("dialTargetName").textContent = `${name} · ${friend.email}`;
+    }
+    $("receiverPhone")?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 async function loadFriends() {
-    const container = $("friendsList"); container.innerHTML = "<p>Loading friends…</p>";
+    const container = $("friendsList");
+    const dialList = $("dialFriendsList");
+    if (container) container.innerHTML = "<p>Loading friends…</p>";
+    if (dialList) dialList.innerHTML = '<p class="dial-friends-empty">Loading friends…</p>';
     try {
-        const result = await apiFetch("/api/friends"); renderFriends(result.friends || []);
-        $("friendsStatus").textContent = `${(result.friends || []).length} saved friend${(result.friends || []).length === 1 ? "" : "s"}.`;
+        const result = await apiFetch("/api/friends");
+        savedFriends = result.friends || [];
+        renderFriends(savedFriends);
+        renderDialFriends(savedFriends);
+        if ($("friendsStatus")) $("friendsStatus").textContent = `${savedFriends.length} saved friend${savedFriends.length === 1 ? "" : "s"}.`;
     } catch (error) {
-        container.innerHTML = `<p class="status">Could not load friends: ${escapeHtml(error.message)}</p>`;
+        savedFriends = [];
+        if (container) container.innerHTML = `<p class="status">Could not load friends: ${escapeHtml(error.message)}</p>`;
+        if (dialList) dialList.innerHTML = `<p class="dial-friends-empty">Could not load friends.</p>`;
     }
 }
 
@@ -842,10 +919,27 @@ function renderFriends(friends) {
     container.querySelectorAll("[data-remove-friend]").forEach(button => button.onclick = () => removeFriend(button.closest("[data-friend-id]")));
 }
 
+function renderDialFriends(friends) {
+    const container = $("dialFriendsList");
+    if (!container) return;
+    if (!friends.length) {
+        container.innerHTML = '<p class="dial-friends-empty">No friends yet. Add the people you call inside FiniSpeak.</p>';
+        return;
+    }
+    container.innerHTML = friends.map(friend => {
+        const name = friend.nickname || friend.displayName || friend.email || "Friend";
+        const detail = friend.savedPhone || friend.phone || friend.email || "";
+        return `<button type="button" class="dial-friend" data-friend-id="${escapeHtml(friend.uid)}"><span class="concept-avatar dial-friend-avatar" aria-hidden="true">${escapeHtml(profileInitials(name))}</span><span class="dial-friend-copy"><strong>${escapeHtml(name)}</strong><small>${friend.online ? "Online" : "Offline"}${detail ? ` · ${escapeHtml(detail)}` : ""}</small></span><span class="presence-dot ${friend.online ? "online" : ""}" aria-hidden="true"></span></button>`;
+    }).join("");
+    container.querySelectorAll(".dial-friend").forEach(button => {
+        button.onclick = () => applyFriendToDialPad(savedFriends.find(item => item.uid === button.dataset.friendId));
+    });
+}
+
 function callFriend(card, friends) {
     const friend = friends.find(item => item.uid === card.dataset.friendId); if (!friend) return;
-    openDashboardPanel("home"); $("receiverEmail").value = friend.email || ""; setPhoneFieldValue("receiverPhone", friend.savedPhone || friend.phone || "");
-    $("callStartCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    showCallDialPad();
+    applyFriendToDialPad(friend);
 }
 
 async function saveFriend(card) {
@@ -990,8 +1084,8 @@ function renderSelectedInterpreter() {
         ? selectedInterpreterProfile.displayName || "FiniSpeak interpreter"
         : "";
     $("callFormHelp").textContent = hasSelection
-        ? "Enter the other customer's FiniSpeak email or saved phone number. Your selected interpreter will be requested when the call starts."
-        : "Enter the other customer's FiniSpeak email or saved phone number. You can request a human interpreter after the call starts.";
+        ? "Dial the other customer, or choose a friend. Your selected interpreter will be requested when the call starts."
+        : "Dial another FiniSpeak customer, or choose a friend. You can request an interpreter after the call starts.";
 }
 
 function setCallFormStatus(message = "", isError = false) {
@@ -2270,9 +2364,10 @@ async function createCall(e) {
     const attemptId = `${Date.now().toString(36)}-${++callAttemptSequence}`;
     let stage = "form-submit";
     const submitButton = e.submitter || $("callForm").querySelector('button[type="submit"]');
+    const preserveDialButton = submitButton?.id === "dialCallButton";
     const originalButtonText = submitButton.textContent;
     submitButton.disabled = true;
-    submitButton.textContent = "Finding FiniSpeak user…";
+    if (!preserveDialButton) submitButton.textContent = "Finding FiniSpeak user…";
     $("dashboardStatus").textContent = "";
     setCallFormStatus("Looking up the FiniSpeak account…");
     callLog(attemptId, stage, {
@@ -2286,12 +2381,13 @@ async function createCall(e) {
     try {
         stage = "media-security-preflight";
         requireMediaCapture();
-        const receiverEmail = $("receiverEmail").value.trim().toLowerCase();
-        const receiverPhone = completePhoneNumber("receiverPhone");
-        const phoneNormalized = receiverEmail ? "" : normalizePhoneNumber(receiverPhone);
-        if (!receiverEmail && !phoneNormalized) throw new Error("Enter a FiniSpeak email or saved phone number.");
+        const dialed = dialNationalDigits();
+        const receiverEmail = dialed ? "" : $("receiverEmail").value.trim().toLowerCase();
+        const receiverPhone = dialed ? completePhoneNumber("receiverPhone") : "";
+        const phoneNormalized = dialed ? normalizePhoneNumber(receiverPhone) : "";
+        if (!receiverEmail && !phoneNormalized) throw new Error("Dial a FiniSpeak number or choose a friend.");
         stage = "customer-directory-lookup";
-        callLog(attemptId, stage, { emailProvided: true });
+        callLog(attemptId, stage, { emailProvided: Boolean(receiverEmail) });
         const lookupQuery = receiverEmail ? `email=${encodeURIComponent(receiverEmail)}` : `phone=${encodeURIComponent(phoneNormalized)}`;
         const lookup = await apiFetch(`/api/accounts/lookup?${lookupQuery}`);
         const receiver = lookup.account || null;
@@ -2304,12 +2400,12 @@ async function createCall(e) {
             receiverRole: receiver?.role || null,
             receiverHasUid: Boolean(receiver?.uid)
         });
-        if (!receiver) throw new Error(`No FiniSpeak account was found with that ${receiverEmail ? "email" : "phone number"}. Ask them to save it in their profile, then try again.`);
+        if (!receiver) throw new Error(`No FiniSpeak account was found with that ${receiverEmail ? "email" : "number"}. Ask them to save it in their profile, then try again.`);
         if (isInterpreterRole(currentProfile?.role) && isInterpreterRole(receiver.role)) throw new Error("Translators cannot call other translators.");
         if (!["customer", "admin"].includes(receiver.role)) throw new Error("That contact belongs to an account that cannot receive customer calls.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
         const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
-        submitButton.textContent = "Starting call…";
+        if (!preserveDialButton) submitButton.textContent = "Starting call…";
         setCallFormStatus(selectedInterpreter
             ? `Starting the call and requesting ${selectedInterpreter.displayName || "your selected interpreter"}…`
             : "Starting the call…");
@@ -2334,7 +2430,7 @@ async function createCall(e) {
         setCallFormStatus(error.message || "Could not start the call. Please try again.", true);
     } finally {
         submitButton.disabled = false;
-        submitButton.textContent = originalButtonText;
+        if (!preserveDialButton) submitButton.textContent = originalButtonText;
         callLog(attemptId, "form-restored", { activeCall: Boolean(activeCallId) });
     }
 }
@@ -4275,6 +4371,11 @@ function setConceptCategory(name) {
 
 function openConceptCategory(name) {
     setConceptCategory(name);
+    if (!currentUser) {
+        openAuth(false, "customer");
+        $("authStatus").textContent = "Log in to browse sessions by category.";
+        return;
+    }
     if ($("dashboardView")?.classList.contains("hidden")) show("dashboardView");
     if (name === "Education") openDashboardPanel("classroom");
     else if (name === "Personal") openDashboardPanel("home");
@@ -4599,7 +4700,7 @@ function bindConceptScreens() {
         else {
             openDashboardPanel("home");
             if ($("conceptMoreTools")) $("conceptMoreTools").open = true;
-            $("receiverEmail")?.focus();
+            $("receiverPhone")?.focus();
         }
     };
     $("conceptConfirmSchedule").onclick = () => {

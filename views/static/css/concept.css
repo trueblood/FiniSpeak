@@ -338,43 +338,86 @@ body.dashboard-mode #interpreterMap { height:42vh; min-height:260px; border-radi
 #dashboardTranscript .app-transcript-text { margin:6px 0 0; color:#1e293b; font-size:1rem; font-weight:650; line-height:1.45; }
 #dashboardTranscript .app-transcript-empty { margin:8px 0 0; color:#334155; font-weight:650; }
 
-body.signed-in.profile-mode .site-header { display:none; }
-body.signed-in.profile-mode #profileView { min-height:100dvh; display:grid; place-items:center; padding:18px 12px; background:#e7ebf0; }
-body.signed-in.profile-mode .profile-detail-shell { display:flex; flex-direction:column; width:min(420px,100%); max-height:min(880px,calc(100dvh - 28px)); overflow:hidden; background:#fff; border:10px solid #151515; border-radius:38px; box-shadow:0 28px 70px rgba(15,23,42,.18); }
+/* Interpreter profiles use the same phone shell as the rest of the app,
+   including the public directory, so the wide marketing layout never takes over. */
+body.profile-mode { background:#e7ebf0; }
+body.profile-mode .site-header { display:none; }
+body.profile-mode #profileView { min-height:100dvh; display:grid; place-items:center; padding:18px 12px; background:transparent; }
+body.profile-mode .profile-detail-shell { display:flex; flex-direction:column; width:min(420px,100%); height:min(880px,calc(100dvh - 28px)); max-height:min(880px,calc(100dvh - 28px)); overflow:hidden; background:#fff; border:10px solid #151515; border-radius:38px; box-shadow:0 28px 70px rgba(15,23,42,.18); }
 .concept-profile-brand,.concept-tabbar-profile { display:none; }
-body.signed-in.profile-mode .concept-profile-brand { display:flex; align-items:center; gap:8px; flex:none; padding:16px 18px 0; font-size:1.15rem; }
-body.signed-in.profile-mode .concept-profile-brand .mobile-settings-button { width:36px; height:36px; display:grid; place-items:center; margin-left:auto; padding:0; border-radius:50%; background:#f3f4f6; color:#111827; }
+body.profile-mode .concept-profile-brand { display:flex; align-items:center; gap:8px; flex:none; padding:16px 18px 0; font-size:1.15rem; letter-spacing:-.03em; color:#111827; }
+body.profile-mode .concept-profile-brand .mobile-settings-button { width:36px; height:36px; display:grid; place-items:center; margin-left:auto; padding:0; border-radius:50%; background:#f3f4f6; color:#111827; }
+body.profile-mode .concept-profile-brand .mobile-settings-button:hover { background:#e5e7eb; color:#111827; }
 .profile-overview .concept-lang-badges span { margin:0; }
-body.signed-in.profile-mode .concept-tabbar-profile { display:flex; }
-body.signed-in.profile-mode .profile-back { align-self:flex-start; flex:none; min-height:34px; margin:6px 18px 0; padding:4px 12px 4px 8px; font-size:.88rem; }
-body.signed-in.profile-mode .profile-detail-card { flex:1; min-height:0; overflow:auto; border:0; border-radius:0; box-shadow:none; }
-body.signed-in.profile-mode .profile-overview { grid-template-columns:minmax(0,1fr); gap:12px; padding:8px 18px 4px; background:#fff; border-bottom:0; }
-body.signed-in.profile-mode .profile-overview-top,
-body.signed-in.profile-mode .profile-overview .concept-week,
-body.signed-in.profile-mode .profile-slot,
-body.signed-in.profile-mode .profile-call-actions { grid-column:auto; grid-row:auto; }
-body.signed-in.profile-mode .profile-overview .public-profile-avatar { width:84px; height:84px; flex-basis:84px; }
-body.signed-in.profile-mode .profile-name-row h1 { font-size:1.65rem; }
-body.signed-in.profile-mode .profile-overview .concept-week,
-body.signed-in.profile-mode .profile-slot { width:100%; }
-body.signed-in.profile-mode .profile-overview .availability-pill { display:none; }
-body.signed-in.profile-mode .profile-call-actions { width:100%; }
-body.signed-in.profile-mode #profileChatTranslator,
-body.signed-in.profile-mode #profileStartCall { min-height:0; background:transparent; color:#0b6cff; border:0; padding:4px 0; font-size:.92rem; }
-body.signed-in.profile-mode .profile-detail-grid { display:block; padding:4px 18px 12px; }
-body.signed-in.profile-mode .profile-main-content { gap:18px; }
-body.signed-in.profile-mode .profile-main-content section { padding-bottom:16px; }
-body.signed-in.profile-mode .profile-main-content h2 { font-size:1.15rem; }
-body.signed-in.profile-mode .reviews-heading { flex-direction:column; gap:8px; }
-body.signed-in.profile-mode .review-summary { text-align:left; }
-body.signed-in.profile-mode .profile-facts { position:static; margin-top:8px; padding:4px 14px 8px; border:1px solid #e6ebf1; border-radius:16px; box-shadow:none; background:#f8fafc; }
-body.signed-in.profile-mode .profile-facts h3 { margin-bottom:0; font-size:1rem; }
-body.signed-in.profile-mode .review-card { padding:12px; }
-body.signed-in.profile-mode .concept-tabbar-profile { flex:none; padding:8px 18px 16px; }
+body.profile-mode .concept-tabbar-profile { display:flex; }
+body.profile-mode .profile-back { align-self:flex-start; flex:none; min-height:34px; margin:6px 18px 0; padding:4px 12px 4px 8px; font-size:.88rem; }
+body.profile-mode .profile-detail-card { flex:1; min-height:0; overflow:auto; border:0; border-radius:0; box-shadow:none; background:#fff; }
+body.profile-mode .profile-overview { grid-template-columns:minmax(0,1fr); align-items:stretch; gap:12px; padding:8px 18px 4px; background:#fff; border-bottom:0; }
+body.profile-mode .profile-overview-top,
+body.profile-mode .profile-overview .concept-week,
+body.profile-mode .profile-slot,
+body.profile-mode .profile-call-actions { grid-column:auto; grid-row:auto; align-self:stretch; }
+body.profile-mode .profile-overview .public-profile-avatar { width:84px; height:84px; flex-basis:84px; }
+body.profile-mode .profile-name-row h1 { font-size:1.65rem; }
+body.profile-mode .profile-overview .concept-week,
+body.profile-mode .profile-slot,
+body.profile-mode .profile-call-actions { width:100%; }
+body.profile-mode .profile-overview .availability-pill { display:none; }
+body.profile-mode #profileChatTranslator,
+body.profile-mode #profileStartCall { min-height:0; background:transparent; color:#0b6cff; border:0; padding:4px 0; font-size:.92rem; }
+body.profile-mode #profileChatTranslator:hover,
+body.profile-mode #profileStartCall:hover { background:transparent; color:#0057e0; }
+body.profile-mode .profile-detail-grid { display:block; padding:4px 18px 12px; }
+body.profile-mode .profile-main-content { gap:18px; }
+body.profile-mode .profile-main-content section { padding-bottom:16px; }
+body.profile-mode .profile-main-content h2 { font-size:1.15rem; }
+body.profile-mode .reviews-heading { flex-direction:column; gap:8px; }
+body.profile-mode .review-summary { text-align:left; }
+body.profile-mode .profile-facts { position:static; margin-top:8px; padding:4px 14px 8px; border:1px solid #e6ebf1; border-radius:16px; box-shadow:none; background:#f8fafc; }
+body.profile-mode .profile-facts h3 { margin-bottom:0; font-size:1rem; }
+body.profile-mode .review-card { padding:12px; }
+body.profile-mode .concept-tabbar-profile { flex:none; padding:8px 18px 16px; }
+
+.dial-pad-form { display:grid; justify-items:center; gap:10px; width:100%; }
+.dial-readout { width:100%; display:grid; gap:4px; }
+.dial-country { width:100%; min-height:40px; border-radius:12px; background:#f8fafc; font-weight:700; }
+.dial-number-row { display:grid; grid-template-columns:minmax(0,1fr) 44px; gap:4px; align-items:center; }
+.dial-number-row input { min-width:0; min-height:52px; padding:8px 4px; border:0; background:transparent; text-align:center; font-size:1.45rem; font-weight:750; letter-spacing:.01em; color:#111827; overflow:hidden; text-overflow:ellipsis; }
+.dial-number-row input:focus { outline:none; }
+.dial-target { min-height:1.15em; margin:0; text-align:center; color:#0b6cff; font-size:.88rem; font-weight:750; }
+.call-start-card #callForm button.dial-backspace,
+.call-start-card #callForm button.dial-key { min-height:0; margin:0; padding:0; background:#f3f4f6; color:#111827; box-shadow:none; }
+.call-start-card #callForm button.dial-backspace { width:44px; height:44px; }
+.call-start-card #callForm button.dial-key { width:72px; height:72px; }
+.dial-backspace { border-radius:50%; font-size:1.15rem; }
+.dial-backspace:hover,.dial-key:hover { background:#e5e7eb; color:#111827; }
+.dial-pad { display:grid; grid-template-columns:repeat(3,72px); gap:12px 16px; justify-content:center; width:100%; }
+.dial-key { width:72px; height:72px; display:grid; align-content:center; justify-items:center; border-radius:50%; line-height:1; }
+.dial-key strong { font-size:1.45rem; font-weight:750; }
+.dial-key small { margin-top:2px; color:#64748b; font-size:.58rem; font-weight:800; letter-spacing:.08em; }
+.dial-key-symbol strong { font-size:1.6rem; }
+.call-start-card #callForm #dialCallButton { width:74px; height:74px; min-height:74px; margin:2px auto 0; padding:0; border-radius:50%; background:#0b6cff; color:#fff; box-shadow:0 10px 22px rgba(11,108,255,.28); }
+.call-start-card #callForm #dialCallButton:hover { background:#0057e0; }
+#dialCallButton svg { width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.dial-pad-form .call-phone-help { width:100%; margin:0; text-align:center; }
+.call-start-card .call-form-status { margin:8px 0 12px; }
+.dial-friends { width:100%; margin-top:6px; }
+.dial-friends-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.dial-friends-heading h3 { margin:0; font-size:1.05rem; }
+.dial-friends-heading .text-button { padding:6px 0; }
+.dial-friends-list { display:grid; gap:8px; max-height:148px; margin-top:8px; overflow:auto; }
+.dial-friends-empty { margin:0; color:#64748b; font-size:.88rem; }
+button.dial-friend { width:100%; display:flex; align-items:center; gap:10px; margin:0; padding:8px 10px; border:1px solid #e6ebf1; border-radius:14px; background:#fff; color:#111827; text-align:left; font-weight:650; box-shadow:none; }
+button.dial-friend:hover { background:#f8fafc; color:#111827; }
+.dial-friend-avatar { width:40px; height:40px; flex:none; font-size:.78rem; }
+.dial-friend-copy { min-width:0; display:grid; }
+.dial-friend-copy strong,.dial-friend-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dial-friend-copy small { color:#64748b; font-weight:650; }
+.dial-friend .presence-dot { margin-left:auto; }
 
 @media (max-width:700px) {
   body.dashboard-mode #dashboardView { padding:0; }
   body.dashboard-mode #dashboardView .app-shell { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
-  body.signed-in.profile-mode #profileView { padding:0; }
-  body.signed-in.profile-mode .profile-detail-shell { width:100%; height:100dvh; max-height:100dvh; min-height:0; border:0; border-radius:0; box-shadow:none; }
+  body.profile-mode #profileView { padding:0; }
+  body.profile-mode .profile-detail-shell { width:100%; height:100dvh; max-height:100dvh; min-height:0; border:0; border-radius:0; box-shadow:none; }
 }
