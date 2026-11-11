@@ -378,6 +378,43 @@ body.profile-mode .profile-facts h3 { margin-bottom:0; font-size:1rem; }
 body.profile-mode .review-card { padding:12px; }
 body.profile-mode .concept-tabbar-profile { flex:none; padding:8px 18px 16px; }
 
+.dial-pad-form { display:grid; justify-items:center; gap:10px; width:100%; }
+.dial-readout { width:100%; display:grid; gap:4px; }
+.dial-country { width:100%; min-height:40px; border-radius:12px; background:#f8fafc; font-weight:700; }
+.dial-number-row { display:grid; grid-template-columns:minmax(0,1fr) 44px; gap:4px; align-items:center; }
+.dial-number-row input { min-width:0; min-height:52px; padding:8px 4px; border:0; background:transparent; text-align:center; font-size:1.45rem; font-weight:750; letter-spacing:.01em; color:#111827; overflow:hidden; text-overflow:ellipsis; }
+.dial-number-row input:focus { outline:none; }
+.dial-target { min-height:1.15em; margin:0; text-align:center; color:#0b6cff; font-size:.88rem; font-weight:750; }
+.call-start-card #callForm button.dial-backspace,
+.call-start-card #callForm button.dial-key { min-height:0; margin:0; padding:0; background:#f3f4f6; color:#111827; box-shadow:none; }
+.call-start-card #callForm button.dial-backspace { width:44px; height:44px; }
+.call-start-card #callForm button.dial-key { width:72px; height:72px; }
+.dial-backspace { border-radius:50%; font-size:1.15rem; }
+.dial-backspace:hover,.dial-key:hover { background:#e5e7eb; color:#111827; }
+.dial-pad { display:grid; grid-template-columns:repeat(3,72px); gap:12px 16px; justify-content:center; width:100%; }
+.dial-key { width:72px; height:72px; display:grid; align-content:center; justify-items:center; border-radius:50%; line-height:1; }
+.dial-key strong { font-size:1.45rem; font-weight:750; }
+.dial-key small { margin-top:2px; color:#64748b; font-size:.58rem; font-weight:800; letter-spacing:.08em; }
+.dial-key-symbol strong { font-size:1.6rem; }
+.call-start-card #callForm #dialCallButton { width:74px; height:74px; min-height:74px; margin:2px auto 0; padding:0; border-radius:50%; background:#0b6cff; color:#fff; box-shadow:0 10px 22px rgba(11,108,255,.28); }
+.call-start-card #callForm #dialCallButton:hover { background:#0057e0; }
+#dialCallButton svg { width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.dial-pad-form .call-phone-help { width:100%; margin:0; text-align:center; }
+.call-start-card .call-form-status { margin:8px 0 12px; }
+.dial-friends { width:100%; margin-top:6px; }
+.dial-friends-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.dial-friends-heading h3 { margin:0; font-size:1.05rem; }
+.dial-friends-heading .text-button { padding:6px 0; }
+.dial-friends-list { display:grid; gap:8px; max-height:148px; margin-top:8px; overflow:auto; }
+.dial-friends-empty { margin:0; color:#64748b; font-size:.88rem; }
+button.dial-friend { width:100%; display:flex; align-items:center; gap:10px; margin:0; padding:8px 10px; border:1px solid #e6ebf1; border-radius:14px; background:#fff; color:#111827; text-align:left; font-weight:650; box-shadow:none; }
+button.dial-friend:hover { background:#f8fafc; color:#111827; }
+.dial-friend-avatar { width:40px; height:40px; flex:none; font-size:.78rem; }
+.dial-friend-copy { min-width:0; display:grid; }
+.dial-friend-copy strong,.dial-friend-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dial-friend-copy small { color:#64748b; font-weight:650; }
+.dial-friend .presence-dot { margin-left:auto; }
+
 @media (max-width:700px) {
   body.dashboard-mode #dashboardView { padding:0; }
   body.dashboard-mode #dashboardView .app-shell { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
