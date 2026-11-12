@@ -426,7 +426,9 @@ body.profile-mode .concept-tabbar-profile { flex:none; padding:8px 18px 16px; }
 .dial-friends-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .dial-friends-heading h3 { margin:0; font-size:1.05rem; }
 .dial-friends-heading .text-button { padding:6px 0; }
-.dial-friends-list { display:grid; gap:8px; max-height:148px; margin-top:8px; overflow:auto; }
+.dial-friends-list { display:grid; gap:8px; margin-top:8px; }
+body.dashboard-mode #dashboardCall .call-start-card { margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+body.dashboard-mode #dashboardCall .call-screen > h2 { margin-bottom:8px; }
 .dial-friends-empty { margin:0; color:#64748b; font-size:.88rem; }
 button.dial-friend { width:100%; display:flex; align-items:center; gap:10px; margin:0; padding:8px 10px; border:1px solid #e6ebf1; border-radius:14px; background:#fff; color:#111827; text-align:left; font-weight:650; box-shadow:none; }
 button.dial-friend:hover { background:#f8fafc; color:#111827; }
