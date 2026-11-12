@@ -114,6 +114,9 @@ class MvcRouteTests(unittest.TestCase):
         self.assertIn('id="signupPhone" type="tel"', html)
         self.assertIn('id="profilePhone" type="tel"', html)
         self.assertIn('id="receiverPhone" type="tel"', html)
+        self.assertIn('class="dial-pad"', html)
+        self.assertIn('id="dialFriendsList"', html)
+        self.assertIn('data-dial="5"', html)
         self.assertIn('id="friendPhone" type="tel"', html)
         self.assertIn('id="interpreterPhone" type="tel"', html)
         self.assertEqual(html.count('data-phone-country'), 5)
@@ -124,6 +127,8 @@ class MvcRouteTests(unittest.TestCase):
         script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
         for phone_id in ("signupPhone", "profilePhone", "interpreterPhone", "receiverPhone", "friendPhone"):
             self.assertIn(f'completePhoneNumber("{phone_id}")', script)
+        self.assertIn("function appendDialDigit", script)
+        self.assertIn("function renderDialFriends", script)
         self.assertIn('countryCode !== "+39"', script)
         self.assertIn('return `${countryCode}${nationalDigits}`', script)
         self.assertIn("countryFlag(iso)", script)
