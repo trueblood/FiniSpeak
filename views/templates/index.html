@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261103-call-followup">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261112-main-dial">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261112-call-screen">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261107-video-phone">
 </head>
 <body class="landing-mode">
@@ -180,11 +180,41 @@
                         <button id="openStartCall" class="concept-text-action" type="button">Start a call</button>
                     </section>
                     <details id="conceptMoreTools" class="concept-more-tools">
-                        <summary>Start a call or review recent conversations</summary>
+                        <summary>Recent conversations</summary>
                     <div class="dashboard-grid">
+                        <div class="card history-card">
+                            <div class="section-heading"><span class="eyebrow">Your activity</span><h3>Recent conversations</h3></div>
+                            <p>Open a session to review its saved transcript.</p>
+                            <div id="conversationHistory" class="conversation-history"><p class="transcript-empty">Loading conversations…</p></div>
+                        </div>
+                    </div>
+                    </details>
+                    <div id="translatorTools" class="hidden translator-workspace concept-translator-home">
+                        <div class="translator-hero-row">
+                            <div><span class="eyebrow">Interpreter workspace</span><h3>Your interpreter dashboard</h3><p>Manage your availability, profile, verification, and interpretation sessions from one place.</p></div>
+                            <label class="availability-switch"><input id="dashboardAvailableNow" type="checkbox"><span><strong id="dashboardAvailabilityLabel">Unavailable</strong><small>Accept new requests</small></span></label>
+                        </div>
+                        <div class="translator-stat-grid">
+                            <div class="translator-stat"><span>Profile</span><strong id="dashboardProfileCompletion">0%</strong><small id="dashboardProfileCompletionText">Finish onboarding</small></div>
+                            <div class="translator-stat"><span>Verification</span><strong id="dashboardVerification">Unverified</strong><small>Credential review status</small></div>
+                            <div class="translator-stat"><span>Rating</span><strong id="dashboardRating">New</strong><small id="dashboardRatingCount">No reviews yet</small></div>
+                            <div class="translator-stat"><span>Experience</span><strong id="dashboardExperience">0 yrs</strong><small>Interpreter experience</small></div>
+                        </div>
+                        <div class="translator-summary-grid">
+                            <div class="translator-summary"><span class="eyebrow">Languages & dialects</span><p id="dashboardLanguages">Add your languages and dialects.</p></div>
+                            <div class="translator-summary"><span class="eyebrow">Specialties</span><p id="dashboardSpecialties">Add your specialties.</p></div>
+                            <div class="translator-summary"><span class="eyebrow">Schedule</span><p id="dashboardSchedule">Add your availability schedule.</p></div>
+                        </div>
+                        <div class="translator-actions"><button type="button" data-open-panel="interpreter">Edit interpreter profile</button><span id="translatorRequestStatus" class="request-ready">Waiting for interpretation requests…</span></div>
+                    </div>
+                    <p id="dashboardStatus" class="status" aria-live="polite"></p>
+                </div>
+
+                <div id="dashboardCall" class="dashboard-panel hidden">
+                    <section class="concept-screen call-screen" aria-labelledby="callScreenTitle">
+                        <h2 id="callScreenTitle">Call</h2>
                         <div class="card call-start-card" id="callStartCard">
                             <div id="customerTools">
-                                <span class="eyebrow">Connect now</span><h3>Start a conversation</h3>
                                 <p id="callFormHelp">Dial another FiniSpeak customer, or choose a friend. You can add an interpreter when the call starts.</p>
                                 <div id="selectedInterpreter" class="selected-interpreter hidden" aria-live="polite">
                                     <div><span>Selected interpreter</span><strong id="selectedInterpreterName"></strong></div>
@@ -226,32 +256,7 @@
                                 <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
                             </div>
                         </div>
-                        <div class="card history-card">
-                            <div class="section-heading"><span class="eyebrow">Your activity</span><h3>Recent conversations</h3></div>
-                            <p>Open a session to review its saved transcript.</p>
-                            <div id="conversationHistory" class="conversation-history"><p class="transcript-empty">Loading conversations…</p></div>
-                        </div>
-                    </div>
-                    </details>
-                    <div id="translatorTools" class="hidden translator-workspace concept-translator-home">
-                        <div class="translator-hero-row">
-                            <div><span class="eyebrow">Interpreter workspace</span><h3>Your interpreter dashboard</h3><p>Manage your availability, profile, verification, and interpretation sessions from one place.</p></div>
-                            <label class="availability-switch"><input id="dashboardAvailableNow" type="checkbox"><span><strong id="dashboardAvailabilityLabel">Unavailable</strong><small>Accept new requests</small></span></label>
-                        </div>
-                        <div class="translator-stat-grid">
-                            <div class="translator-stat"><span>Profile</span><strong id="dashboardProfileCompletion">0%</strong><small id="dashboardProfileCompletionText">Finish onboarding</small></div>
-                            <div class="translator-stat"><span>Verification</span><strong id="dashboardVerification">Unverified</strong><small>Credential review status</small></div>
-                            <div class="translator-stat"><span>Rating</span><strong id="dashboardRating">New</strong><small id="dashboardRatingCount">No reviews yet</small></div>
-                            <div class="translator-stat"><span>Experience</span><strong id="dashboardExperience">0 yrs</strong><small>Interpreter experience</small></div>
-                        </div>
-                        <div class="translator-summary-grid">
-                            <div class="translator-summary"><span class="eyebrow">Languages & dialects</span><p id="dashboardLanguages">Add your languages and dialects.</p></div>
-                            <div class="translator-summary"><span class="eyebrow">Specialties</span><p id="dashboardSpecialties">Add your specialties.</p></div>
-                            <div class="translator-summary"><span class="eyebrow">Schedule</span><p id="dashboardSchedule">Add your availability schedule.</p></div>
-                        </div>
-                        <div class="translator-actions"><button type="button" data-open-panel="interpreter">Edit interpreter profile</button><span id="translatorRequestStatus" class="request-ready">Waiting for interpretation requests…</span></div>
-                    </div>
-                    <p id="dashboardStatus" class="status" aria-live="polite"></p>
+                    </section>
                 </div>
 
                 <div id="dashboardProfile" class="dashboard-panel hidden">
@@ -1068,6 +1073,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261112-main-dial"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261112-call-screen"></script>
 </body>
 </html>

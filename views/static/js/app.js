@@ -191,8 +191,7 @@ function bindUI() {
     });
     $("startCall").onclick = () => {
         if (!currentUser) return openAuth(false, "customer");
-        show("dashboardView");
-        openDashboardPanel("home");
+        showCallDialPad();
     };
     $("landingCta").onclick = () => openAuth(true, "customer");
     $("landingLogin").onclick = () => $("authNav").click();
@@ -440,16 +439,13 @@ function setCustomerCallActionsVisible(visible) {
         $(id)?.classList.remove("hidden");
     });
     const summary = document.querySelector("#conceptMoreTools summary");
-    if (summary) summary.textContent = "Start a call or review recent conversations";
+    if (summary) summary.textContent = "Recent conversations";
 }
 
 function showCallDialPad() {
     show("dashboardView");
-    openDashboardPanel("home");
-    const more = $("conceptMoreTools");
-    if (more) more.open = true;
-    $("callStartCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => $("receiverPhone")?.focus(), 250);
+    openDashboardPanel("call");
+    window.setTimeout(() => $("receiverPhone")?.focus(), 50);
 }
 
 function openDirectCall() {
@@ -730,7 +726,7 @@ function goDashboardBack() {
 }
 
 function openDashboardPanel(panel, historyMode = "push") {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
+    const ids = { home: "dashboardHome", call: "dashboardCall", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
     if (!ids[panel]) return;
     if (historyMode !== "back") dashboardHistory = nextDashboardHistory(dashboardHistory, panel, historyMode);
     updateDashboardBackButton();
@@ -745,7 +741,7 @@ function openDashboardPanel(panel, historyMode = "push") {
     if (historyMode === "back") return;
     $("dashboardView")?.querySelector(".dashboard-content")?.scrollTo({ top: 0, behavior: "auto" });
     if (panel === "directory") { setDirectoryView("map"); loadInterpreterDirectory(); }
-    if (panel === "friends") loadFriends();
+    if (panel === "call" || panel === "friends") loadFriends();
     if (panel === "admin") loadAdminDashboard();
     if (panel === "lesson") renderLessonScreen();
     if (panel === "schedule") renderScheduleScreen();
@@ -5099,11 +5095,7 @@ function bindConceptScreens() {
             return;
         }
         if (activeDirectoryProfile) startDirectTranslatorChat();
-        else {
-            openDashboardPanel("home");
-            if ($("conceptMoreTools")) $("conceptMoreTools").open = true;
-            $("receiverPhone")?.focus();
-        }
+        else showCallDialPad();
     };
     $("conceptConfirmSchedule").onclick = () => {
         $("conceptScheduleStatus").textContent = `Session held for ${$("conceptSlotLabel").textContent}. Request an instant call when everyone is ready.`;
