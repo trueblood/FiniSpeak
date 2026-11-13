@@ -76,6 +76,10 @@ python app.py
 
 Open http://127.0.0.1:5050
 
+## iOS app
+
+The native client lives in [`ios/`](ios/README.md). It uses this Flask API for accounts, discovery, messages, friends, and calls, including the WebRTC signaling service the browser already uses. Open `ios/FiniSpeak.xcodeproj` on a Mac.
+
 ## Firebase setup
 
 1. Create/register a Firebase Web App.
