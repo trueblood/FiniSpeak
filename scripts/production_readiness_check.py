@@ -20,7 +20,7 @@ def main():
     args = parser.parse_args()
     checks = {}
     required_files = [
-        "migrations/versions/20261014_0003_firebase_replacements.py", "migrations/versions/20261016_0004_friends_and_soft_delete.py", "docs/FIREBASE_REMOVAL.md", "docs/ACCESSIBILITY_AUDIT.md",
+        "migrations/versions/20261014_0003_firebase_replacements.py", "migrations/versions/20261016_0004_friends_and_soft_delete.py", "migrations/versions/20261112_0005_messages_and_groups.py", "docs/FIREBASE_REMOVAL.md", "docs/ACCESSIBILITY_AUDIT.md",
         "docs/COMMERCIAL_API.md", "docs/LANGUAGE_DETECTION.md", "views/templates/index.html",
     ]
     checks["requiredArtifacts"] = all((ROOT / path).exists() for path in required_files)

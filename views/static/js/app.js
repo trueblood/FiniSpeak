@@ -342,6 +342,19 @@ function bindUI() {
     $("refreshAdmin").onclick = loadAdminDashboard;
     $("refreshFriends").onclick = loadFriends;
     $("friendForm").onsubmit = addFriend;
+    $("refreshMessages").onclick = () => loadConversations({ announce: true });
+    $("directMessageForm").onsubmit = startDirectMessage;
+    $("groupMessageForm").onsubmit = createGroupMessage;
+    $("messageComposeForm").onsubmit = sendConversationMessage;
+    $("messageBody").addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            $("messageComposeForm").requestSubmit();
+        }
+    });
+    $("messageBackToList").onclick = showMessageList;
+    $("groupAddMemberButton").onclick = addGroupMember;
+    $("groupLeaveButton").onclick = leaveGroup;
     $("organizationForm").onsubmit = createOrganization;
     $("directorySearch").addEventListener("input", filterInterpreterDirectory);
     $("directoryRating").addEventListener("change", refreshInterpreterDirectory);
@@ -592,6 +605,7 @@ async function handleAuthState(user) {
         currentInterpreterProfile = null;
         dashboardHistory = ["home"];
         clearSelectedInterpreter();
+        stopMessagePolling();
         cleanupDashboardListeners();
         cleanupCall();
         show("heroView");
@@ -730,7 +744,7 @@ function goDashboardBack() {
 }
 
 function openDashboardPanel(panel, historyMode = "push") {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
+    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", messages: "dashboardMessages", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
     if (!ids[panel]) return;
     if (historyMode !== "back") dashboardHistory = nextDashboardHistory(dashboardHistory, panel, historyMode);
     updateDashboardBackButton();
@@ -742,6 +756,8 @@ function openDashboardPanel(panel, historyMode = "push") {
     });
     document.body.classList.remove("nav-open");
     $("conceptMenuButton")?.setAttribute("aria-expanded", "false");
+    if (panel === "messages") startMessagesPanel();
+    else stopMessagePolling();
     if (historyMode === "back") return;
     $("dashboardView")?.querySelector(".dashboard-content")?.scrollTo({ top: 0, behavior: "auto" });
     if (panel === "directory") { setDirectoryView("map"); loadInterpreterDirectory(); }
@@ -945,6 +961,7 @@ async function loadFriends() {
         savedFriends = result.friends || [];
         renderFriends(savedFriends);
         renderDialFriends(savedFriends);
+        renderGroupFriendChoices(savedFriends);
         if ($("friendsStatus")) $("friendsStatus").textContent = `${savedFriends.length} saved friend${savedFriends.length === 1 ? "" : "s"}.`;
     } catch (error) {
         savedFriends = [];
@@ -954,11 +971,14 @@ async function loadFriends() {
 }
 
 async function addFriend(event) {
-    event.preventDefault(); const button = event.currentTarget.querySelector("button[type=submit]"); button.disabled = true;
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
     try {
         const phone = completePhoneNumber("friendPhone");
         await apiFetch("/api/friends", { method: "POST", body: JSON.stringify({ email: $("friendEmail").value.trim(), phone, savedPhone: phone, nickname: $("friendNickname").value.trim() }) });
-        event.currentTarget.reset(); $("friendPhoneCountry").value = "+1"; $("friendsStatus").textContent = "Friend added."; await loadFriends();
+        form.reset(); $("friendPhoneCountry").value = "+1"; $("friendsStatus").textContent = "Friend added."; await loadFriends();
     } catch (error) { $("friendsStatus").textContent = `Could not add friend: ${error.message}`; }
     finally { button.disabled = false; }
 }
@@ -966,7 +986,8 @@ async function addFriend(event) {
 function renderFriends(friends) {
     const container = $("friendsList");
     if (!friends.length) { container.innerHTML = '<p class="admin-empty">No friends saved yet.</p>'; return; }
-    container.innerHTML = friends.map(friend => `<article class="friend-card" data-friend-id="${escapeHtml(friend.uid)}"><div class="friend-card-heading"><span class="presence-dot ${friend.online ? "online" : ""}" aria-hidden="true"></span><div><strong>${escapeHtml(friend.nickname || friend.displayName || friend.email)}</strong><small>${friend.online ? "Online now" : "Offline"} · ${escapeHtml(friend.email || "")}</small></div></div><div class="friend-fields"><label>Nickname<input data-friend-field="nickname" maxlength="160" value="${escapeHtml(friend.nickname || "")}"></label><label>Saved number<input data-friend-field="savedPhone" type="tel" value="${escapeHtml(friend.savedPhone || friend.phone || "")}"></label></div><div class="friend-actions"><button type="button" data-call-friend>Start call</button><button class="secondary" type="button" data-save-friend>Save</button><button class="secondary reject-action" type="button" data-remove-friend>Remove</button></div></article>`).join("");
+    container.innerHTML = friends.map(friend => `<article class="friend-card" data-friend-id="${escapeHtml(friend.uid)}"><div class="friend-card-heading"><span class="presence-dot ${friend.online ? "online" : ""}" aria-hidden="true"></span><div><strong>${escapeHtml(friend.nickname || friend.displayName || friend.email)}</strong><small>${friend.online ? "Online now" : "Offline"} · ${escapeHtml(friend.email || "")}</small></div></div><div class="friend-fields"><label>Nickname<input data-friend-field="nickname" maxlength="160" value="${escapeHtml(friend.nickname || "")}"></label><label>Saved number<input data-friend-field="savedPhone" type="tel" value="${escapeHtml(friend.savedPhone || friend.phone || "")}"></label></div><div class="friend-actions"><button class="secondary" type="button" data-message-friend>Message</button><button type="button" data-call-friend>Start call</button><button class="secondary" type="button" data-save-friend>Save</button><button class="secondary reject-action" type="button" data-remove-friend>Remove</button></div></article>`).join("");
+    container.querySelectorAll("[data-message-friend]").forEach(button => button.onclick = () => messageFriend(button.closest("[data-friend-id]")));
     container.querySelectorAll("[data-call-friend]").forEach(button => button.onclick = () => callFriend(button.closest("[data-friend-id]"), friends));
     container.querySelectorAll("[data-save-friend]").forEach(button => button.onclick = () => saveFriend(button.closest("[data-friend-id]")));
     container.querySelectorAll("[data-remove-friend]").forEach(button => button.onclick = () => removeFriend(button.closest("[data-friend-id]")));
@@ -1006,6 +1027,285 @@ async function removeFriend(card) {
     if (!window.confirm("Remove this friend from your saved list?")) return;
     try { await apiFetch(`/api/friends/${encodeURIComponent(card.dataset.friendId)}`, { method: "DELETE" }); $("friendsStatus").textContent = "Friend removed."; await loadFriends(); }
     catch (error) { $("friendsStatus").textContent = `Could not remove friend: ${error.message}`; }
+}
+
+let savedConversations = [];
+let openConversationId = "";
+let pendingConversationId = "";
+let renderedMessageTail = "";
+let messagePollTimer = null;
+
+function messageTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function stopMessagePolling() {
+    if (!messagePollTimer) return;
+    window.clearInterval(messagePollTimer);
+    messagePollTimer = null;
+}
+
+function startMessagePolling() {
+    stopMessagePolling();
+    messagePollTimer = window.setInterval(() => {
+        if ($("dashboardMessages")?.classList.contains("hidden")) {
+            stopMessagePolling();
+            return;
+        }
+        refreshOpenMessages();
+    }, 4000);
+}
+
+function renderGroupFriendChoices(friends) {
+    const container = $("groupFriendChoices");
+    if (!container) return;
+    if (!friends.length) {
+        container.innerHTML = '<p class="transcript-empty">Save a friend before creating a group.</p>';
+        return;
+    }
+    container.innerHTML = friends.map(friend => {
+        const name = friend.nickname || friend.displayName || friend.email || "Friend";
+        return `<label class="inline-check"><input type="checkbox" value="${escapeHtml(friend.uid)}"> ${escapeHtml(name)}</label>`;
+    }).join("");
+}
+
+function renderConversationList(conversations) {
+    const container = $("conversationList");
+    if (!container) return;
+    if (!conversations.length) {
+        container.innerHTML = '<p class="transcript-empty">No chats yet. Message a friend or create a group.</p>';
+        return;
+    }
+    container.innerHTML = conversations.map(conversation => {
+        const preview = conversation.lastMessage
+            ? `${conversation.lastMessage.mine ? "You: " : ""}${conversation.lastMessage.body}`
+            : "No messages yet";
+        const when = conversation.lastMessage?.createdAt ? messageTime(conversation.lastMessage.createdAt) : "";
+        const unread = Number(conversation.unreadCount) || 0;
+        const current = conversation.id === openConversationId ? ' aria-current="true"' : "";
+        const badge = unread ? `<span class="status-badge">${unread > 99 ? "99+" : unread} unread</span>` : "";
+        return `<div class="conversation-row"><button type="button" class="conversation-item" data-conversation-id="${escapeHtml(conversation.id)}"${current}><strong>${escapeHtml(conversation.title || "Chat")}</strong><span class="conversation-meta">${escapeHtml(preview)}${when ? ` · ${escapeHtml(when)}` : ""}</span></button>${badge}</div>`;
+    }).join("");
+    container.querySelectorAll("[data-conversation-id]").forEach(button => {
+        button.onclick = () => openConversation(button.dataset.conversationId);
+    });
+}
+
+function showMessageList() {
+    openConversationId = "";
+    renderedMessageTail = "";
+    $("messageThread")?.classList.add("hidden");
+    $("messageComposeForm")?.classList.add("hidden");
+    $("groupMemberTools")?.classList.add("hidden");
+    $("conversationList")?.classList.remove("hidden");
+    if ($("messageThreadEyebrow")) $("messageThreadEyebrow").textContent = "Inbox";
+    if ($("messageThreadTitle")) $("messageThreadTitle").textContent = "Your chats";
+    if ($("messageThreadHelp")) $("messageThreadHelp").textContent = "Open a chat, or start one from the form.";
+    renderConversationList(savedConversations);
+}
+
+function renderGroupTools(conversation) {
+    const tools = $("groupMemberTools");
+    if (!tools) return;
+    const isGroup = conversation.kind === "group";
+    tools.classList.toggle("hidden", !isGroup);
+    if (!isGroup) return;
+    const select = $("groupAddMember");
+    const memberIds = new Set((conversation.members || []).map(member => member.uid));
+    const choices = savedFriends.filter(friend => !memberIds.has(friend.uid));
+    const owner = conversation.viewerRole === "owner";
+    select.innerHTML = choices.length
+        ? choices.map(friend => `<option value="${escapeHtml(friend.uid)}">${escapeHtml(friend.nickname || friend.displayName || friend.email || "Friend")}</option>`).join("")
+        : '<option value="">No more friends to add</option>';
+    select.disabled = !owner || !choices.length;
+    $("groupAddMemberField")?.classList.toggle("hidden", !owner);
+    $("groupAddMemberButton").disabled = !owner || !choices.length;
+    $("groupAddMemberButton").classList.toggle("hidden", !owner);
+}
+
+function renderOpenConversation(result, { forceScroll = false } = {}) {
+    const conversation = result?.conversation;
+    if (!conversation || conversation.id !== openConversationId) return;
+    const thread = $("messageThread");
+    const messages = result.messages || [];
+    const tail = messages.map(message => message.id).join(",");
+    const others = (conversation.members || []).filter(member => member.uid !== currentUser?.uid);
+    $("messageThreadEyebrow").textContent = conversation.kind === "group" ? "Group" : "Direct message";
+    $("messageThreadTitle").textContent = conversation.title || "Chat";
+    if (conversation.kind === "direct") {
+        $("messageThreadHelp").textContent = others[0] ? (others[0].online ? "Online now" : "Offline") : "Direct message";
+    } else {
+        const names = (conversation.members || []).map(member => member.displayName).filter(Boolean);
+        $("messageThreadHelp").textContent = names.length ? names.join(", ") : "Group chat";
+    }
+    $("conversationList")?.classList.add("hidden");
+    thread?.classList.remove("hidden");
+    $("messageComposeForm")?.classList.remove("hidden");
+    renderGroupTools(conversation);
+    if (!thread || tail === renderedMessageTail) return;
+    const nearBottom = forceScroll || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
+    renderedMessageTail = tail;
+    thread.innerHTML = messages.length
+        ? messages.map(message => `<article class="conversation-item"><strong>${escapeHtml(message.mine ? "You" : (message.senderName || "FiniSpeak user"))}${message.createdAt ? ` · ${escapeHtml(messageTime(message.createdAt))}` : ""}</strong><span class="conversation-meta">${escapeHtml(message.body)}</span></article>`).join("")
+        : '<p class="transcript-empty">No messages yet. Say hello.</p>';
+    if (nearBottom) thread.scrollTop = thread.scrollHeight;
+    const saved = savedConversations.find(item => item.id === conversation.id);
+    if (saved) saved.unreadCount = 0;
+    renderConversationList(savedConversations);
+}
+
+async function loadConversations({ announce = false } = {}) {
+    const result = await apiFetch("/api/messages/conversations");
+    savedConversations = result.conversations || [];
+    renderConversationList(savedConversations);
+    if (announce && $("messagesStatus") && !openConversationId) {
+        const count = savedConversations.length;
+        $("messagesStatus").textContent = `${count} chat${count === 1 ? "" : "s"}.`;
+    }
+    return savedConversations;
+}
+
+async function openConversation(conversationId) {
+    if (!conversationId) return;
+    openConversationId = conversationId;
+    const result = await apiFetch(`/api/messages/conversations/${encodeURIComponent(conversationId)}`);
+    const index = savedConversations.findIndex(item => item.id === result.conversation?.id);
+    if (result.conversation && index >= 0) {
+        savedConversations[index] = { ...savedConversations[index], ...result.conversation };
+    }
+    renderOpenConversation(result, { forceScroll: true });
+}
+
+async function refreshOpenMessages() {
+    try {
+        await loadConversations({ announce: false });
+        if (!openConversationId || $("dashboardMessages")?.classList.contains("hidden")) return;
+        const result = await apiFetch(`/api/messages/conversations/${encodeURIComponent(openConversationId)}`);
+        renderOpenConversation(result, { forceScroll: false });
+    } catch (_) { /* keep the open chat if a refresh fails */ }
+}
+
+function startMessagesPanel() {
+    renderGroupFriendChoices(savedFriends);
+    if (!savedFriends.length) loadFriends().catch(() => {});
+    loadConversations({ announce: true }).then(() => {
+        if (!pendingConversationId) return null;
+        const conversationId = pendingConversationId;
+        pendingConversationId = "";
+        return openConversation(conversationId);
+    }).catch(error => {
+        if ($("messagesStatus")) $("messagesStatus").textContent = `Could not load chats: ${error.message}`;
+    });
+    startMessagePolling();
+}
+
+async function messageFriend(card) {
+    const friendId = card?.dataset.friendId;
+    if (!friendId) return;
+    try {
+        const result = await apiFetch("/api/messages/conversations", {
+            method: "POST", body: JSON.stringify({ kind: "direct", userId: friendId }),
+        });
+        pendingConversationId = result.conversation.id;
+        openDashboardPanel("messages");
+    } catch (error) {
+        if ($("friendsStatus")) $("friendsStatus").textContent = `Could not open chat: ${error.message}`;
+    }
+}
+
+async function startDirectMessage(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+        const email = $("messageEmail").value.trim();
+        if (!email) throw new Error("Enter a FiniSpeak email.");
+        const result = await apiFetch("/api/messages/conversations", {
+            method: "POST", body: JSON.stringify({ kind: "direct", email }),
+        });
+        form.reset();
+        await openConversation(result.conversation.id);
+        await loadConversations({ announce: false });
+        $("messagesStatus").textContent = "Chat opened.";
+    } catch (error) {
+        $("messagesStatus").textContent = error.message;
+    } finally { button.disabled = false; }
+}
+
+async function createGroupMessage(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+        const memberIds = [...form.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value);
+        const result = await apiFetch("/api/messages/conversations", {
+            method: "POST",
+            body: JSON.stringify({ kind: "group", title: $("groupTitle").value.trim(), memberIds }),
+        });
+        form.reset();
+        await openConversation(result.conversation.id);
+        await loadConversations({ announce: false });
+        $("messagesStatus").textContent = "Group created.";
+    } catch (error) {
+        $("messagesStatus").textContent = error.message;
+    } finally { button.disabled = false; }
+}
+
+async function sendConversationMessage(event) {
+    event.preventDefault();
+    if (!openConversationId) return;
+    const body = $("messageBody").value.trim();
+    if (!body) return;
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+        await apiFetch(`/api/messages/conversations/${encodeURIComponent(openConversationId)}/messages`, {
+            method: "POST", body: JSON.stringify({ body }),
+        });
+        $("messageBody").value = "";
+        await openConversation(openConversationId);
+        await loadConversations({ announce: false });
+    } catch (error) {
+        $("messagesStatus").textContent = error.message;
+    } finally {
+        button.disabled = false;
+        $("messageBody")?.focus();
+    }
+}
+
+async function addGroupMember() {
+    if (!openConversationId) return;
+    const userId = $("groupAddMember")?.value;
+    if (!userId) return;
+    const button = $("groupAddMemberButton");
+    button.disabled = true;
+    try {
+        await apiFetch(`/api/messages/conversations/${encodeURIComponent(openConversationId)}/members`, {
+            method: "POST", body: JSON.stringify({ userId }),
+        });
+        await openConversation(openConversationId);
+        $("messagesStatus").textContent = "Friend added to the group.";
+    } catch (error) {
+        $("messagesStatus").textContent = error.message;
+        button.disabled = false;
+    }
+}
+
+async function leaveGroup() {
+    if (!openConversationId || !currentUser?.uid) return;
+    if (!window.confirm("Leave this group?")) return;
+    try {
+        const result = await apiFetch(`/api/messages/conversations/${encodeURIComponent(openConversationId)}/members/${encodeURIComponent(currentUser.uid)}`, { method: "DELETE" });
+        showMessageList();
+        await loadConversations({ announce: false });
+        $("messagesStatus").textContent = result.left ? "You left the group." : "Group updated.";
+    } catch (error) {
+        $("messagesStatus").textContent = error.message;
+    }
 }
 
 function renderAdminSessions(sessions) {

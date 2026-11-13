@@ -391,6 +391,40 @@ class SqlTransactionalOutbox(db.Model):
     )
 
 
+class SqlConversation(db.Model):
+    __tablename__ = "conversations"
+    id = db.Column(String(36), primary_key=True)
+    kind = db.Column(String(16), nullable=False)
+    title = db.Column(String(80))
+    direct_key = db.Column(String(260), unique=True)
+    created_by = db.Column(String(128), ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = db.Column(DateTime(timezone=True), nullable=False)
+    updated_at = db.Column(DateTime(timezone=True), nullable=False, index=True)
+
+
+class SqlConversationMember(db.Model):
+    __tablename__ = "conversation_members"
+    conversation_id = db.Column(String(36), ForeignKey("conversations.id", ondelete="CASCADE"), primary_key=True)
+    user_id = db.Column(String(128), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role = db.Column(String(16), nullable=False)
+    joined_at = db.Column(DateTime(timezone=True), nullable=False)
+    left_at = db.Column(DateTime(timezone=True))
+    last_read_at = db.Column(DateTime(timezone=True))
+
+
+class SqlMessage(db.Model):
+    __tablename__ = "messages"
+    id = db.Column(String(36), primary_key=True)
+    conversation_id = db.Column(String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    sender_id = db.Column(String(128), ForeignKey("users.id", ondelete="SET NULL"))
+    body = db.Column(Text, nullable=False)
+    created_at = db.Column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
+
+
+Index("ix_conversation_members_user", SqlConversationMember.user_id)
 Index("ix_calls_status_created_at", SqlCall.status, SqlCall.created_at)
 Index("ix_calls_translation_status_created_at", SqlCall.translation_status, SqlCall.created_at)
 Index("ix_calls_caller_created_at", SqlCall.caller_id, SqlCall.created_at)

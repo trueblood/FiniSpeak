@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 
 from app import create_app
 from extensions import db
-from models.sql_models import SqlFriend
+from models.sql_models import SqlConversation, SqlConversationMember, SqlFriend, SqlMessage
 
 
 def _mysql_identifier(value):
@@ -45,6 +45,53 @@ def friends_table_ddl(charset, collation):
         CONSTRAINT fk_friends_owner_id_users FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE,
         CONSTRAINT fk_friends_friend_id_users FOREIGN KEY (friend_id) REFERENCES users (id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={collation}"""
+
+
+def messaging_table_ddls(charset, collation):
+    charset = _mysql_identifier(charset)
+    collation = _mysql_identifier(collation)
+    string = f"VARCHAR(128) CHARACTER SET {charset} COLLATE {collation} NOT NULL"
+    string_null = f"VARCHAR(128) CHARACTER SET {charset} COLLATE {collation} NULL"
+    short = f"CHARACTER SET {charset} COLLATE {collation}"
+    options = f"ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={collation}"
+    return [
+        ("conversations", f"""CREATE TABLE conversations (
+        id VARCHAR(36) {short} NOT NULL,
+        kind VARCHAR(16) {short} NOT NULL,
+        title VARCHAR(80) {short} NULL,
+        direct_key VARCHAR(260) {short} NULL,
+        created_by {string_null},
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_conversations_direct_key (direct_key),
+        KEY ix_conversations_updated_at (updated_at),
+        CONSTRAINT fk_conversations_created_by_users FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
+    ) {options}"""),
+        ("conversation_members", f"""CREATE TABLE conversation_members (
+        conversation_id VARCHAR(36) {short} NOT NULL,
+        user_id {string},
+        role VARCHAR(16) {short} NOT NULL,
+        joined_at DATETIME NOT NULL,
+        left_at DATETIME NULL,
+        last_read_at DATETIME NULL,
+        PRIMARY KEY (conversation_id, user_id),
+        KEY ix_conversation_members_user (user_id),
+        CONSTRAINT fk_conversation_members_conversation FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE,
+        CONSTRAINT fk_conversation_members_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    ) {options}"""),
+        ("messages", f"""CREATE TABLE messages (
+        id VARCHAR(36) {short} NOT NULL,
+        conversation_id VARCHAR(36) {short} NOT NULL,
+        sender_id {string_null},
+        body TEXT {short} NOT NULL,
+        created_at DATETIME NOT NULL,
+        PRIMARY KEY (id),
+        KEY ix_messages_conversation_created (conversation_id, created_at),
+        CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE,
+        CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id) REFERENCES users (id) ON DELETE SET NULL
+    ) {options}"""),
+    ]
 
 
 def _users_id_charset(connection):
@@ -96,6 +143,20 @@ def ensure_account_schema(connection):
         else:
             SqlFriend.__table__.create(connection, checkfirst=True)
         changes.append("friends")
+    tables = set(inspect(connection).get_table_names())
+    mysql_statements = None
+    if connection.dialect.name == "mysql":
+        charset, collation = _users_id_charset(connection)
+        mysql_statements = dict(messaging_table_ddls(charset, collation))
+    for model in (SqlConversation, SqlConversationMember, SqlMessage):
+        name = model.__tablename__
+        if name in tables:
+            continue
+        if mysql_statements:
+            connection.execute(text(mysql_statements[name]))
+        else:
+            model.__table__.create(connection, checkfirst=True)
+        changes.append(name)
     return changes
 
 
