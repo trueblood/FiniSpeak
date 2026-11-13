@@ -4,20 +4,12 @@ Native SwiftUI client for the FiniSpeak Flask API. Accounts, interpreter search,
 
 ## Run it
 
-1. Start the web backend on your Mac:
+1. Open `ios/FiniSpeak.xcodeproj` in Xcode. The first open downloads the WebRTC package. That binary is large.
+2. Choose an iPhone simulator or a paired iPhone and run the FiniSpeak scheme.
+3. The app starts pointed at `https://finispeak.com`. Sign in with an account on that server.
+4. Open Server only when you want a different backend. From the Simulator that can be `http://127.0.0.1:8080` while `python app.py` is running on this Mac. A physical iPhone needs the computer's address, for example `http://192.168.1.20:8080`, and both devices need to be on the same network.
 
-```bash
-python app.py
-```
-
-The development server listens on port 8080.
-
-2. Open `ios/FiniSpeak.xcodeproj` in Xcode. The first open downloads the WebRTC package. That binary is large.
-3. Choose an iPhone simulator or a paired iPhone and run the FiniSpeak scheme.
-4. The app starts pointed at `http://127.0.0.1:8080`, which reaches a server on the same Mac from the iOS Simulator. On a physical iPhone, open Server and enter the Mac's address, for example `http://192.168.1.20:8080`. The phone and the Mac need to be on the same network.
-5. Create an account in the app. A local SQLite backend skips email verification, so you can sign in immediately.
-
-The app allows plain HTTP so it can reach that development server. Point Server at the HTTPS address when you use a deployed backend.
+The app allows plain HTTP so it can reach a development server. Production traffic uses HTTPS.
 
 ## What the phone can do
 

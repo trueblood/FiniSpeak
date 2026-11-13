@@ -24,10 +24,9 @@ final class AppModel: ObservableObject {
     private var inviteTask: Task<Void, Never>?
 
     init() {
-        let stored = UserDefaults.standard.string(forKey: "finispeak.apiBaseURL") ?? "http://127.0.0.1:8080"
-        let normalized = APIClient.normalize(stored)
+        let normalized = APIClient.storedBaseURL()
         serverURL = normalized
-        api = APIClient(baseURL: URL(string: normalized) ?? URL(string: "http://127.0.0.1:8080")!)
+        api = APIClient(baseURL: URL(string: normalized) ?? URL(string: APIClient.productionBaseURL)!)
         api.token = KeychainStore.load()
         api.onUnauthorized = { [weak self] in
             Task { @MainActor in self?.signOutLocal() }
@@ -80,7 +79,7 @@ final class AppModel: ObservableObject {
         let normalized = APIClient.normalize(raw)
         guard normalized != serverURL else { return }
         serverURL = normalized
-        UserDefaults.standard.set(normalized, forKey: "finispeak.apiBaseURL")
+        APIClient.saveBaseURL(normalized)
         api.baseURL = URL(string: normalized) ?? api.baseURL
         if account != nil { signOutLocal() }
     }

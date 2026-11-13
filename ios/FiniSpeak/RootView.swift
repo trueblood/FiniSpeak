@@ -180,11 +180,11 @@ struct ServerSettings: View {
     var body: some View {
         Form {
             Section {
-                TextField("https://example.com", text: $draft)
+                TextField(APIClient.productionBaseURL, text: $draft)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
-                Text("The iOS Simulator can use http://127.0.0.1:8080 while `python app.py` is running on this Mac. A physical iPhone needs the computer's address, such as http://192.168.1.20:8080.")
+                Text("Calls and accounts use https://finispeak.com. To use a copy running on your Mac, enter its address, such as http://127.0.0.1:8080 from the Simulator or http://192.168.1.20:8080 from an iPhone on the same network.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

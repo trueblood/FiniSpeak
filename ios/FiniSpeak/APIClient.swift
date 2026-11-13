@@ -7,6 +7,10 @@ struct APIError: LocalizedError {
 }
 
 final class APIClient {
+    static let productionBaseURL = "https://finispeak.com"
+    private static let defaultsKey = "finispeak.apiBaseURL"
+    private static let migratedKey = "finispeak.apiBaseURLMigratedToProduction"
+
     var baseURL: URL
     var token: String?
     var onUnauthorized: (() -> Void)?
@@ -23,11 +27,59 @@ final class APIClient {
         session = URLSession(configuration: configuration)
     }
 
+    /// The address the app should call. The first launch after the production switch replaces a saved `localhost:8080` address; later edits in Server are kept.
+    static func storedBaseURL() -> String {
+        if !UserDefaults.standard.bool(forKey: migratedKey) {
+            let stored = UserDefaults.standard.string(forKey: defaultsKey)
+            if stored == nil || isBundledDevelopmentServer(normalize(stored ?? "")) {
+                UserDefaults.standard.set(productionBaseURL, forKey: defaultsKey)
+            }
+            UserDefaults.standard.set(true, forKey: migratedKey)
+        }
+        return normalize(UserDefaults.standard.string(forKey: defaultsKey) ?? productionBaseURL)
+    }
+
+    static func saveBaseURL(_ value: String) {
+        UserDefaults.standard.set(value, forKey: defaultsKey)
+        UserDefaults.standard.set(true, forKey: migratedKey)
+    }
+
     static func normalize(_ raw: String) -> String {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while value.hasSuffix("/") { value.removeLast() }
-        if !value.contains("://") { value = "http://\(value)" }
+        if !value.contains("://") {
+            value = (prefersHTTP(value) ? "http://" : "https://") + value
+        }
         return value
+    }
+
+    private static func isBundledDevelopmentServer(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value), let host = components.host?.lowercased() else { return false }
+        guard isLocalHost(host) else { return false }
+        let port = components.port ?? (components.scheme == "https" ? 443 : 80)
+        return port == 8080
+    }
+
+    private static func prefersHTTP(_ value: String) -> Bool {
+        if isLocalHost(value) { return true }
+        let host = hostPart(value)
+        let octets = host.split(separator: ".").compactMap { Int($0) }
+        guard octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else { return false }
+        if octets[0] == 10 { return true }
+        if octets[0] == 192 && octets[1] == 168 { return true }
+        if octets[0] == 172 && (16...31).contains(octets[1]) { return true }
+        return false
+    }
+
+    private static func isLocalHost(_ value: String) -> Bool {
+        let host = hostPart(value)
+        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+    }
+
+    private static func hostPart(_ value: String) -> String {
+        let lowered = value.lowercased()
+        if lowered == "::1" || lowered == "[::1]" || lowered.hasPrefix("[::1]") { return lowered }
+        return lowered.split(separator: ":", maxSplits: 1).first.map(String.init) ?? lowered
     }
 
     func health() async throws -> Bool {
