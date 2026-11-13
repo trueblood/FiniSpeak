@@ -90,7 +90,7 @@ struct MainTabView: View {
         case .discover:
             DiscoverView(embedded: true, preset: discoverPreset, onBack: { section = .home })
         case .calls:
-            DialView(embedded: true)
+            DialView(onBack: { section = .home }, onManageFriends: { section = .friends })
         case .classroom:
             ClassroomView { query in
                 discoverPreset = query
