@@ -114,6 +114,7 @@ struct DiscoverView: View {
 struct InterpreterDetailView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.goHome) private var goHome
     let profile: Interpreter
     @State private var detail: Interpreter?
     @State private var status = ""
@@ -144,10 +145,10 @@ struct InterpreterDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                ConceptGlobe()
-                Text("FiniSpeak")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(FiniTheme.ink)
+                ConceptBrandButton {
+                    goHome()
+                    dismiss()
+                }
                 Spacer()
                 ConceptRoundButton(systemImage: "magnifyingglass") { dismiss() }
             }

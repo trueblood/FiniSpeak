@@ -32,6 +32,35 @@ struct ConceptRoundButton: View {
     }
 }
 
+private struct GoHomeKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    var goHome: () -> Void {
+        get { self[GoHomeKey.self] }
+        set { self[GoHomeKey.self] = newValue }
+    }
+}
+
+struct ConceptBrandButton: View {
+    var action: (() -> Void)? = nil
+    @Environment(\.goHome) private var goHome
+
+    var body: some View {
+        Button(action: { (action ?? goHome)() }) {
+            HStack(spacing: 8) {
+                ConceptGlobe()
+                Text("FiniSpeak")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(FiniTheme.ink)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("FiniSpeak home")
+    }
+}
+
 struct ConceptHeader: View {
     var onSearch: () -> Void
     var onAccount: () -> Void
@@ -39,10 +68,7 @@ struct ConceptHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            ConceptGlobe()
-            Text("FiniSpeak")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(FiniTheme.ink)
+            ConceptBrandButton()
             Spacer()
             ConceptRoundButton(systemImage: "magnifyingglass", action: onSearch)
             ConceptRoundButton(systemImage: accountSymbol, action: onAccount)

@@ -70,6 +70,11 @@ struct MainTabView: View {
             .sheet(isPresented: $menu) { ConceptMenu(section: $section) }
             .sheet(isPresented: $dial) { DialView() }
         }
+        .environment(\.goHome) {
+            menu = false
+            dial = false
+            section = .home
+        }
     }
 
     @ViewBuilder
@@ -161,6 +166,10 @@ struct WelcomeView: View {
             .navigationDestination(isPresented: $discoverPresented) { DiscoverView() }
             .sheet(isPresented: $authPresented) { AuthView(creating: creating, interpreter: interpreterSignup) }
             .task { featured = (try? await app.api.discover(language: nil, availableNow: false, search: "")) ?? [] }
+        }
+        .environment(\.goHome) {
+            authPresented = false
+            discoverPresented = false
         }
     }
 }
