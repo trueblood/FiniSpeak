@@ -126,6 +126,9 @@ struct AuthView: View {
                     .keyboardType(.emailAddress)
                     .autocorrectionDisabled()
                 SecureField("Password", text: $password)
+                Text("Signing in to \(app.serverURL)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 if creating {
                     Text("Use at least 12 characters with letters and numbers.")
                         .font(.footnote)
@@ -184,7 +187,7 @@ struct ServerSettings: View {
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
-                Text("Calls and accounts use https://finispeak.com. To use a copy running on your Mac, enter its address, such as http://127.0.0.1:8080 from the Simulator or http://192.168.1.20:8080 from an iPhone on the same network.")
+                Text("Accounts and calls use https://finispeak.com. A localhost address is switched back to that server. Enter another computer's address, such as http://192.168.1.20:8080, only when that machine is running FiniSpeak.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

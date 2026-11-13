@@ -76,10 +76,9 @@ final class AppModel: ObservableObject {
     }
 
     func updateServer(_ raw: String) {
-        let normalized = APIClient.normalize(raw)
+        let normalized = APIClient.saveBaseURL(APIClient.normalize(raw))
         guard normalized != serverURL else { return }
         serverURL = normalized
-        APIClient.saveBaseURL(normalized)
         api.baseURL = URL(string: normalized) ?? api.baseURL
         if account != nil { signOutLocal() }
     }

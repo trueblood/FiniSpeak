@@ -9,7 +9,6 @@ struct APIError: LocalizedError {
 final class APIClient {
     static let productionBaseURL = "https://finispeak.com"
     private static let defaultsKey = "finispeak.apiBaseURL"
-    private static let migratedKey = "finispeak.apiBaseURLMigratedToProduction"
 
     var baseURL: URL
     var token: String?
@@ -27,21 +26,21 @@ final class APIClient {
         session = URLSession(configuration: configuration)
     }
 
-    /// The address the app should call. The first launch after the production switch replaces a saved `localhost:8080` address; later edits in Server are kept.
+    /// The address the app should call. A saved loopback address, including the old `http://127.0.0.1:8080` default, is replaced on every launch.
     static func storedBaseURL() -> String {
-        if !UserDefaults.standard.bool(forKey: migratedKey) {
-            let stored = UserDefaults.standard.string(forKey: defaultsKey)
-            if stored == nil || isBundledDevelopmentServer(normalize(stored ?? "")) {
-                UserDefaults.standard.set(productionBaseURL, forKey: defaultsKey)
-            }
-            UserDefaults.standard.set(true, forKey: migratedKey)
+        let stored = UserDefaults.standard.string(forKey: defaultsKey).map(normalize) ?? productionBaseURL
+        let resolved = isLoopback(stored) ? productionBaseURL : stored
+        if UserDefaults.standard.string(forKey: defaultsKey) != resolved {
+            UserDefaults.standard.set(resolved, forKey: defaultsKey)
         }
-        return normalize(UserDefaults.standard.string(forKey: defaultsKey) ?? productionBaseURL)
+        return resolved
     }
 
-    static func saveBaseURL(_ value: String) {
-        UserDefaults.standard.set(value, forKey: defaultsKey)
-        UserDefaults.standard.set(true, forKey: migratedKey)
+    @discardableResult
+    static func saveBaseURL(_ value: String) -> String {
+        let resolved = isLoopback(value) ? productionBaseURL : value
+        UserDefaults.standard.set(resolved, forKey: defaultsKey)
+        return resolved
     }
 
     static func normalize(_ raw: String) -> String {
@@ -53,11 +52,9 @@ final class APIClient {
         return value
     }
 
-    private static func isBundledDevelopmentServer(_ value: String) -> Bool {
-        guard let components = URLComponents(string: value), let host = components.host?.lowercased() else { return false }
-        guard isLocalHost(host) else { return false }
-        let port = components.port ?? (components.scheme == "https" ? 443 : 80)
-        return port == 8080
+    private static func isLoopback(_ value: String) -> Bool {
+        guard let host = URLComponents(string: value)?.host else { return isLocalHost(value) }
+        return isLocalHost(host)
     }
 
     private static func prefersHTTP(_ value: String) -> Bool {
