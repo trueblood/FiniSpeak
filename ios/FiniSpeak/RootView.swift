@@ -7,13 +7,11 @@ struct RootView: View {
         Group {
             if app.restoring {
                 VStack(spacing: 16) {
-                    Image(systemName: "globe")
-                        .font(.system(size: 36, weight: .semibold))
-                        .foregroundStyle(FiniTheme.blue)
+                    ConceptGlobe(size: 48)
                     ProgressView("Opening FiniSpeak")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(FiniTheme.mist)
+                .background(Color.white)
             } else if app.account == nil {
                 WelcomeView()
             } else {
@@ -46,18 +44,57 @@ struct RootView: View {
 }
 
 struct MainTabView: View {
+    @State private var section = FiniSection.home
+    @State private var category = "Education"
+    @State private var discoverPreset = ""
+    @State private var menu = false
+    @State private var dial = false
+
     var body: some View {
-        TabView {
-            HomeView()
-                .tabItem { Label("Home", systemImage: "house") }
-            DiscoverView()
-                .tabItem { Label("Discover", systemImage: "magnifyingglass") }
-            MessagesView()
-                .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right") }
-            FriendsView()
-                .tabItem { Label("Friends", systemImage: "person.2") }
-            ProfileView()
-                .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+        NavigationStack {
+            VStack(spacing: 0) {
+                ConceptHeader(onSearch: { section = .discover }, onAccount: { menu = true }, accountSymbol: "gearshape")
+                screen
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .background(Color.white)
+                ConceptCategoryBar(selection: $category) { chosen in
+                    discoverPreset = chosen
+                    section = .discover
+                }
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
+                .background(Color.white)
+            }
+            .background(Color.white)
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $menu) { ConceptMenu(section: $section) }
+            .sheet(isPresented: $dial) { DialView() }
+        }
+    }
+
+    @ViewBuilder
+    private var screen: some View {
+        switch section {
+        case .home:
+            HomeView(onFind: { section = .discover }, onLesson: { section = .classroom }, onCall: { dial = true }, category: $category) { chosen in
+                discoverPreset = chosen
+                section = .discover
+            }
+        case .discover:
+            DiscoverView(embedded: true, preset: discoverPreset)
+        case .classroom:
+            ClassroomView { query in
+                discoverPreset = query
+                section = .discover
+            }
+        case .friends:
+            FriendsView(embedded: true)
+        case .messages:
+            MessagesView(embedded: true)
+        case .profile:
+            ProfileView(embedded: true)
+        case .settings:
+            SettingsScreen()
         }
     }
 }
@@ -65,37 +102,102 @@ struct MainTabView: View {
 struct WelcomeView: View {
     @EnvironmentObject private var app: AppModel
     @State private var authPresented = false
+    @State private var creating = false
+    @State private var interpreterSignup = false
     @State private var discoverPresented = false
+    @State private var category = "Education"
+    @State private var featured: [Interpreter] = []
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "globe")
-                            .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .background(FiniTheme.blue, in: Circle())
-                        Text("FiniSpeak").font(.title2.weight(.bold))
-                        Spacer()
-                        NavigationLink("Server") { ServerSettings() }
-                            .font(.subheadline.weight(.semibold))
+            VStack(spacing: 0) {
+                ConceptHeader(onSearch: { discoverPresented = true }, onAccount: { creating = false; interpreterSignup = false; authPresented = true }, accountSymbol: "person")
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ConceptHub(category: $category, onCategory: { _ in discoverPresented = true }, onFind: { discoverPresented = true }, onLesson: { creating = true; interpreterSignup = false; authPresented = true }, onCall: { creating = false; interpreterSignup = false; authPresented = true }, joinTitle: "Join as an interpreter") {
+                            creating = true
+                            interpreterSignup = true
+                            authPresented = true
+                        }
+                        if !featured.isEmpty {
+                            Text("Interpreter network").font(.headline).padding(.top, 8)
+                            ForEach(featured.prefix(2)) { profile in
+                                HStack(spacing: 12) {
+                                    AvatarView(name: profile.name, size: 64)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(profile.name).font(.headline)
+                                        Text(profile.headline.isEmpty ? "Interpreter" : profile.headline).font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if profile.verificationStatus == "verified" {
+                                        Text("✓")
+                                            .font(.caption.weight(.heavy))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 3)
+                                            .background(FiniTheme.blue, in: Capsule())
+                                    }
+                                }
+                                .padding(12)
+                                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
+                            }
+                        }
+                        NavigationLink {
+                            ServerSettings()
+                        } label: {
+                            Text("Server").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 8)
                     }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("What do you need today?")
-                            .font(.title.weight(.bold))
-                        Text("Find a verified interpreter, call someone who already uses FiniSpeak, or create an account on the same server as the website.")
-                            .foregroundStyle(.secondary)
-                    }
-                    FiniButton(title: "Find a translator", systemImage: "magnifyingglass") { discoverPresented = true }
-                    FiniButton(title: "Create an account", systemImage: "person.badge.plus", filled: false) { authPresented = true }
-                    FiniButton(title: "Log in", systemImage: "person") { authPresented = true }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 12)
                 }
-                .padding(20)
+                ConceptCategoryBar(selection: $category) { _ in discoverPresented = true }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 8)
             }
-            .background(FiniTheme.mist)
+            .background(Color.white)
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $discoverPresented) { DiscoverView() }
-            .sheet(isPresented: $authPresented) { AuthView() }
+            .sheet(isPresented: $authPresented) { AuthView(creating: creating, interpreter: interpreterSignup) }
+            .task { featured = (try? await app.api.discover(language: nil, availableNow: false, search: "")) ?? [] }
+        }
+    }
+}
+
+struct ConceptHub: View {
+    @Binding var category: String
+    var onCategory: (String) -> Void
+    var onFind: () -> Void
+    var onLesson: () -> Void
+    var onCall: () -> Void
+    var joinTitle: String?
+    var onJoin: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What do you need today?")
+                .font(.system(size: 38, weight: .heavy))
+                .foregroundStyle(FiniTheme.ink)
+                .lineSpacing(-4)
+                .frame(maxWidth: 220, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 6)
+            ConceptActionButton(title: "Find a Translator", systemImage: "arrow.triangle.2.circlepath", action: onFind)
+            ConceptActionButton(title: "Book a Language Lesson", systemImage: "graduationcap", action: onLesson)
+            ConceptActionButton(title: "Call Another User", systemImage: "phone", action: onCall)
+            ConceptCategoryBar(selection: $category, onSelect: onCategory)
+                .padding(.top, 4)
+            Text("FiniSpeak connects you with verified bilingual speakers fluent in specific languages and dialects, ensuring precise and professional communication for your needs.")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(FiniTheme.blurb)
+                .fixedSize(horizontal: false, vertical: true)
+            if let joinTitle, let onJoin {
+                Button(joinTitle, action: onJoin)
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(FiniTheme.blue)
+                    .frame(maxWidth: .infinity, minHeight: 42)
+            }
         }
     }
 }
@@ -103,47 +205,67 @@ struct WelcomeView: View {
 struct AuthView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var creating = false
+    @State var creating = false
+    @State var interpreter = false
     @State private var name = ""
     @State private var email = ""
     @State private var phone = ""
     @State private var password = ""
-    @State private var interpreter = false
     @State private var status = ""
     @State private var busy = false
 
     var body: some View {
         NavigationStack {
-            Form {
-                if creating {
-                    TextField("Name", text: $name)
-                    TextField("Phone", text: $phone)
-                        .keyboardType(.phonePad)
-                    Toggle("Join as an interpreter", isOn: $interpreter)
-                }
-                TextField("Email", text: $email)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .autocorrectionDisabled()
-                SecureField("Password", text: $password)
-                Text("Signing in to \(app.serverURL)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if creating {
-                    Text("Use at least 12 characters with letters and numbers.")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Button { dismiss() } label: {
+                        Label("Back", systemImage: "chevron.left")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(FiniTheme.ink)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(FiniTheme.soft, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Text("FiniSpeak account").font(.subheadline.weight(.heavy)).foregroundStyle(FiniTheme.blue)
+                    Text(creating ? "Create account" : "Sign in")
+                        .font(.system(size: 34, weight: .heavy))
+                        .foregroundStyle(FiniTheme.ink)
+                    if creating {
+                        ConceptField(title: "Name", text: $name, contentType: .name)
+                        ConceptField(title: "Phone number", text: $phone, keyboard: .phonePad, contentType: .telephoneNumber)
+                        Toggle("Join as an interpreter", isOn: $interpreter)
+                            .font(.subheadline.weight(.bold))
+                    }
+                    ConceptField(title: "Email", text: $email, keyboard: .emailAddress, contentType: .emailAddress)
+                    ConceptField(title: "Password", text: $password, secure: true, contentType: .password)
+                    Text("Signing in to \(app.serverURL)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    if creating {
+                        Text("Use at least 12 characters with letters and numbers.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !status.isEmpty { Text(status).font(.footnote).foregroundStyle(FiniTheme.ink) }
+                    Button(busy ? "Please wait…" : (creating ? "Create account" : "Sign in")) { Task { await submit() } }
+                        .buttonStyle(ConceptFilledButtonStyle())
+                        .disabled(busy)
+                    Button(creating ? "Already have an account? Sign in" : "Need an account? Create one") { creating.toggle(); status = "" }
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(FiniTheme.blue)
+                        .frame(maxWidth: .infinity)
+                    if !creating {
+                        Button("Forgot password?") { Task { await reset() } }
+                            .font(.body.weight(.bold))
+                            .foregroundStyle(FiniTheme.blue)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
-                if !status.isEmpty { Text(status).font(.footnote) }
-                Button(creating ? "Create account" : "Sign in") { Task { await submit() } }
-                    .disabled(busy)
-                Button(creating ? "Already have an account? Sign in" : "Need an account? Create one") { creating.toggle(); status = "" }
-                if !creating {
-                    Button("Forgot password?") { Task { await reset() } }
-                }
+                .padding(18)
             }
-            .navigationTitle(creating ? "Create account" : "Sign in")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .background(Color.white)
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 

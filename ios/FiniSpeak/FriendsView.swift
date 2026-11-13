@@ -2,37 +2,46 @@ import SwiftUI
 
 struct FriendsView: View {
     @EnvironmentObject private var app: AppModel
+    var embedded = false
     @State private var friends: [Friend] = []
     @State private var email = ""
     @State private var nickname = ""
     @State private var status = ""
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Add a friend") {
-                    TextField("FiniSpeak email", text: $email)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                        .autocorrectionDisabled()
-                    TextField("Nickname", text: $nickname)
-                    Button("Add friend") { Task { await add() } }
-                    if !status.isEmpty { Text(status).font(.footnote) }
-                }
-                Section("People you call") {
-                    if friends.isEmpty {
-                        Text("Friends you add can be called from Home.")
-                    } else {
-                        ForEach(friends) { friend in
-                            FriendRow(friend: friend) { await reload() }
-                        }
-                    }
+        ScrollView {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Your contacts").font(.subheadline.weight(.heavy)).foregroundStyle(FiniTheme.blue)
+            ConceptTitle(text: "Friends")
+            Text("Save FiniSpeak contacts and see who is recently online.").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Add a friend").font(.headline)
+                ConceptField(title: "FiniSpeak email", text: $email, keyboard: .emailAddress, contentType: .emailAddress)
+                ConceptField(title: "Nickname", text: $nickname, contentType: .nickname)
+                Button("Add friend") { Task { await add() } }
+                    .buttonStyle(ConceptFilledButtonStyle())
+                if !status.isEmpty { Text(status).font(.footnote).foregroundStyle(FiniTheme.ink) }
+            }
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
+            Text("Friends list").font(.headline)
+            if friends.isEmpty {
+                Text("Friends you add can be called from Home.").foregroundStyle(.secondary)
+            } else {
+                ForEach(friends) { friend in
+                    FriendRow(friend: friend) { await reload() }
+                        .padding(12)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
                 }
             }
-            .navigationTitle("Friends")
-            .refreshable { await reload() }
-            .task { await reload() }
         }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 12)
+        }
+        .navigationTitle(embedded ? "" : "Friends")
+        .task { await reload() }
     }
 
     private func reload() async {

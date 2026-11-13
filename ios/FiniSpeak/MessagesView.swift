@@ -2,43 +2,54 @@ import SwiftUI
 
 struct MessagesView: View {
     @EnvironmentObject private var app: AppModel
+    var embedded = false
     @State private var conversations: [Conversation] = []
     @State private var status = "Loading messages…"
     @State private var compose = false
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if conversations.isEmpty {
-                    Text(status).foregroundStyle(.secondary).padding()
-                } else {
-                    List(conversations) { conversation in
-                        NavigationLink {
-                            ConversationView(conversationId: conversation.id, title: conversation.name)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(conversation.name).font(.headline)
-                                    Spacer()
-                                    if let unread = conversation.unreadCount, unread > 0 {
-                                        Text("\(unread)").font(.caption.weight(.bold)).padding(.horizontal, 8).padding(.vertical, 2).background(FiniTheme.blue, in: Capsule()).foregroundStyle(.white)
-                                    }
-                                }
+        ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Chats").font(.subheadline.weight(.heavy)).foregroundStyle(FiniTheme.blue)
+            ConceptTitle(text: "Messages")
+            Text("Message another FiniSpeak user. Calls stay on Home.").foregroundStyle(.secondary)
+            Button("Start a chat") { compose = true }
+                .buttonStyle(ConceptFilledButtonStyle())
+            if conversations.isEmpty {
+                Text(status).foregroundStyle(.secondary)
+            } else {
+                ForEach(conversations) { conversation in
+                    NavigationLink {
+                        ConversationView(conversationId: conversation.id, title: conversation.name)
+                    } label: {
+                        HStack(spacing: 12) {
+                            AvatarView(name: conversation.name, size: 48)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(conversation.name).font(.headline).foregroundStyle(FiniTheme.ink)
                                 Text(conversation.lastMessage?.body ?? "No messages yet")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
+                            Spacer()
+                            if let unread = conversation.unreadCount, unread > 0 {
+                                Text("\(unread)").font(.caption.weight(.bold)).padding(.horizontal, 8).padding(.vertical, 2).background(FiniTheme.blue, in: Capsule()).foregroundStyle(.white)
+                            }
                         }
+                        .padding(12)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .navigationTitle("Messages")
-            .toolbar { ToolbarItem(placement: .primaryAction) { Button("New", systemImage: "square.and.pencil") { compose = true } } }
-            .refreshable { await load() }
-            .sheet(isPresented: $compose, onDismiss: { Task { await load() } }) { NewMessageView() }
-            .task { await load() }
         }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 12)
+        }
+        .navigationTitle(embedded ? "" : "Messages")
+        .sheet(isPresented: $compose, onDismiss: { Task { await load() } }) { NewMessageView() }
+        .task { await load() }
     }
 
     private func load() async {

@@ -2,71 +2,102 @@ import SwiftUI
 
 struct DiscoverView: View {
     @EnvironmentObject private var app: AppModel
+    var embedded = false
+    var preset = ""
     @State private var search = ""
     @State private var language = ""
     @State private var availableOnly = false
     @State private var profiles: [Interpreter] = []
     @State private var status = "Loading interpreters…"
     @State private var selection: Interpreter?
+    private let chips = ["Spanish", "Legal", "Medical", "Available now"]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    TextField("Language, name, or specialty", text: $search)
-                        .textFieldStyle(.roundedBorder)
-                        .textInputAutocapitalization(.never)
-                        .onSubmit { Task { await load() } }
-                    HStack {
-                        TextField("Language", text: $language)
-                            .textFieldStyle(.roundedBorder)
-                        Toggle("Available", isOn: $availableOnly)
-                            .labelsHidden()
-                        Text("Available").font(.subheadline)
-                    }
-                    Button("Search") { Task { await load() } }
-                        .buttonStyle(.borderedProminent)
-                    if profiles.isEmpty {
-                        Text(status).foregroundStyle(.secondary)
-                    } else {
-                        ForEach(profiles) { profile in
-                            Button { selection = profile } label: { profileCard(profile) }
-                                .buttonStyle(.plain)
+        ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField("Find a Translator by Language/Dialect", text: $search)
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 46)
+                .background(FiniTheme.search, in: Capsule())
+                .onSubmit { Task { await load() } }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(chips, id: \.self) { chip in
+                        Button {
+                            if chip == "Available now" {
+                                availableOnly.toggle()
+                            } else {
+                                search = chip
+                                Task { await load() }
+                            }
+                        } label: {
+                            Text(chip)
+                                .font(.subheadline.weight(.bold))
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 40)
+                                .background((chip == "Available now" ? availableOnly : search == chip) ? FiniTheme.blue : FiniTheme.chip, in: Capsule())
+                                .foregroundStyle((chip == "Available now" ? availableOnly : search == chip) ? Color.white : FiniTheme.ink)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .padding(20)
             }
-            .background(FiniTheme.mist)
-            .navigationTitle("Find an interpreter")
-            .sheet(item: $selection) { profile in
-                InterpreterDetailView(profile: profile)
+            if profiles.isEmpty {
+                Text(status).foregroundStyle(.secondary)
+            } else {
+                ForEach(profiles) { profile in
+                    Button { selection = profile } label: { profileCard(profile) }
+                        .buttonStyle(.plain)
+                }
             }
-            .task { await load() }
-            .onChange(of: availableOnly) { Task { await load() } }
+        }
+        .padding(.horizontal, embedded ? 18 : 18)
+        .padding(.bottom, 12)
+        }
+        .navigationTitle(embedded ? "" : "Find a Translator")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selection) { profile in
+            InterpreterDetailView(profile: profile)
+        }
+        .task {
+            if search.isEmpty, !preset.isEmpty { search = preset }
+            await load()
+        }
+        .onChange(of: availableOnly) { Task { await load() } }
+        .onChange(of: preset) {
+            guard !preset.isEmpty, preset != search else { return }
+            search = preset
+            Task { await load() }
         }
     }
 
     private func profileCard(_ profile: Interpreter) -> some View {
-        FiniCard {
-            HStack(alignment: .top, spacing: 12) {
-                AvatarView(name: profile.name)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(profile.name).font(.headline)
-                        if profile.verificationStatus == "verified" { Image(systemName: "checkmark.seal.fill").foregroundStyle(FiniTheme.blue) }
-                    }
-                    Text(profile.headline.isEmpty ? "Interpreter" : profile.headline).font(.subheadline).foregroundStyle(.secondary)
-                    HStack(spacing: 8) {
-                        if profile.rating > 0 { Text(String(format: "%.1f", profile.rating)) }
-                        Text("\(profile.yearsExperience) years")
-                        if profile.availableNow { Text("Available").foregroundStyle(.green) }
-                    }
-                    .font(.caption)
+        HStack(spacing: 12) {
+            AvatarView(name: profile.name, size: 64)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(profile.name).font(.headline).foregroundStyle(FiniTheme.ink)
+                Text(profile.headline.isEmpty ? "Interpreter" : profile.headline).font(.subheadline).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    if profile.rating > 0 { Text(String(repeating: "★", count: min(5, Int(profile.rating.rounded())))).foregroundStyle(FiniTheme.star) }
+                    Text("\(profile.yearsExperience) yrs")
+                    if profile.availableNow { Text("Available").foregroundStyle(.green) }
                 }
-                Spacer()
+                .font(.caption.weight(.semibold))
+            }
+            Spacer(minLength: 0)
+            if profile.verificationStatus == "verified" {
+                Text("✓")
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(FiniTheme.blue, in: Capsule())
             }
         }
+        .padding(12)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
     }
 
     private func load() async {
@@ -94,43 +125,62 @@ struct InterpreterDetailView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 12) {
-                        AvatarView(name: shown.name, size: 64)
-                        VStack(alignment: .leading) {
-                            Text(shown.name).font(.title2.weight(.bold))
-                            Text(shown.headline).foregroundStyle(.secondary)
+                    HStack(alignment: .center, spacing: 12) {
+                        AvatarView(name: shown.name, size: 84)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(shown.name).font(.system(size: 28, weight: .heavy)).foregroundStyle(FiniTheme.ink)
+                            if !shown.languages.isEmpty {
+                                Text(shown.languages.joined(separator: " · "))
+                                    .font(.caption.weight(.heavy))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(FiniTheme.blue, in: Capsule())
+                            }
+                            if shown.rating > 0 {
+                                Text(String(repeating: "★", count: min(5, Int(shown.rating.rounded()))) + String(format: "  %.1f", shown.rating))
+                                    .foregroundStyle(FiniTheme.star)
+                                    .font(.subheadline.weight(.bold))
+                            }
+                            Text(shown.headline.isEmpty ? "Professional interpreter" : shown.headline).foregroundStyle(.secondary)
                         }
                     }
-                    if !shown.bio.isEmpty { Text(shown.bio) }
-                    tagRow("Languages", shown.languages + shown.dialects)
-                    tagRow("Specialties", shown.specialties)
-                    Text("\(shown.yearsExperience) years of experience")
-                    if let label = shown.serviceLocation?.label, !label.isEmpty {
-                        Text(label)
-                    }
-                    if shown.availableNow { Text("Available now").foregroundStyle(.green) }
+                    if shown.availableNow { Text("Available now").font(.subheadline.weight(.bold)).foregroundStyle(.green) }
                     if app.account == nil {
                         Text("Sign in to call this interpreter.").foregroundStyle(.secondary)
                     } else if app.account?.isInterpreter == true {
                         Text("Interpreter accounts cannot call other interpreters.").foregroundStyle(.secondary)
                     } else {
-                        FiniButton(title: busy ? "Calling…" : "Call \(shown.name)", systemImage: "phone") { Task { await call() } }
+                        Button(busy ? "Calling…" : "Request Instant Call") { Task { await call() } }
+                            .buttonStyle(ConceptFilledButtonStyle())
                             .disabled(busy)
                     }
                     if !status.isEmpty { StatusBanner(text: status) }
+                    if !shown.bio.isEmpty {
+                        Text("About").font(.subheadline.weight(.heavy)).foregroundStyle(FiniTheme.blue)
+                        Text("Meet your interpreter").font(.title3.weight(.heavy))
+                        Text(shown.bio)
+                    }
+                    tagRow("Languages", shown.languages + shown.dialects)
+                    tagRow("Specialties", shown.specialties)
+                    Text("\(shown.yearsExperience) years of experience")
+                    if let label = shown.serviceLocation?.label, !label.isEmpty { Text(label) }
                     if !shown.recentReviews.isEmpty {
-                        Text("Reviews").font(.headline)
+                        Text("Most recent reviews").font(.title3.weight(.heavy)).padding(.top, 8)
                         ForEach(shown.recentReviews) { review in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(review.authorName) · \(review.rating)/5").font(.subheadline.weight(.semibold))
                                 Text(review.text)
                             }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(FiniTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                     }
                 }
-                .padding(20)
+                .padding(18)
             }
-            .background(FiniTheme.mist)
+            .background(Color.white)
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }

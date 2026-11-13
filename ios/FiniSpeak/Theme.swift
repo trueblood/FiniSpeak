@@ -1,10 +1,18 @@
 import SwiftUI
 
 enum FiniTheme {
-    static let blue = Color(red: 11 / 255, green: 108 / 255, blue: 1)
+    static let blue = Color(red: 11 / 255, green: 108 / 255, blue: 255 / 255)
     static let ink = Color(red: 17 / 255, green: 24 / 255, blue: 39 / 255)
     static let mist = Color(red: 231 / 255, green: 235 / 255, blue: 240 / 255)
-    static let line = Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255)
+    static let line = Color(red: 230 / 255, green: 235 / 255, blue: 241 / 255)
+    static let chip = Color(red: 236 / 255, green: 239 / 255, blue: 243 / 255)
+    static let soft = Color(red: 243 / 255, green: 244 / 255, blue: 246 / 255)
+    static let field = Color(red: 248 / 255, green: 250 / 255, blue: 252 / 255)
+    static let search = Color(red: 242 / 255, green: 244 / 255, blue: 247 / 255)
+    static let blurb = Color(red: 36 / 255, green: 82 / 255, blue: 122 / 255)
+    static let avatarFill = Color(red: 219 / 255, green: 231 / 255, blue: 245 / 255)
+    static let avatarInk = Color(red: 18 / 255, green: 60 / 255, blue: 105 / 255)
+    static let star = Color(red: 245 / 255, green: 180 / 255, blue: 0)
 
     static func initials(_ name: String) -> String {
         let parts = name.split(whereSeparator: { $0 == " " || $0 == "@" || $0 == "." }).prefix(2)
@@ -52,10 +60,10 @@ struct AvatarView: View {
 
     var body: some View {
         Text(FiniTheme.initials(name))
-            .font(.system(size: size * 0.34, weight: .bold))
-            .foregroundStyle(.white)
+            .font(.system(size: size * 0.32, weight: .heavy))
+            .foregroundStyle(FiniTheme.avatarInk)
             .frame(width: size, height: size)
-            .background(FiniTheme.blue, in: Circle())
+            .background(FiniTheme.avatarFill, in: Circle())
     }
 }
 

@@ -2,50 +2,39 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var app: AppModel
-    @State private var dialPresented = false
+    var onFind: () -> Void
+    var onLesson: () -> Void
+    var onCall: () -> Void
+    @Binding var category: String
+    var onCategory: (String) -> Void
     @State private var selectedCall: CallRecord?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Hello, \(app.account?.name ?? "there")")
-                        .font(.title.weight(.bold))
-                    Text("Start a call with someone on FiniSpeak, or open a conversation you already had.")
-                        .foregroundStyle(.secondary)
-                    FiniButton(title: "Call another user", systemImage: "phone") { dialPresented = true }
-                    NavigationLink {
-                        DiscoverView()
-                    } label: {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                            Text("Find a translator").font(.body.weight(.semibold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color(red: 243 / 255, green: 244 / 255, blue: 246 / 255), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .foregroundStyle(FiniTheme.ink)
-                    }
-                    .buttonStyle(.plain)
-                    Text("Recent calls").font(.headline)
-                    if app.history.isEmpty {
-                        Text("Calls you join will show up here.").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(app.history.prefix(12)) { call in
+        ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+            ConceptHub(category: $category, onCategory: onCategory, onFind: onFind, onLesson: onLesson, onCall: onCall, joinTitle: nil, onJoin: nil)
+            DisclosureGroup("Review recent conversations") {
+                if app.history.isEmpty {
+                    Text("Calls you join will show up here.").foregroundStyle(.secondary).padding(.top, 8)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(app.history.prefix(8)) { call in
                             Button { selectedCall = call } label: { callRow(call) }
                                 .buttonStyle(.plain)
                         }
                     }
+                    .padding(.top, 8)
                 }
-                .padding(20)
             }
-            .background(FiniTheme.mist)
-            .navigationTitle("FiniSpeak")
-            .refreshable { await app.refreshHistory() }
-            .sheet(isPresented: $dialPresented) { DialView() }
-            .sheet(item: $selectedCall) { call in TranscriptHistoryView(call: call) }
-            .task { await app.refreshHistory() }
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(FiniTheme.blue)
+            .padding(.top, 18)
         }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 12)
+        }
+        .sheet(item: $selectedCall) { call in TranscriptHistoryView(call: call) }
+        .task { await app.refreshHistory() }
     }
 
     private func callRow(_ call: CallRecord) -> some View {
