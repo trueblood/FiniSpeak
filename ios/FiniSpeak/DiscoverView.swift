@@ -43,7 +43,7 @@ struct DiscoverView: View {
                 InterpreterDetailView(profile: profile)
             }
             .task { await load() }
-            .onChange(of: availableOnly) { _ in Task { await load() } }
+            .onChange(of: availableOnly) { Task { await load() } }
         }
     }
 

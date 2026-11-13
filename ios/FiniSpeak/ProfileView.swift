@@ -24,7 +24,7 @@ struct ProfileView: View {
                         Text(interpreter.verificationStatus.isEmpty ? "Profile started" : interpreter.verificationStatus.replacingOccurrences(of: "_", with: " ").capitalized)
                         if !interpreter.languages.isEmpty { Text(interpreter.languages.joined(separator: ", ")) }
                         Toggle("Available now", isOn: $available)
-                            .onChange(of: available) { value in
+                            .onChange(of: available) { _, value in
                                 guard loadedAvailability else { return }
                                 Task { await setAvailable(value) }
                             }

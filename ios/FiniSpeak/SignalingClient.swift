@@ -20,7 +20,8 @@ final class SignalingClient: NSObject, URLSessionWebSocketDelegate {
         self.callId = callId
         cursor = after
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-        components?.scheme = components?.scheme == "https" ? "wss" : "ws"
+        let scheme = components?.scheme == "https" ? "wss" : "ws"
+        components?.scheme = scheme
         components?.path = "/ws/signaling"
         components?.query = nil
         socketURL = components?.url

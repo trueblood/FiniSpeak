@@ -101,7 +101,7 @@ struct ConversationView: View {
                     }
                     .padding(16)
                 }
-                .onChange(of: messages.count) { _ in
+                .onChange(of: messages.count) {
                     if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
