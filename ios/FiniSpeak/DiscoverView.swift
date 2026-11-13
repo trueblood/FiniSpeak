@@ -94,7 +94,7 @@ struct DiscoverView: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            InterpreterMap(profiles: visible) { profile in
+            InterpreterMap(profiles: visible, baseURL: app.api.baseURL) { profile in
                 selection = profile
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -141,6 +141,7 @@ struct DiscoverView: View {
 
 private struct InterpreterMap: UIViewRepresentable {
     var profiles: [Interpreter]
+    var baseURL: URL
     var onSelect: (Interpreter) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -164,11 +165,12 @@ private struct InterpreterMap: UIViewRepresentable {
 
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.onSelect = onSelect
+        context.coordinator.baseURL = baseURL
         let pins = profiles.compactMap { profile -> InterpreterPin? in
             guard let point = profile.serviceLocation?.coordinate else { return nil }
             return InterpreterPin(profile: profile, coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
         }
-        let signature = pins.map { "\($0.id):\($0.coordinate.latitude):\($0.coordinate.longitude)" }.sorted().joined(separator: "|")
+        let signature = pins.map { "\($0.id):\($0.coordinate.latitude):\($0.coordinate.longitude):\($0.profile.photoUrl ?? "")" }.sorted().joined(separator: "|")
         guard signature != context.coordinator.signature else { return }
         context.coordinator.signature = signature
         let current = map.annotations.compactMap { $0 as? InterpreterPin }
@@ -178,6 +180,7 @@ private struct InterpreterMap: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         var onSelect: (Interpreter) -> Void
+        var baseURL = URL(string: "https://finispeak.com")!
         var signature = ""
         private weak var map: MKMapView?
 
@@ -222,27 +225,18 @@ private struct InterpreterMap: UIViewRepresentable {
                 view.annotation = annotation
                 return view
             }
-            guard annotation is InterpreterPin else { return nil }
-            let marker = mapView.dequeueReusableAnnotationView(withIdentifier: "pin") as? MKMarkerAnnotationView
-                ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "pin")
-            marker.annotation = annotation
-            let available = (annotation as? InterpreterPin)?.available == true
-            marker.markerTintColor = available
-                ? UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1)
-                : UIColor(red: 148 / 255, green: 163 / 255, blue: 184 / 255, alpha: 1)
-            marker.glyphTintColor = .white
-            marker.clusteringIdentifier = "interpreters"
-            marker.canShowCallout = false
-            marker.titleVisibility = .hidden
-            marker.subtitleVisibility = .hidden
-            marker.displayPriority = .defaultHigh
+            guard let pin = annotation as? InterpreterPin else { return nil }
+            let marker = mapView.dequeueReusableAnnotationView(withIdentifier: "pin") as? PhotoPinView
+                ?? PhotoPinView(annotation: annotation, reuseIdentifier: "pin")
+            marker.annotation = pin
+            marker.apply(pin: pin, baseURL: baseURL)
             return marker
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             if let cluster = view.annotation as? MKClusterAnnotation {
                 mapView.deselectAnnotation(cluster, animated: false)
-                mapView.showAnnotations(cluster.memberAnnotations, animated: true)
+                zoomToSplit(cluster, on: mapView)
                 return
             }
             guard let pin = view.annotation as? InterpreterPin else { return }
@@ -256,9 +250,29 @@ private struct InterpreterMap: UIViewRepresentable {
         private func zoom(by factor: Double) {
             guard let map else { return }
             var region = map.region
-            region.span.latitudeDelta = min(max(region.span.latitudeDelta * factor, 0.4), 120)
-            region.span.longitudeDelta = min(max(region.span.longitudeDelta * factor, 0.4), 120)
+            region.span.latitudeDelta = min(max(region.span.latitudeDelta * factor, 0.008), 80)
+            region.span.longitudeDelta = min(max(region.span.longitudeDelta * factor, 0.008), 80)
             map.setRegion(region, animated: true)
+        }
+
+        private func zoomToSplit(_ cluster: MKClusterAnnotation, on mapView: MKMapView) {
+            let coords = cluster.memberAnnotations.map(\.coordinate)
+            guard let first = coords.first else { return }
+            var minLat = first.latitude
+            var maxLat = first.latitude
+            var minLon = first.longitude
+            var maxLon = first.longitude
+            for coordinate in coords {
+                minLat = min(minLat, coordinate.latitude)
+                maxLat = max(maxLat, coordinate.latitude)
+                minLon = min(minLon, coordinate.longitude)
+                maxLon = max(maxLon, coordinate.longitude)
+            }
+            let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
+            let latSpread = max(maxLat - minLat, 0.0008)
+            let lonSpread = max(maxLon - minLon, 0.0008)
+            let span = MKCoordinateSpan(latitudeDelta: latSpread / 0.35, longitudeDelta: lonSpread / 0.35)
+            mapView.setRegion(MKCoordinateRegion(center: center, span: span), animated: true)
         }
 
         private func zoomButton(title: String, action: Selector) -> UIButton {
@@ -286,6 +300,100 @@ private final class InterpreterPin: NSObject, MKAnnotation {
     }
 }
 
+private final class PhotoPinView: MKAnnotationView {
+    private let imageView = UIImageView()
+    private let initialsLabel = UILabel()
+    private let shape = CAShapeLayer()
+    private var loadToken = 0
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 44, height: 54)
+        centerOffset = CGPoint(x: 0, y: -24)
+        backgroundColor = .clear
+        canShowCallout = false
+        collisionMode = .circle
+        clusteringIdentifier = "interpreters"
+        displayPriority = .defaultLow
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.28
+        layer.shadowRadius = 3
+        layer.shadowOffset = CGSize(width: 0, height: 2)
+        shape.fillColor = UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1).cgColor
+        shape.strokeColor = UIColor.white.cgColor
+        shape.lineWidth = 3
+        layer.addSublayer(shape)
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.backgroundColor = UIColor(red: 219 / 255, green: 231 / 255, blue: 245 / 255, alpha: 1)
+        addSubview(imageView)
+        initialsLabel.textAlignment = .center
+        initialsLabel.font = .systemFont(ofSize: 11, weight: .heavy)
+        initialsLabel.textColor = UIColor(red: 18 / 255, green: 60 / 255, blue: 105 / 255, alpha: 1)
+        addSubview(initialsLabel)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        shape.frame = bounds
+        shape.path = pinPath().cgPath
+        let head = CGRect(x: bounds.midX - 12, y: 6, width: 24, height: 24)
+        imageView.frame = head
+        imageView.layer.cornerRadius = 12
+        initialsLabel.frame = head
+    }
+
+    func apply(pin: InterpreterPin, baseURL: URL) {
+        clusteringIdentifier = "interpreters"
+        displayPriority = .defaultLow
+        let green = UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1)
+        let gray = UIColor(red: 148 / 255, green: 163 / 255, blue: 184 / 255, alpha: 1)
+        shape.fillColor = (pin.available ? green : gray).cgColor
+        initialsLabel.text = Self.initials(pin.profile.name)
+        imageView.image = nil
+        initialsLabel.isHidden = false
+        loadToken += 1
+        let token = loadToken
+        guard let url = Self.photoURL(pin.profile, baseURL: baseURL) else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
+            guard let data, let image = UIImage(data: data) else { return }
+            if let status = (response as? HTTPURLResponse)?.statusCode, status >= 400 { return }
+            DispatchQueue.main.async {
+                guard let self, self.loadToken == token else { return }
+                self.imageView.image = image
+                self.initialsLabel.isHidden = true
+            }
+        }.resume()
+    }
+
+    private func pinPath() -> UIBezierPath {
+        let head = CGRect(x: bounds.midX - 16, y: 2, width: 32, height: 32)
+        let path = UIBezierPath(ovalIn: head)
+        let tip = UIBezierPath()
+        tip.move(to: CGPoint(x: bounds.midX - 7, y: head.maxY - 8))
+        tip.addLine(to: CGPoint(x: bounds.midX, y: bounds.maxY - 1))
+        tip.addLine(to: CGPoint(x: bounds.midX + 7, y: head.maxY - 8))
+        tip.close()
+        path.append(tip)
+        return path
+    }
+
+    private static func initials(_ name: String) -> String {
+        let parts = name.split(whereSeparator: { $0 == " " || $0 == "@" || $0 == "." }).prefix(2)
+        let letters = parts.compactMap(\.first).map(String.init).joined()
+        return letters.isEmpty ? "FS" : letters.uppercased()
+    }
+
+    private static func photoURL(_ profile: Interpreter, baseURL: URL) -> URL? {
+        guard let raw = profile.photoUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") { return URL(string: raw) }
+        if raw.hasPrefix("/") { return URL(string: raw, relativeTo: baseURL)?.absoluteURL }
+        return nil
+    }
+}
+
 private final class ClusterCountView: MKAnnotationView {
     private let label = UILabel()
 
@@ -302,6 +410,7 @@ private final class ClusterCountView: MKAnnotationView {
         label.frame = bounds
         addSubview(label)
         canShowCallout = false
+        collisionMode = .circle
     }
 
     required init?(coder: NSCoder) { nil }
