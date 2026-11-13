@@ -388,7 +388,6 @@ function bindUI() {
         show("heroView");
     };
     $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
-    $("openStartCall").onclick = openDirectCall;
     $("openDirectCall").onclick = openDirectCall;
     document.querySelectorAll("[data-discovery-category]").forEach(button => {
         button.onclick = () => openConceptCategory(button.dataset.discoveryCategory);
@@ -443,15 +442,6 @@ function setLanguageLessonAction(hosting) {
     const label = hosting ? "Host a Language Session" : "Book a Language Lesson";
     if ($("openLanguageLessonLabel")) $("openLanguageLessonLabel").textContent = label;
     if ($("lessonTitle")) $("lessonTitle").textContent = label;
-}
-
-function setCustomerCallActionsVisible(visible) {
-    // Translators keep Call Another User so they can reach a customer.
-    // The extra "Start a call" link stays customer-only.
-    $("openStartCall")?.classList.toggle("hidden", !visible);
-    ["customerTools", "openDirectCall", "callStartCard"].forEach(id => {
-        $(id)?.classList.remove("hidden");
-    });
 }
 
 function showCallDialPad() {
@@ -640,9 +630,6 @@ async function handleAuthState(user) {
         const isAdmin = currentProfile.role === "admin";
         $("interpreterProfileNav").classList.toggle("hidden", !isTranslator);
         $("adminNav").classList.toggle("hidden", !isAdmin);
-        // Administrators can also participate in calls. Keep the customer call
-        // workspace available while exposing the additional admin dashboard.
-        setCustomerCallActionsVisible(!isTranslator);
         setLanguageLessonAction(isTranslator);
         setTranslatorDiscoveryVisible(!isTranslator);
         $("translatorTools").classList.toggle("hidden", !isTranslator);
@@ -687,7 +674,6 @@ async function handleAuthState(user) {
         hydrateDashboardProfile();
         $("interpreterProfileNav")?.classList.add("hidden");
         $("translatorTools")?.classList.add("hidden");
-        setCustomerCallActionsVisible(true);
         setLanguageLessonAction(false);
         setTranslatorDiscoveryVisible(true);
         openDashboardPanel("home");

@@ -136,13 +136,10 @@ body.landing-mode .concept-welcome-actions > button {
 }
 body.dashboard-mode .concept-welcome-actions > button:hover,
 body.landing-mode .concept-welcome-actions > button:hover { background:#0057e0; transform:none; color:#fff; }
-body.dashboard-mode #openStartCall,
 .concept-text-action { width:100%; min-height:42px; margin-top:8px; background:transparent; color:#0b6cff; box-shadow:none; }
-body.dashboard-mode #openStartCall:hover,
 body.landing-mode #translatorSignup:hover { background:#eff6ff; }
 .concept-btn-icon { width:22px; height:22px; display:grid; place-items:center; }
 .concept-btn-icon svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
-body.dashboard-mode #openStartCall .concept-btn-icon { display:none; }
 .concept-blurb { margin:18px 0 16px; color:#24527a; font-size:.92rem; line-height:1.45; font-weight:650; }
 body.dashboard-mode .concept-inline-categories,
 body.landing-mode .concept-inline-categories { justify-content:center; margin-top:4px; }

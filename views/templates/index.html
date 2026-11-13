@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261103-call-followup">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261113-mobile-fit">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261113-home-cleanup">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261113-mobile-fit">
 </head>
 <body class="landing-mode">
@@ -178,18 +178,7 @@
                             <button type="button" data-discovery-category="Education" class="active" aria-pressed="true">Education</button>
                             <button type="button" data-discovery-category="Personal">Personal</button>
                         </div>
-                        <button id="openStartCall" class="concept-text-action" type="button">Start a call</button>
                     </section>
-                    <details id="conceptMoreTools" class="concept-more-tools">
-                        <summary>Review recent conversations</summary>
-                    <div class="dashboard-grid">
-                        <div class="card history-card">
-                            <div class="section-heading"><span class="eyebrow">Your activity</span><h3>Recent conversations</h3></div>
-                            <p>Open a session to review its saved transcript.</p>
-                            <div id="conversationHistory" class="conversation-history"><p class="transcript-empty">Loading conversations…</p></div>
-                        </div>
-                    </div>
-                    </details>
                     <div id="translatorTools" class="hidden translator-workspace concept-translator-home">
                         <div class="translator-hero-row">
                             <div><span class="eyebrow">Interpreter workspace</span><h3>Your interpreter dashboard</h3><p>Manage your availability, profile, verification, and interpretation sessions from one place.</p></div>
@@ -272,6 +261,16 @@
                             <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
                         </div>
                     </div>
+                    <details class="concept-more-tools">
+                        <summary>Review recent conversations</summary>
+                    <div class="dashboard-grid">
+                        <div class="card history-card">
+                            <div class="section-heading"><span class="eyebrow">Your activity</span><h3>Recent conversations</h3></div>
+                            <p>Open a session to review its saved transcript.</p>
+                            <div id="conversationHistory" class="conversation-history"><p class="transcript-empty">Loading conversations…</p></div>
+                        </div>
+                    </div>
+                    </details>
                 </section>
                 <div id="dashboardDirectory" class="dashboard-panel hidden">
                     <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search nearby or remote profiles and compare expertise, ratings, and availability.</p></div></div>
@@ -1110,6 +1109,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261113-call-prompt"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261113-home-cleanup"></script>
 </body>
 </html>
