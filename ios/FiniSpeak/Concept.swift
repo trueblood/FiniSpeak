@@ -156,7 +156,6 @@ struct AppTabBar: View {
     var unreadCount = 0
     var action: (AppTab) -> Void
 
-    private let bar = Color(red: 23 / 255, green: 25 / 255, blue: 30 / 255)
     private let selected = Color(red: 16 / 255, green: 84 / 255, blue: 60 / 255)
     private let badge = Color(red: 61 / 255, green: 214 / 255, blue: 92 / 255)
 
@@ -185,7 +184,7 @@ struct AppTabBar: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(selection == tab ? Color.white : FiniTheme.ink)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .background {
@@ -200,7 +199,9 @@ struct AppTabBar: View {
             }
         }
         .padding(5)
-        .background(bar, in: Capsule())
+        .background(Color.white, in: Capsule())
+        .overlay(Capsule().stroke(FiniTheme.line, lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.08), radius: 10, y: 3)
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
         .accessibilityElement(children: .contain)
@@ -243,12 +244,11 @@ private struct TranslateTabIcon: View {
                 .font(.system(size: 7, weight: .bold))
                 .offset(x: 6, y: -4)
         }
-        .foregroundStyle(.white)
     }
 
     private func bubble(tailOnLeft: Bool) -> some View {
         BubbleOutline(tailOnLeft: tailOnLeft)
-            .stroke(Color.white, style: StrokeStyle(lineWidth: 1.3, lineJoin: .round))
+            .stroke(style: StrokeStyle(lineWidth: 1.3, lineJoin: .round))
     }
 }
 
