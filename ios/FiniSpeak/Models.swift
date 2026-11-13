@@ -125,9 +125,18 @@ struct ServiceLocation: Decodable, Equatable {
     var city: String?
     var state: String?
     var country: String?
+    var latitude: Double?
+    var longitude: Double?
+    var showOnMap = false
 
     var label: String {
         [city, state, country].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    var coordinate: (latitude: Double, longitude: Double)? {
+        guard showOnMap, let latitude, let longitude else { return nil }
+        guard abs(latitude) <= 90, abs(longitude) <= 180, !(latitude == 0 && longitude == 0) else { return nil }
+        return (latitude, longitude)
     }
 
     init(from decoder: Decoder) throws {
@@ -135,9 +144,12 @@ struct ServiceLocation: Decodable, Equatable {
         city = container.flexString(.city)
         state = container.flexString(.state)
         country = container.flexString(.country)
+        latitude = container.flexDouble(.latitude)
+        longitude = container.flexDouble(.longitude)
+        showOnMap = container.flexBool(.showOnMap) ?? false
     }
 
-    private enum CodingKeys: String, CodingKey { case city, state, country }
+    private enum CodingKeys: String, CodingKey { case city, state, country, latitude, longitude, showOnMap }
 }
 
 struct InterpreterReview: Decodable, Identifiable, Equatable {

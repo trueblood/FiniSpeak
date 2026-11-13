@@ -131,7 +131,8 @@ final class APIClient {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return page.interpreters }
         return page.interpreters.filter { profile in
-            let haystack = ([profile.displayName, profile.bio] + profile.languages + profile.dialects + profile.specialties).joined(separator: " ").lowercased()
+            let place = [profile.serviceLocation?.city, profile.serviceLocation?.state, profile.serviceLocation?.country].compactMap { $0 }
+            let haystack = ([profile.displayName, profile.bio] + place + profile.languages + profile.dialects + profile.specialties).joined(separator: " ").lowercased()
             return haystack.contains(needle)
         }
     }

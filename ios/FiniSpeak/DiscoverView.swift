@@ -1,60 +1,108 @@
+import MapKit
 import SwiftUI
 
 struct DiscoverView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
     var embedded = false
     var preset = ""
+    var onBack: (() -> Void)?
     @State private var search = ""
-    @State private var language = ""
     @State private var availableOnly = false
+    @State private var moreFilters = false
     @State private var profiles: [Interpreter] = []
-    @State private var status = "Loading interpreters…"
+    @State private var status = ""
     @State private var selection: Interpreter?
-    private let chips = ["Spanish", "Legal", "Medical", "Available now"]
+    private let chips = ["Spanish", "Medellín", "Legal", "Medical"]
+
+    private var note: String {
+        if !status.isEmpty { return status }
+        guard !profiles.isEmpty else { return "" }
+        if visible.isEmpty { return "No interpreters match that search." }
+        if !visible.contains(where: { $0.serviceLocation?.coordinate != nil }) {
+            return "No matching interpreters have shared a public area yet."
+        }
+        return ""
+    }
+
+    private var visible: [Interpreter] {
+        let needle = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return profiles.filter { profile in
+            if availableOnly && !profile.availableNow { return false }
+            guard !needle.isEmpty else { return true }
+            let place = [profile.serviceLocation?.city, profile.serviceLocation?.state, profile.serviceLocation?.country].compactMap { $0 }
+            let haystack = ([profile.displayName, profile.bio] + place + profile.languages + profile.dialects + profile.specialties).joined(separator: " ").lowercased()
+            return haystack.contains(needle)
+        }
+    }
 
     var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
-            TextField("Find a Translator by Language/Dialect", text: $search)
-                .textInputAutocapitalization(.never)
-                .padding(.horizontal, 16)
-                .frame(minHeight: 46)
-                .background(FiniTheme.search, in: Capsule())
-                .onSubmit { Task { await load() } }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(chips, id: \.self) { chip in
-                        Button {
-                            if chip == "Available now" {
-                                availableOnly.toggle()
-                            } else {
-                                search = chip
-                                Task { await load() }
-                            }
-                        } label: {
-                            Text(chip)
-                                .font(.subheadline.weight(.bold))
-                                .padding(.horizontal, 12)
-                                .frame(minHeight: 40)
-                                .background((chip == "Available now" ? availableOnly : search == chip) ? FiniTheme.blue : FiniTheme.chip, in: Capsule())
-                                .foregroundStyle((chip == "Available now" ? availableOnly : search == chip) ? Color.white : FiniTheme.ink)
-                        }
-                        .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                if let onBack { onBack() } else { dismiss() }
+            } label: {
+                Label("Back", systemImage: "chevron.left")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(FiniTheme.ink)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(FiniTheme.soft, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            HStack(spacing: 8) {
+                ForEach(chips, id: \.self) { chip in
+                    Button {
+                        search = search == chip ? "" : chip
+                    } label: {
+                        Text(chip)
+                            .font(.system(size: 14, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .background(search == chip ? FiniTheme.blue : FiniTheme.chip, in: Capsule())
+                            .foregroundStyle(search == chip ? Color.white : FiniTheme.ink)
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            if profiles.isEmpty {
-                Text(status).foregroundStyle(.secondary)
-            } else {
-                ForEach(profiles) { profile in
-                    Button { selection = profile } label: { profileCard(profile) }
-                        .buttonStyle(.plain)
+            Button {
+                moreFilters.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrowtriangle.right.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .rotationEffect(.degrees(moreFilters ? 90 : 0))
+                    Text("More filters")
+                        .font(.subheadline.weight(.bold))
                 }
+                .foregroundStyle(Color(red: 71 / 255, green: 85 / 255, blue: 105 / 255))
             }
+            .buttonStyle(.plain)
+            if moreFilters {
+                TextField("Find a Translator by Language/Dialect", text: $search)
+                    .textInputAutocapitalization(.never)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 46)
+                    .background(FiniTheme.search, in: Capsule())
+                Toggle("Available now", isOn: $availableOnly)
+                    .font(.subheadline.weight(.semibold))
+                    .tint(FiniTheme.blue)
+            }
+            if !note.isEmpty {
+                Text(note)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            InterpreterMap(profiles: visible) { profile in
+                selection = profile
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(FiniTheme.line))
         }
-        .padding(.horizontal, embedded ? 18 : 18)
-        .padding(.bottom, 12)
-        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .background(Color.white)
         .navigationTitle(embedded ? "" : "Find a Translator")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $selection) { profile in
@@ -64,49 +112,194 @@ struct DiscoverView: View {
             if search.isEmpty, !preset.isEmpty { search = preset }
             await load()
         }
-        .onChange(of: availableOnly) { Task { await load() } }
         .onChange(of: preset) {
             guard !preset.isEmpty, preset != search else { return }
             search = preset
-            Task { await load() }
         }
-    }
-
-    private func profileCard(_ profile: Interpreter) -> some View {
-        HStack(spacing: 12) {
-            AvatarView(name: profile.name, size: 64)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(profile.name).font(.headline).foregroundStyle(FiniTheme.ink)
-                Text(profile.headline.isEmpty ? "Interpreter" : profile.headline).font(.subheadline).foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    if profile.rating > 0 { Text(String(repeating: "★", count: min(5, Int(profile.rating.rounded())))).foregroundStyle(FiniTheme.star) }
-                    Text("\(profile.yearsExperience) yrs")
-                    if profile.availableNow { Text("Available").foregroundStyle(.green) }
-                }
-                .font(.caption.weight(.semibold))
-            }
-            Spacer(minLength: 0)
-            if profile.verificationStatus == "verified" {
-                Text("✓")
-                    .font(.caption.weight(.heavy))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(FiniTheme.blue, in: Capsule())
-            }
-        }
-        .padding(12)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
     }
 
     private func load() async {
         do {
-            profiles = try await app.api.discover(language: language.trimmingCharacters(in: .whitespacesAndNewlines), availableNow: availableOnly, search: search)
-            status = profiles.isEmpty ? "No interpreters match that search." : ""
+            profiles = try await app.api.discover(language: nil, availableNow: false, search: "")
+            status = ""
         } catch {
             profiles = []
             status = error.localizedDescription
+        }
+    }
+}
+
+private struct InterpreterMap: UIViewRepresentable {
+    var profiles: [Interpreter]
+    var onSelect: (Interpreter) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSelect: onSelect)
+    }
+
+    func makeUIView(context: Context) -> MKMapView {
+        let map = MKMapView(frame: .zero)
+        map.delegate = context.coordinator
+        map.pointOfInterestFilter = .excludingAll
+        map.showsCompass = false
+        map.isPitchEnabled = false
+        map.isRotateEnabled = false
+        map.setRegion(MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 39.8, longitude: -98.6),
+            span: MKCoordinateSpan(latitudeDelta: 28, longitudeDelta: 42)
+        ), animated: false)
+        context.coordinator.installZoom(on: map)
+        return map
+    }
+
+    func updateUIView(_ map: MKMapView, context: Context) {
+        context.coordinator.onSelect = onSelect
+        let pins = profiles.compactMap { profile -> InterpreterPin? in
+            guard let point = profile.serviceLocation?.coordinate else { return nil }
+            return InterpreterPin(profile: profile, coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
+        }
+        let signature = pins.map { "\($0.id):\($0.coordinate.latitude):\($0.coordinate.longitude)" }.sorted().joined(separator: "|")
+        guard signature != context.coordinator.signature else { return }
+        context.coordinator.signature = signature
+        let current = map.annotations.compactMap { $0 as? InterpreterPin }
+        map.removeAnnotations(current)
+        map.addAnnotations(pins)
+    }
+
+    final class Coordinator: NSObject, MKMapViewDelegate {
+        var onSelect: (Interpreter) -> Void
+        var signature = ""
+        private weak var map: MKMapView?
+
+        init(onSelect: @escaping (Interpreter) -> Void) {
+            self.onSelect = onSelect
+        }
+
+        func installZoom(on map: MKMapView) {
+            self.map = map
+            let stack = UIStackView()
+            stack.axis = .vertical
+            stack.backgroundColor = .white
+            stack.layer.cornerRadius = 8
+            stack.clipsToBounds = true
+            stack.layer.borderWidth = 1
+            stack.layer.borderColor = UIColor(white: 0.82, alpha: 1).cgColor
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            let plus = zoomButton(title: "+", action: #selector(zoomIn))
+            let minus = zoomButton(title: "−", action: #selector(zoomOut))
+            let line = UIView()
+            line.backgroundColor = UIColor(white: 0.82, alpha: 1)
+            line.translatesAutoresizingMaskIntoConstraints = false
+            stack.addArrangedSubview(plus)
+            stack.addArrangedSubview(line)
+            stack.addArrangedSubview(minus)
+            map.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: map.leadingAnchor, constant: 10),
+                stack.topAnchor.constraint(equalTo: map.topAnchor, constant: 10),
+                stack.widthAnchor.constraint(equalToConstant: 36),
+                plus.heightAnchor.constraint(equalToConstant: 36),
+                minus.heightAnchor.constraint(equalToConstant: 36),
+                line.heightAnchor.constraint(equalToConstant: 1)
+            ])
+        }
+
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if annotation is MKUserLocation { return nil }
+            if annotation is MKClusterAnnotation {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "cluster") as? ClusterCountView
+                    ?? ClusterCountView(annotation: annotation, reuseIdentifier: "cluster")
+                view.annotation = annotation
+                return view
+            }
+            guard annotation is InterpreterPin else { return nil }
+            let marker = mapView.dequeueReusableAnnotationView(withIdentifier: "pin") as? MKMarkerAnnotationView
+                ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "pin")
+            marker.annotation = annotation
+            let available = (annotation as? InterpreterPin)?.available == true
+            marker.markerTintColor = available
+                ? UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1)
+                : UIColor(red: 148 / 255, green: 163 / 255, blue: 184 / 255, alpha: 1)
+            marker.glyphTintColor = .white
+            marker.clusteringIdentifier = "interpreters"
+            marker.canShowCallout = false
+            marker.titleVisibility = .hidden
+            marker.subtitleVisibility = .hidden
+            marker.displayPriority = .defaultHigh
+            return marker
+        }
+
+        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            if let cluster = view.annotation as? MKClusterAnnotation {
+                mapView.deselectAnnotation(cluster, animated: false)
+                mapView.showAnnotations(cluster.memberAnnotations, animated: true)
+                return
+            }
+            guard let pin = view.annotation as? InterpreterPin else { return }
+            mapView.deselectAnnotation(pin, animated: false)
+            onSelect(pin.profile)
+        }
+
+        @objc private func zoomIn() { zoom(by: 0.5) }
+        @objc private func zoomOut() { zoom(by: 2) }
+
+        private func zoom(by factor: Double) {
+            guard let map else { return }
+            var region = map.region
+            region.span.latitudeDelta = min(max(region.span.latitudeDelta * factor, 0.4), 120)
+            region.span.longitudeDelta = min(max(region.span.longitudeDelta * factor, 0.4), 120)
+            map.setRegion(region, animated: true)
+        }
+
+        private func zoomButton(title: String, action: Selector) -> UIButton {
+            let button = UIButton(type: .system)
+            button.setTitle(title, for: .normal)
+            button.titleLabel?.font = .systemFont(ofSize: 22, weight: .medium)
+            button.setTitleColor(UIColor(red: 17 / 255, green: 24 / 255, blue: 39 / 255, alpha: 1), for: .normal)
+            button.addTarget(self, action: action, for: .touchUpInside)
+            return button
+        }
+    }
+}
+
+private final class InterpreterPin: NSObject, MKAnnotation {
+    let id: String
+    let profile: Interpreter
+    let available: Bool
+    dynamic var coordinate: CLLocationCoordinate2D
+
+    init(profile: Interpreter, coordinate: CLLocationCoordinate2D) {
+        id = profile.id
+        self.profile = profile
+        available = profile.availableNow
+        self.coordinate = coordinate
+    }
+}
+
+private final class ClusterCountView: MKAnnotationView {
+    private let label = UILabel()
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+        backgroundColor = UIColor(red: 110 / 255, green: 204 / 255, blue: 57 / 255, alpha: 1)
+        layer.cornerRadius = 18
+        layer.borderWidth = 3
+        layer.borderColor = UIColor.white.cgColor
+        label.font = .systemFont(ofSize: 15, weight: .bold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.frame = bounds
+        addSubview(label)
+        canShowCallout = false
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var annotation: MKAnnotation? {
+        didSet {
+            let count = (annotation as? MKClusterAnnotation)?.memberAnnotations.count ?? 0
+            label.text = count > 0 ? "\(count)" : ""
         }
     }
 }

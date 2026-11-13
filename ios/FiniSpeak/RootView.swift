@@ -86,7 +86,7 @@ struct MainTabView: View {
                 section = .discover
             }
         case .discover:
-            DiscoverView(embedded: true, preset: discoverPreset)
+            DiscoverView(embedded: true, preset: discoverPreset, onBack: { section = .home })
         case .classroom:
             ClassroomView { query in
                 discoverPreset = query
