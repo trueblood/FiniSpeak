@@ -44,11 +44,11 @@ struct RootView: View {
 }
 
 struct MainTabView: View {
+    @EnvironmentObject private var app: AppModel
     @State private var section = FiniSection.home
     @State private var category = "Education"
     @State private var discoverPreset = ""
     @State private var menu = false
-    @State private var dial = false
 
     var body: some View {
         NavigationStack {
@@ -57,41 +57,50 @@ struct MainTabView: View {
                 screen
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(Color.white)
-                ConceptCategoryBar(selection: $category) { chosen in
-                    discoverPreset = chosen
-                    section = .discover
-                }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 8)
-                .background(Color.white)
+                AppTabBar(selection: AppTab.matching(section), unreadCount: app.unreadChats) { open($0) }
             }
             .background(Color.white)
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $menu) { ConceptMenu(section: $section) }
-            .sheet(isPresented: $dial) { DialView() }
+            .task { await app.refreshUnread() }
         }
         .environment(\.goHome) {
             menu = false
-            dial = false
             section = .home
         }
+        .environment(\.openTab) { open($0) }
+    }
+
+    private func open(_ tab: AppTab) {
+        menu = false
+        if tab == .translate, section != .discover {
+            discoverPreset = ""
+        }
+        section = tab.section
     }
 
     @ViewBuilder
     private var screen: some View {
         switch section {
         case .home:
-            HomeView(onFind: { section = .discover }, onLesson: { section = .classroom }, onCall: { dial = true }, category: $category) { chosen in
+            HomeView(onFind: { section = .discover }, onLesson: { section = .classroom }, onCall: { section = .calls }, category: $category) { chosen in
                 discoverPreset = chosen
                 section = .discover
             }
         case .discover:
             DiscoverView(embedded: true, preset: discoverPreset, onBack: { section = .home })
+        case .calls:
+            DialView(embedded: true)
         case .classroom:
             ClassroomView { query in
                 discoverPreset = query
                 section = .discover
             }
+        case .careers:
+            CareersView(onProfile: { section = .profile }, onBusiness: {
+                discoverPreset = "Business"
+                section = .discover
+            })
         case .friends:
             FriendsView(embedded: true)
         case .messages:
@@ -157,9 +166,15 @@ struct WelcomeView: View {
                     .padding(.horizontal, 18)
                     .padding(.bottom, 12)
                 }
-                ConceptCategoryBar(selection: $category) { _ in discoverPresented = true }
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 8)
+                AppTabBar(selection: discoverPresented ? .translate : nil) { tab in
+                    if tab == .translate {
+                        discoverPresented = true
+                    } else {
+                        creating = false
+                        interpreterSignup = tab == .careers
+                        authPresented = true
+                    }
+                }
             }
             .background(Color.white)
             .toolbar(.hidden, for: .navigationBar)
@@ -170,6 +185,16 @@ struct WelcomeView: View {
         .environment(\.goHome) {
             authPresented = false
             discoverPresented = false
+        }
+        .environment(\.openTab) { tab in
+            if tab == .translate {
+                discoverPresented = true
+            } else {
+                discoverPresented = false
+                creating = false
+                interpreterSignup = tab == .careers
+                authPresented = true
+            }
         }
     }
 }

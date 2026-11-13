@@ -4,6 +4,7 @@ import SwiftUI
 struct DiscoverView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openTab) private var openTab
     var embedded = false
     var preset = ""
     var onBack: (() -> Void)?
@@ -103,6 +104,15 @@ struct DiscoverView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .background(Color.white)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !embedded {
+                AppTabBar(selection: .translate, unreadCount: app.unreadChats) { tab in
+                    openTab(tab)
+                    if tab != .translate { dismiss() }
+                }
+                .background(Color.white)
+            }
+        }
         .navigationTitle(embedded ? "" : "Find a Translator")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $selection) { profile in
@@ -308,11 +318,11 @@ struct InterpreterDetailView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.goHome) private var goHome
+    @Environment(\.openTab) private var openTab
     let profile: Interpreter
     @State private var detail: Interpreter?
     @State private var status = ""
     @State private var busy = false
-    @State private var category = "Education"
     @State private var chat: Conversation?
     @State private var dial = false
 
@@ -448,10 +458,11 @@ struct InterpreterDetailView: View {
                 .padding(.horizontal, 18)
                 .padding(.bottom, 16)
             }
-            ConceptCategoryBar(selection: $category) { _ in }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .background(Color.white)
+            AppTabBar(selection: nil, unreadCount: app.unreadChats) { tab in
+                openTab(tab)
+                dismiss()
+            }
+            .background(Color.white)
         }
         .background(Color.white)
         .task { detail = try? await app.api.interpreter(id: profile.id) }

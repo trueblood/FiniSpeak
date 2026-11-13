@@ -17,6 +17,7 @@ final class AppModel: ObservableObject {
     @Published var incoming: IncomingCall?
     @Published var callSession: CallSession?
     @Published var history: [CallRecord] = []
+    @Published var unreadChats = 0
 
     let api: APIClient
     private var didRestore = false
@@ -68,6 +69,11 @@ final class AppModel: ObservableObject {
     func forgotPassword(email: String) async throws -> String {
         let result = try await api.forgotPassword(email: email)
         return result.message ?? "If the account exists, a recovery link will be sent."
+    }
+
+    func refreshUnread() async {
+        guard let conversations = try? await api.conversations() else { return }
+        unreadChats = conversations.reduce(0) { $0 + max($1.unreadCount ?? 0, 0) }
     }
 
     func signOut() async {
@@ -200,6 +206,7 @@ final class AppModel: ObservableObject {
         incoming = nil
         account = nil
         history = []
+        unreadChats = 0
         api.token = nil
         KeychainStore.clear()
     }

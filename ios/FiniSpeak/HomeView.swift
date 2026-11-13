@@ -56,6 +56,7 @@ struct HomeView: View {
 struct DialView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    var embedded = false
     @State private var email = ""
     @State private var phone = ""
     @State private var friends: [Friend] = []
@@ -63,32 +64,52 @@ struct DialView: View {
     @State private var busy = false
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("FiniSpeak account") {
-                    TextField("Email", text: $email)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                        .autocorrectionDisabled()
-                    TextField("Or phone number", text: $phone)
-                        .keyboardType(.phonePad)
+        Group {
+            if embedded {
+                callForm
+            } else {
+                NavigationStack {
+                    callForm
+                        .navigationTitle("Call")
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
                 }
-                if !friends.isEmpty {
-                    Section("Friends") {
-                        ForEach(friends) { friend in
-                            Button(friend.name) {
-                                email = friend.email ?? ""
-                                phone = friend.savedPhone ?? friend.phone ?? ""
-                            }
+            }
+        }
+        .task { friends = (try? await app.api.friends()) ?? [] }
+    }
+
+    private var callForm: some View {
+        Form {
+            if embedded {
+                Section {
+                    Text("Calls")
+                        .font(.subheadline.weight(.heavy))
+                        .foregroundStyle(FiniTheme.blue)
+                    Text("Call another user")
+                        .font(.system(size: 34, weight: .heavy))
+                        .foregroundStyle(FiniTheme.ink)
+                }
+            }
+            Section("FiniSpeak account") {
+                TextField("Email", text: $email)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .autocorrectionDisabled()
+                TextField("Or phone number", text: $phone)
+                    .keyboardType(.phonePad)
+            }
+            if !friends.isEmpty {
+                Section("Friends") {
+                    ForEach(friends) { friend in
+                        Button(friend.name) {
+                            email = friend.email ?? ""
+                            phone = friend.savedPhone ?? friend.phone ?? ""
                         }
                     }
                 }
-                if !status.isEmpty { Text(status) }
-                Section { Button(busy ? "Calling…" : "Start call") { Task { await start() } }.disabled(busy) }
             }
-            .navigationTitle("Call")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-            .task { friends = (try? await app.api.friends()) ?? [] }
+            if !status.isEmpty { Text(status) }
+            Section { Button(busy ? "Calling…" : "Start call") { Task { await start() } }.disabled(busy) }
         }
     }
 
@@ -103,7 +124,53 @@ struct DialView: View {
             guard account.uid != app.account?.uid else { status = "You cannot call yourself."; return }
             guard ["customer", "admin"].contains(account.role ?? "") else { status = "That account cannot receive a customer call. Open their interpreter profile to call them directly."; return }
             try await app.placeCall(receiverId: account.uid)
-            dismiss()
+            if !embedded { dismiss() }
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+}
+
+struct CareersView: View {
+    @EnvironmentObject private var app: AppModel
+    var onProfile: () -> Void
+    var onBusiness: () -> Void
+    @State private var status = ""
+    @State private var busy = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Careers").font(.subheadline.weight(.heavy)).foregroundStyle(FiniTheme.blue)
+                ConceptTitle(text: "Interpret with FiniSpeak")
+                Text("Use a language you speak to help people in business, school, and everyday conversations.")
+                    .foregroundStyle(.secondary)
+                Button("Browse business sessions", action: onBusiness)
+                    .buttonStyle(ConceptFilledButtonStyle())
+                if app.account?.isInterpreter == true {
+                    Button("Your interpreter profile", action: onProfile)
+                        .buttonStyle(ConceptSoftButtonStyle())
+                } else {
+                    Button(busy ? "Starting…" : "Join as an interpreter") { Task { await enroll() } }
+                        .buttonStyle(ConceptSoftButtonStyle())
+                        .disabled(busy)
+                }
+                Text("Credential documents and the full onboarding form stay on the FiniSpeak website. This phone uses the same account.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if !status.isEmpty { Text(status).font(.footnote).foregroundStyle(.secondary) }
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private func enroll() async {
+        busy = true
+        defer { busy = false }
+        do {
+            _ = try await app.api.enrollInterpreter(phone: app.account?.phone ?? "")
+            status = "Interpreter profile started. Finish credentials on the website."
         } catch {
             status = error.localizedDescription
         }

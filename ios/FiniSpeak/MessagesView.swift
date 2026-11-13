@@ -55,6 +55,7 @@ struct MessagesView: View {
     private func load() async {
         do {
             conversations = try await app.api.conversations()
+            app.unreadChats = conversations.reduce(0) { $0 + max($1.unreadCount ?? 0, 0) }
             status = conversations.isEmpty ? "No conversations yet." : ""
         } catch {
             status = error.localizedDescription

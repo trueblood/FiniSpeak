@@ -1,7 +1,55 @@
 import SwiftUI
 
 enum FiniSection: Hashable {
-    case home, discover, classroom, friends, messages, profile, settings
+    case home, discover, calls, classroom, careers, friends, messages, profile, settings
+}
+
+enum AppTab: String, CaseIterable, Identifiable {
+    case translate, calls, chats, education, careers
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .translate: return "Translate"
+        case .calls: return "Calls"
+        case .chats: return "Chats"
+        case .education: return "Education"
+        case .careers: return "Careers"
+        }
+    }
+
+    var section: FiniSection {
+        switch self {
+        case .translate: return .discover
+        case .calls: return .calls
+        case .chats: return .messages
+        case .education: return .classroom
+        case .careers: return .careers
+        }
+    }
+
+    static func matching(_ section: FiniSection) -> AppTab? {
+        switch section {
+        case .discover: return .translate
+        case .calls: return .calls
+        case .messages: return .chats
+        case .classroom: return .education
+        case .careers: return .careers
+        default: return nil
+        }
+    }
+}
+
+private struct OpenTabKey: EnvironmentKey {
+    static let defaultValue: (AppTab) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+    var openTab: (AppTab) -> Void {
+        get { self[OpenTabKey.self] }
+        set { self[OpenTabKey.self] = newValue }
+    }
 }
 
 struct ConceptGlobe: View {
@@ -103,6 +151,127 @@ struct ConceptActionButton: View {
     }
 }
 
+struct AppTabBar: View {
+    var selection: AppTab?
+    var unreadCount = 0
+    var action: (AppTab) -> Void
+
+    private let bar = Color(red: 23 / 255, green: 25 / 255, blue: 30 / 255)
+    private let selected = Color(red: 16 / 255, green: 84 / 255, blue: 60 / 255)
+    private let badge = Color(red: 61 / 255, green: 214 / 255, blue: 92 / 255)
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(AppTab.allCases) { tab in
+                Button {
+                    action(tab)
+                } label: {
+                    VStack(spacing: 3) {
+                        tabIcon(tab)
+                            .frame(width: 32, height: 26)
+                            .overlay(alignment: .topTrailing) {
+                                if tab == .chats, unreadCount > 0 {
+                                    Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
+                                        .font(.system(size: 11, weight: .heavy))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 4)
+                                        .frame(minWidth: 18, minHeight: 18)
+                                        .background(badge, in: Capsule())
+                                        .offset(x: 10, y: -7)
+                                }
+                            }
+                        Text(tab.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background {
+                        if selection == tab {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(selected)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tab == .chats && unreadCount > 0 ? "Chats, \(unreadCount) unread" : tab.title)
+            }
+        }
+        .padding(5)
+        .background(bar, in: Capsule())
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func tabIcon(_ tab: AppTab) -> some View {
+        switch tab {
+        case .translate:
+            TranslateTabIcon()
+        case .calls:
+            Image(systemName: "phone")
+                .font(.system(size: 20, weight: .regular))
+        case .chats:
+            Image(systemName: "ellipsis.bubble")
+                .font(.system(size: 20, weight: .regular))
+        case .education:
+            Image(systemName: "graduationcap")
+                .font(.system(size: 20, weight: .regular))
+        case .careers:
+            Image(systemName: "briefcase")
+                .font(.system(size: 19, weight: .regular))
+        }
+    }
+}
+
+private struct TranslateTabIcon: View {
+    var body: some View {
+        ZStack {
+            bubble(tailOnLeft: true)
+                .frame(width: 16, height: 15)
+                .offset(x: -6, y: 3)
+            Text("A")
+                .font(.system(size: 8, weight: .bold))
+                .offset(x: -6, y: 2)
+            bubble(tailOnLeft: false)
+                .frame(width: 16, height: 15)
+                .offset(x: 6, y: -3)
+            Text("文")
+                .font(.system(size: 7, weight: .bold))
+                .offset(x: 6, y: -4)
+        }
+        .foregroundStyle(.white)
+    }
+
+    private func bubble(tailOnLeft: Bool) -> some View {
+        BubbleOutline(tailOnLeft: tailOnLeft)
+            .stroke(Color.white, style: StrokeStyle(lineWidth: 1.3, lineJoin: .round))
+    }
+}
+
+private struct BubbleOutline: Shape {
+    var tailOnLeft: Bool
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let body = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height * 0.72)
+        path.addRoundedRect(in: body, cornerSize: CGSize(width: 4.5, height: 4.5))
+        if tailOnLeft {
+            path.move(to: CGPoint(x: body.minX + 3, y: body.maxY))
+            path.addLine(to: CGPoint(x: body.minX + 1.5, y: rect.maxY))
+            path.addLine(to: CGPoint(x: body.minX + 8, y: body.maxY))
+        } else {
+            path.move(to: CGPoint(x: body.maxX - 8, y: body.maxY))
+            path.addLine(to: CGPoint(x: body.maxX - 1.5, y: rect.maxY))
+            path.addLine(to: CGPoint(x: body.maxX - 3, y: body.maxY))
+        }
+        return path
+    }
+}
+
 struct ConceptCategoryBar: View {
     @Binding var selection: String
     var onSelect: (String) -> Void
@@ -176,10 +345,12 @@ struct ConceptMenu: View {
     private var rows: [(FiniSection, String, String)] {
         var items: [(FiniSection, String, String)] = [
             (.home, "Home", "house"),
-            (.discover, "Discover", "magnifyingglass"),
-            (.classroom, "Classroom", "book"),
+            (.discover, "Translate", "bubble.left.and.bubble.right"),
+            (.calls, "Calls", "phone"),
+            (.messages, "Chats", "ellipsis.bubble"),
+            (.classroom, "Education", "graduationcap"),
+            (.careers, "Careers", "briefcase"),
             (.friends, "Friends", "person.2"),
-            (.messages, "Messages", "bubble.left"),
             (.profile, "Profile", "person"),
             (.settings, "Settings", "gearshape"),
         ]
