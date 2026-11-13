@@ -333,11 +333,42 @@ button.audio-flag.is-flagged { color:#b45309; }
 button.audio-book { width:100%; min-height:52px; border-radius:14px; background:#0b6cff; color:#fff; font-size:1.05rem; font-weight:800; }
 button.audio-book:hover { background:#0057e0; }
 .audio-call-tabs { padding:8px 18px 16px; }
-@media (max-width:700px) {
+@media (max-width:700px), (pointer:coarse) and (orientation:landscape) {
   body.in-call:not(.video-call) .call-view,
-  body.in-call.video-call .call-view { padding:0; }
+  body.in-call.video-call .call-view { padding:0; grid-template-columns:minmax(0,1fr); }
+
   .audio-call,
-  body.in-call.video-call #callShell { width:100%; height:100dvh; }
+  body.in-call.video-call #callShell { width:100%; height:100vh; height:100dvh; }
+
   .audio-call-shell,
-  body.in-call.video-call #callShell { max-height:100dvh; border:0; border-radius:0; box-shadow:none; }
+  body.in-call.video-call #callShell {
+    height:100%;
+    max-height:none;
+    border:0;
+    border-radius:0;
+    box-shadow:none;
+    padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px)
+      env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+  }
+
+  .audio-call-people { gap:clamp(12px,6vw,36px); }
+  .audio-call-people > * { min-width:0; }
+  .audio-call-people strong,.audio-line p { overflow-wrap:anywhere; }
+  .call-mobile-switch { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .call-view .floating-controls .call-mobile-switch button {
+    width:100%;
+    min-width:0;
+    padding-inline:4px;
+    white-space:normal;
+  }
+}
+
+@media (orientation:landscape) and (max-height:450px) {
+  .call-view .call-shell .call-frame { overflow:auto; }
+  .call-view .call-stage { flex-basis:160px; }
+  body.in-call.video-call .floating-controls { position:sticky; left:auto; right:auto; bottom:0; flex:none; }
+  .call-shell[data-pane="video"] .video-stage,
+  .call-shell[data-pane="video"] .call-frame.is-controls-collapsed .video-stage { padding-bottom:8px; }
+  .call-shell:not([data-pane="video"]) .call-stage { margin-bottom:0; }
+  .call-view .call-shell[data-pane] .call-status-line:not(:empty) { position:static; }
 }

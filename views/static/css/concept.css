@@ -250,7 +250,7 @@ body.dashboard-mode .directory-search input {
 }
 body.dashboard-mode .concept-advanced-filters summary { cursor:pointer; color:#475569; font-weight:750; }
 body.dashboard-mode .concept-advanced-grid { display:grid; gap:10px; margin-top:10px; }
-body.dashboard-mode .directory-location-bar { grid-template-columns:1fr; margin-top:8px; padding:10px 0; border:0; box-shadow:none; background:transparent; }
+body.dashboard-mode .directory-location-bar { grid-template-columns:minmax(0,1fr); margin-top:8px; padding:10px 0; border:0; box-shadow:none; background:transparent; }
 body.dashboard-mode .directory-results-heading { margin:8px 0; }
 body.dashboard-mode .directory-results-layout.map-view .interpreter-directory { display:none; }
 body.dashboard-mode .interpreter-map-panel { position:relative; top:auto; }
@@ -383,6 +383,15 @@ body.profile-mode .profile-name-row h1 { font-size:1.65rem; }
 body.profile-mode .profile-overview .concept-week,
 body.profile-mode .profile-slot,
 body.profile-mode .profile-call-actions { width:100%; }
+body.profile-mode .profile-overview .concept-week {
+  display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+  gap:4px;
+  padding-inline:8px;
+  font-size:.85rem;
+}
+body.profile-mode .profile-overview .concept-week > * { min-width:0; }
+body.profile-mode .profile-name-row h1 { overflow-wrap:anywhere; }
 body.profile-mode .profile-overview .availability-pill { display:none; }
 body.profile-mode #profileChatTranslator,
 body.profile-mode #profileStartCall { min-height:0; background:transparent; color:#0b6cff; border:0; padding:4px 0; font-size:.92rem; }
@@ -409,11 +418,11 @@ body.profile-mode .concept-tabbar-profile { flex:none; padding:8px 18px 16px; }
 .call-start-card #callForm button.dial-backspace,
 .call-start-card #callForm button.dial-key { min-height:0; margin:0; padding:0; background:#f3f4f6; color:#111827; box-shadow:none; }
 .call-start-card #callForm button.dial-backspace { width:44px; height:44px; }
-.call-start-card #callForm button.dial-key { width:72px; height:72px; }
+.call-start-card #callForm button.dial-key { width:100%; aspect-ratio:1; }
 .dial-backspace { border-radius:50%; font-size:1.15rem; }
 .dial-backspace:hover,.dial-key:hover { background:#e5e7eb; color:#111827; }
-.dial-pad { display:grid; grid-template-columns:repeat(3,72px); gap:12px 16px; justify-content:center; width:100%; }
-.dial-key { width:72px; height:72px; display:grid; align-content:center; justify-items:center; border-radius:50%; line-height:1; }
+.dial-pad { display:grid; grid-template-columns:repeat(3,minmax(0,72px)); gap:12px clamp(8px,4vw,16px); justify-content:center; width:100%; }
+.dial-key { display:grid; align-content:center; justify-items:center; border-radius:50%; line-height:1; }
 .dial-key strong { font-size:1.45rem; font-weight:750; }
 .dial-key small { margin-top:2px; color:#64748b; font-size:.58rem; font-weight:800; letter-spacing:.08em; }
 .dial-key-symbol strong { font-size:1.6rem; }
@@ -435,15 +444,6 @@ button.dial-friend:hover { background:#f8fafc; color:#111827; }
 .dial-friend-copy strong,.dial-friend-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dial-friend-copy small { color:#64748b; font-weight:650; }
 .dial-friend .presence-dot { margin-left:auto; }
-
-@media (max-width:700px) {
-  body.dashboard-mode #dashboardView { padding:0; }
-  body.dashboard-mode #dashboardView .app-shell { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
-  body.profile-mode #profileView { padding:0; }
-  body.profile-mode .profile-detail-shell { width:100%; height:100dvh; max-height:100dvh; min-height:0; border:0; border-radius:0; box-shadow:none; }
-  body.landing-mode #heroView { padding:0; }
-  body.landing-mode .landing-phone { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
-}
 
 /* Public landing reuses the signed-in phone shell. Welcome type, buttons, chips, and header come from the shared concept rules above. */
 body.landing-mode { background:#e7ebf0; }
@@ -574,9 +574,41 @@ body.landing-mode #authSubmit:hover { background:#0057e0; }
 body.landing-mode #authToggle,
 body.landing-mode #forgotPassword { border:0; background:transparent; color:#0b6cff; }
 body.landing-mode #clearFeaturedFilters { border:0; background:transparent; color:#0b6cff; }
-@media (max-width:700px) {
+@media (max-width:700px), (pointer:coarse) and (orientation:landscape) {
+  body.dashboard-mode #dashboardView,
+  body.profile-mode #profileView,
   body.landing-mode #heroView,
-  body.landing-mode #authView { padding:0; }
+  body.landing-mode #authView { padding:0; grid-template-columns:minmax(0,1fr); }
+
+  body.dashboard-mode #dashboardView .app-shell,
+  body.profile-mode .profile-detail-shell,
   body.landing-mode .landing-phone,
-  body.landing-mode #authView .card.narrow { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
+  body.landing-mode #authView .card.narrow {
+    width:100%;
+    min-width:0;
+    height:100vh;
+    height:100dvh;
+    max-height:none;
+    border:0;
+    border-radius:0;
+    box-shadow:none;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    padding-left:env(safe-area-inset-left,0px);
+    padding-right:env(safe-area-inset-right,0px);
+  }
+
+  body.landing-mode #authView .card.narrow {
+    padding:calc(18px + env(safe-area-inset-top,0px))
+      calc(18px + env(safe-area-inset-right,0px))
+      calc(18px + env(safe-area-inset-bottom,0px))
+      calc(18px + env(safe-area-inset-left,0px));
+  }
+
+  .concept-tabbar { gap:4px; }
+  .concept-tabbar button { min-width:0; padding-inline:4px; font-size:clamp(.74rem,3.8vw,.92rem); }
+  body.dashboard-mode .concept-inline-categories button,
+  body.landing-mode .concept-inline-categories button { min-width:0; padding-inline:6px; }
+  body.dashboard-mode .call-start-card { padding:clamp(12px,5vw,28px); }
+  body.dashboard-mode .directory-results-layout.split-view { grid-template-columns:minmax(0,1fr); }
 }
