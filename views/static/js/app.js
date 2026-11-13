@@ -16,6 +16,7 @@ const show = (id) => {
 };
 let currentUser, currentProfile, currentInterpreterProfile, signupMode = false;
 let authActionToken = null;
+let openDialAfterSignIn = false;
 let localStream = null, activeCallId = null, callUnsubs = [], peerConnections = new Map(), peerProfiles = new Map(), peerDebug = new Map(), peerJobs = new Map(), rosterParticipants = [], rosterTranscripts = [];
 let cameraRelay = null, cameraRelayOpen = false, cameraRestart = null, lastCameraRestart = 0, suppressCameraRestart = false;
 let signalingSocket = null, signalingReady = null, pendingIceCandidates = new Map();
@@ -189,11 +190,7 @@ function bindUI() {
             workflowTabs[nextIndex].focus();
         });
     });
-    $("startCall").onclick = () => {
-        if (!currentUser) return openAuth(false, "customer");
-        show("dashboardView");
-        openDashboardPanel("home");
-    };
+    $("startCall").onclick = openDirectCall;
     $("landingCta").onclick = () => openAuth(true, "customer");
     $("landingLogin").onclick = () => $("authNav").click();
     $("landingSearch").onclick = () => $("browseNav").click();
@@ -386,7 +383,10 @@ function bindUI() {
         window.setTimeout(() => $("directorySearch")?.focus(), 50);
     };
     $("dashboardBackButton").onclick = goDashboardBack;
-    $("authBack").onclick = () => show("heroView");
+    $("authBack").onclick = () => {
+        openDialAfterSignIn = false;
+        show("heroView");
+    };
     $("clearSelectedInterpreter").onclick = clearSelectedInterpreter;
     $("openStartCall").onclick = openDirectCall;
     $("openDirectCall").onclick = openDirectCall;
@@ -452,20 +452,22 @@ function setCustomerCallActionsVisible(visible) {
     ["customerTools", "openDirectCall", "callStartCard"].forEach(id => {
         $(id)?.classList.remove("hidden");
     });
-    const summary = document.querySelector("#conceptMoreTools summary");
-    if (summary) summary.textContent = "Start a call or review recent conversations";
 }
 
 function showCallDialPad() {
     show("dashboardView");
-    openDashboardPanel("home");
-    const more = $("conceptMoreTools");
-    if (more) more.open = true;
-    $("callStartCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => $("receiverPhone")?.focus(), 250);
+    openDashboardPanel("dial");
+    $("dashboardDial").scrollTop = 0;
+    $("callPromptTitle").focus({ preventScroll: true });
 }
 
 function openDirectCall() {
+    if (!currentUser) {
+        openAuth(false, "customer");
+        openDialAfterSignIn = true;
+        $("authStatus").textContent = "Sign in to call another FiniSpeak user.";
+        return;
+    }
     showCallDialPad();
 }
 
@@ -531,6 +533,7 @@ function openInterpreterDirectory() {
 }
 
 function openAuth(signup, role) {
+    openDialAfterSignIn = false;
     setAuthMode(signup);
     $("role").value = role;
     if ($("authStatus")) $("authStatus").textContent = "";
@@ -596,6 +599,8 @@ async function localSignOut() {
 
 async function handleAuthState(user) {
     currentUser = user;
+    const resumeDial = Boolean(user && openDialAfterSignIn);
+    openDialAfterSignIn = false;
     document.body.classList.toggle("signed-in", Boolean(user));
     if (!user) document.body.classList.remove("nav-open");
     $("authNav").textContent = user ? "Log out" : "Log in";
@@ -648,6 +653,7 @@ async function handleAuthState(user) {
         // a profile problem cannot block navigation after login.
         openDashboardPanel(isAdmin ? "admin" : "home", "reset");
         show("dashboardView");
+        if (resumeDial) showCallDialPad();
         $("authStatus").textContent = "";
 
         if (isTranslator) {
@@ -686,6 +692,7 @@ async function handleAuthState(user) {
         setTranslatorDiscoveryVisible(true);
         openDashboardPanel("home");
         show("dashboardView");
+        if (resumeDial) showCallDialPad();
         $("dashboardStatus").textContent = `Signed in, but some account data could not load: ${error.message}`;
         $("authStatus").textContent = "";
         try { startDashboardListeners(); } catch (listenerError) { console.error("Dashboard listeners failed:", listenerError); }
@@ -744,7 +751,7 @@ function goDashboardBack() {
 }
 
 function openDashboardPanel(panel, historyMode = "push") {
-    const ids = { home: "dashboardHome", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", messages: "dashboardMessages", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
+    const ids = { home: "dashboardHome", dial: "dashboardDial", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", messages: "dashboardMessages", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
     if (!ids[panel]) return;
     if (historyMode !== "back") dashboardHistory = nextDashboardHistory(dashboardHistory, panel, historyMode);
     updateDashboardBackButton();
@@ -5399,11 +5406,7 @@ function bindConceptScreens() {
             return;
         }
         if (activeDirectoryProfile) startDirectTranslatorChat();
-        else {
-            openDashboardPanel("home");
-            if ($("conceptMoreTools")) $("conceptMoreTools").open = true;
-            $("receiverPhone")?.focus();
-        }
+        else showCallDialPad();
     };
     $("conceptConfirmSchedule").onclick = () => {
         $("conceptScheduleStatus").textContent = `Session held for ${$("conceptSlotLabel").textContent}. Request an instant call when everyone is ready.`;

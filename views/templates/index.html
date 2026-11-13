@@ -181,52 +181,8 @@
                         <button id="openStartCall" class="concept-text-action" type="button">Start a call</button>
                     </section>
                     <details id="conceptMoreTools" class="concept-more-tools">
-                        <summary>Start a call or review recent conversations</summary>
+                        <summary>Review recent conversations</summary>
                     <div class="dashboard-grid">
-                        <div class="card call-start-card" id="callStartCard">
-                            <div id="customerTools">
-                                <span class="eyebrow">Connect now</span><h3>Start a conversation</h3>
-                                <p id="callFormHelp">Dial another FiniSpeak customer, or choose a friend. You can add an interpreter when the call starts.</p>
-                                <div id="selectedInterpreter" class="selected-interpreter hidden" aria-live="polite">
-                                    <div><span>Selected interpreter</span><strong id="selectedInterpreterName"></strong></div>
-                                    <button id="clearSelectedInterpreter" class="text-button" type="button">Change</button>
-                                </div>
-                                <form id="callForm" class="dial-pad-form">
-                                    <div class="dial-readout">
-                                        <label class="sr-only" for="receiverPhoneCountry">Country code</label>
-                                        <select id="receiverPhoneCountry" class="dial-country" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select>
-                                        <div class="dial-number-row">
-                                            <label class="sr-only" for="receiverPhone">Phone number</label>
-                                            <input id="receiverPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="Dial a number" aria-describedby="receiverPhoneHelp dialTargetName">
-                                            <button id="dialBackspace" class="dial-backspace" type="button" aria-label="Delete last digit">⌫</button>
-                                        </div>
-                                        <p id="dialTargetName" class="dial-target" aria-live="polite"></p>
-                                        <input id="receiverEmail" class="hidden" type="email" autocomplete="off" tabindex="-1">
-                                    </div>
-                                    <div class="dial-pad" role="group" aria-label="Dial pad">
-                                        <button class="dial-key" type="button" data-dial="1"><strong>1</strong></button>
-                                        <button class="dial-key" type="button" data-dial="2"><strong>2</strong><small>ABC</small></button>
-                                        <button class="dial-key" type="button" data-dial="3"><strong>3</strong><small>DEF</small></button>
-                                        <button class="dial-key" type="button" data-dial="4"><strong>4</strong><small>GHI</small></button>
-                                        <button class="dial-key" type="button" data-dial="5"><strong>5</strong><small>JKL</small></button>
-                                        <button class="dial-key" type="button" data-dial="6"><strong>6</strong><small>MNO</small></button>
-                                        <button class="dial-key" type="button" data-dial="7"><strong>7</strong><small>PQRS</small></button>
-                                        <button class="dial-key" type="button" data-dial="8"><strong>8</strong><small>TUV</small></button>
-                                        <button class="dial-key" type="button" data-dial="9"><strong>9</strong><small>WXYZ</small></button>
-                                        <button class="dial-key dial-key-symbol" type="button" data-dial="*" aria-label="Star"><strong>*</strong></button>
-                                        <button class="dial-key" type="button" data-dial="0"><strong>0</strong></button>
-                                        <button class="dial-key dial-key-symbol" type="button" data-dial="#" aria-label="Pound"><strong>#</strong></button>
-                                    </div>
-                                    <button id="dialCallButton" type="submit" aria-label="Start in-app call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h2.2l1.2 3-1.7 1a11 11 0 0 0 5.8 5.8l1-1.7 3 1.2V15a1.5 1.5 0 0 1-1.5 1.5A13.5 13.5 0 0 1 5.5 5 1.5 1.5 0 0 1 7 3.5z"/></svg><span class="sr-only">Call</span></button>
-                                    <p id="receiverPhoneHelp" class="field-help call-phone-help">This starts a secure in-app call. It does not dial a cellular or landline number.</p>
-                                </form>
-                                <section class="dial-friends" aria-labelledby="dialFriendsTitle">
-                                    <div class="dial-friends-heading"><h3 id="dialFriendsTitle">Friends</h3><button id="dialManageFriends" class="text-button" type="button">Add or edit</button></div>
-                                    <div id="dialFriendsList" class="dial-friends-list" aria-live="polite"><p class="dial-friends-empty">Loading friends…</p></div>
-                                </section>
-                                <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
-                            </div>
-                        </div>
                         <div class="card history-card">
                             <div class="section-heading"><span class="eyebrow">Your activity</span><h3>Recent conversations</h3></div>
                             <p>Open a session to review its saved transcript.</p>
@@ -271,6 +227,52 @@
                     </div>
                 </div>
 
+                <section id="dashboardDial" class="dashboard-panel hidden" aria-labelledby="callPromptTitle">
+                    <div class="card call-start-card" id="callStartCard">
+                        <div id="customerTools">
+                            <h2 id="callPromptTitle" tabindex="-1">Call another user</h2>
+                            <p id="callFormHelp">Dial another FiniSpeak customer, or choose a friend. You can add an interpreter when the call starts.</p>
+                            <div id="selectedInterpreter" class="selected-interpreter hidden" aria-live="polite">
+                                <div><span>Selected interpreter</span><strong id="selectedInterpreterName"></strong></div>
+                                <button id="clearSelectedInterpreter" class="text-button" type="button">Change</button>
+                            </div>
+                            <form id="callForm" class="dial-pad-form">
+                                <div class="dial-readout">
+                                    <label class="sr-only" for="receiverPhoneCountry">Country code</label>
+                                    <select id="receiverPhoneCountry" class="dial-country" data-phone-country autocomplete="tel-country-code" aria-label="Country code"></select>
+                                    <div class="dial-number-row">
+                                        <label class="sr-only" for="receiverPhone">Phone number</label>
+                                        <input id="receiverPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="Dial a number" aria-describedby="receiverPhoneHelp dialTargetName">
+                                        <button id="dialBackspace" class="dial-backspace" type="button" aria-label="Delete last digit">⌫</button>
+                                    </div>
+                                    <p id="dialTargetName" class="dial-target" aria-live="polite"></p>
+                                    <input id="receiverEmail" class="hidden" type="email" autocomplete="off" tabindex="-1">
+                                </div>
+                                <div class="dial-pad" role="group" aria-label="Dial pad">
+                                    <button class="dial-key" type="button" data-dial="1"><strong>1</strong></button>
+                                    <button class="dial-key" type="button" data-dial="2"><strong>2</strong><small>ABC</small></button>
+                                    <button class="dial-key" type="button" data-dial="3"><strong>3</strong><small>DEF</small></button>
+                                    <button class="dial-key" type="button" data-dial="4"><strong>4</strong><small>GHI</small></button>
+                                    <button class="dial-key" type="button" data-dial="5"><strong>5</strong><small>JKL</small></button>
+                                    <button class="dial-key" type="button" data-dial="6"><strong>6</strong><small>MNO</small></button>
+                                    <button class="dial-key" type="button" data-dial="7"><strong>7</strong><small>PQRS</small></button>
+                                    <button class="dial-key" type="button" data-dial="8"><strong>8</strong><small>TUV</small></button>
+                                    <button class="dial-key" type="button" data-dial="9"><strong>9</strong><small>WXYZ</small></button>
+                                    <button class="dial-key dial-key-symbol" type="button" data-dial="*" aria-label="Star"><strong>*</strong></button>
+                                    <button class="dial-key" type="button" data-dial="0"><strong>0</strong></button>
+                                    <button class="dial-key dial-key-symbol" type="button" data-dial="#" aria-label="Pound"><strong>#</strong></button>
+                                </div>
+                                <button id="dialCallButton" type="submit" aria-label="Start in-app call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h2.2l1.2 3-1.7 1a11 11 0 0 0 5.8 5.8l1-1.7 3 1.2V15a1.5 1.5 0 0 1-1.5 1.5A13.5 13.5 0 0 1 5.5 5 1.5 1.5 0 0 1 7 3.5z"/></svg><span class="sr-only">Call</span></button>
+                                <p id="receiverPhoneHelp" class="field-help call-phone-help">This starts a secure in-app call. It does not dial a cellular or landline number.</p>
+                            </form>
+                            <section class="dial-friends" aria-labelledby="dialFriendsTitle">
+                                <div class="dial-friends-heading"><h3 id="dialFriendsTitle">Friends</h3><button id="dialManageFriends" class="text-button" type="button">Add or edit</button></div>
+                                <div id="dialFriendsList" class="dial-friends-list" aria-live="polite"><p class="dial-friends-empty">Loading friends…</p></div>
+                            </section>
+                            <p id="callFormStatus" class="status call-form-status" role="status" aria-live="polite"></p>
+                        </div>
+                    </div>
+                </section>
                 <div id="dashboardDirectory" class="dashboard-panel hidden">
                     <div class="dashboard-heading"><div><span class="eyebrow">Interpreter directory</span><h2>Find the right interpreter</h2><p>Search nearby or remote profiles and compare expertise, ratings, and availability.</p></div></div>
                     <div class="directory-filters card" aria-label="Interpreter filters">
@@ -1108,6 +1110,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261112-messages"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261113-call-prompt"></script>
 </body>
 </html>
