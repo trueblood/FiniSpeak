@@ -168,8 +168,13 @@ final class AppModel: ObservableObject {
                 next = nil
             }
         }
-        let resolved = next ?? ((try? await api.invitations())?.first).map {
-            IncomingCall(call: $0, kind: .invite, title: "\($0.callerName ?? "Someone") invited you", detail: "Accept to join this call.")
+        let resolved: IncomingCall?
+        if let next {
+            resolved = next
+        } else if let invite = (try? await api.invitations())?.first {
+            resolved = IncomingCall(call: invite, kind: .invite, title: "\(invite.callerName ?? "Someone") invited you", detail: "Accept to join this call.")
+        } else {
+            resolved = nil
         }
         guard let resolved else {
             incoming = nil

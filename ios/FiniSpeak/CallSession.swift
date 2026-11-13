@@ -19,7 +19,7 @@ final class CallSession: ObservableObject, Identifiable {
     @Published var ended = false
     let media: CallMedia
 
-    var id: String { call.id }
+    nonisolated let id: String
     var onEnded: (() -> Void)?
 
     private let api: APIClient
@@ -29,6 +29,7 @@ final class CallSession: ObservableObject, Identifiable {
     private var leaving = false
 
     init(call: CallRecord, user: Account, api: APIClient) {
+        id = call.id
         self.call = call
         self.user = user
         self.api = api
