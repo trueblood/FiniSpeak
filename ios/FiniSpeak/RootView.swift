@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
@@ -23,8 +24,12 @@ struct RootView: View {
             CallView(session: session)
                 .environmentObject(app)
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await app.refreshUnread() } }
+            if phase == .background { app.holdAlertsInBackground() }
+        }
         .overlay {
-            if let incoming = app.incoming, app.callSession == nil {
+            if let incoming = app.incoming, app.callSession == nil, app.useInAppRing {
                 ZStack {
                     Color.black.opacity(0.35).ignoresSafeArea()
                     VStack(alignment: .leading, spacing: 14) {
@@ -63,6 +68,18 @@ struct MainTabView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $menu) { ConceptMenu(section: $section) }
             .task { await app.refreshUnread() }
+            .onAppear {
+                if app.openChats {
+                    section = .messages
+                    app.openChats = false
+                }
+            }
+            .onChange(of: app.openChats) { _, open in
+                if open {
+                    section = .messages
+                    app.openChats = false
+                }
+            }
         }
         .environment(\.goHome) {
             menu = false

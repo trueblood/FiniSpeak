@@ -34,11 +34,13 @@ final class CallMedia: NSObject, ObservableObject {
     func start(localId: String, iceServers: [IceServerConfig]) {
         self.localId = localId
         self.iceServers = iceServers
+        let audio = RTCAudioSession.sharedInstance()
+        audio.useManualAudio = true
         configureAudioSession()
         let source = Self.factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
         let track = Self.factory.audioTrack(with: source, trackId: "audio0")
         audioTrack = track
-        RTCAudioSession.sharedInstance().isAudioEnabled = true
+        audio.isAudioEnabled = true
     }
 
     func sync(remoteIds: [String]) {
@@ -310,7 +312,9 @@ final class CallMedia: NSObject, ObservableObject {
             try audio.setCategory(AVAudioSession.Category.playAndRecord)
             try audio.setMode(AVAudioSession.Mode.voiceChat)
             try audio.overrideOutputAudioPort(.speaker)
-            try audio.setActive(true)
+            if !audio.isActive {
+                try audio.setActive(true)
+            }
         } catch {
             DispatchQueue.main.async { self.cameraMessage = "The microphone could not start." }
         }

@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -15,6 +16,9 @@ final class AppModel: ObservableObject {
     @Published var restoring = true
     @Published var serverURL: String
     @Published var incoming: IncomingCall?
+    @Published var systemRinging = false
+    @Published var useInAppRing = false
+    @Published var openChats = false
     @Published var callSession: CallSession?
     @Published var history: [CallRecord] = []
     @Published var unreadChats = 0
@@ -23,6 +27,13 @@ final class AppModel: ObservableObject {
     private var didRestore = false
     private var dismissedIncomingId: String?
     private var inviteTask: Task<Void, Never>?
+    private var backgroundAlertTask: UIBackgroundTaskIdentifier = .invalid
+    private var ringingCallId: String?
+    private var answeringCallId: String?
+    private var knownMessages: [String: String] = [:]
+    private var announcedMessages: Set<String> = []
+    private var messagesReady = false
+    private let alerts = PhoneAlerts.shared
 
     init() {
         let normalized = APIClient.storedBaseURL()
@@ -31,6 +42,27 @@ final class AppModel: ObservableObject {
         api.token = KeychainStore.load()
         api.onUnauthorized = { [weak self] in
             Task { @MainActor in self?.signOutLocal() }
+        }
+        alerts.onAnswer = { [weak self] id in
+            Task { @MainActor in
+                guard let self, self.incoming?.id == id || self.ringingCallId == id else { return }
+                await self.acceptIncoming(fromSystem: true)
+            }
+        }
+        alerts.onDecline = { [weak self] id in
+            Task { @MainActor in
+                guard let self, self.incoming?.id == id || self.ringingCallId == id else { return }
+                await self.declineIncoming(fromSystem: true)
+            }
+        }
+        alerts.onHangUp = { [weak self] id in
+            Task { @MainActor in
+                guard let self, self.callSession?.id == id || self.ringingCallId == id else { return }
+                await self.callSession?.hangUp()
+            }
+        }
+        alerts.onOpenMessages = { [weak self] in
+            Task { @MainActor in self?.openChats = true }
         }
     }
 
@@ -42,6 +74,7 @@ final class AppModel: ObservableObject {
         do {
             _ = try await api.session()
             account = try await api.currentAccount()
+            alerts.requestPermission()
             startIncomingPolling()
             history = (try? await api.sessions()) ?? []
         } catch {
@@ -57,6 +90,7 @@ final class AppModel: ObservableObject {
         api.token = token
         KeychainStore.save(token: token)
         account = (try? await api.currentAccount()) ?? session.user
+        alerts.requestPermission()
         startIncomingPolling()
         history = (try? await api.sessions()) ?? []
     }
@@ -72,8 +106,31 @@ final class AppModel: ObservableObject {
     }
 
     func refreshUnread() async {
-        guard let conversations = try? await api.conversations() else { return }
-        unreadChats = conversations.reduce(0) { $0 + max($1.unreadCount ?? 0, 0) }
+        await refreshIncoming()
+        await noticeNewMessages()
+    }
+
+    func holdAlertsInBackground() {
+        let application = UIApplication.shared
+        if backgroundAlertTask != .invalid { return }
+        backgroundAlertTask = application.beginBackgroundTask { [weak self] in
+            Task { @MainActor in self?.endBackgroundAlerts() }
+        }
+        Task {
+            for _ in 0..<8 {
+                if account == nil || backgroundAlertTask == .invalid { break }
+                await refreshIncoming()
+                await noticeNewMessages()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+            endBackgroundAlerts()
+        }
+    }
+
+    private func endBackgroundAlerts() {
+        guard backgroundAlertTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundAlertTask)
+        backgroundAlertTask = .invalid
     }
 
     func signOut() async {
@@ -94,10 +151,14 @@ final class AppModel: ObservableObject {
         begin(created.call)
     }
 
-    func acceptIncoming() async {
+    func acceptIncoming(fromSystem _: Bool = false) async {
         guard let incoming, let account else { return }
         let call = incoming.call
+        answeringCallId = call.id
         self.incoming = nil
+        systemRinging = false
+        useInAppRing = false
+        alerts.stopRingingTone()
         do {
             switch incoming.kind {
             case .customer, .directTranslator:
@@ -110,15 +171,21 @@ final class AppModel: ObservableObject {
             let latest = (try? await api.call(id: call.id)) ?? call
             begin(latest, user: account)
         } catch {
+            answeringCallId = nil
             self.incoming = nil
+            alerts.end(callId: call.id, reason: .failed)
         }
     }
 
-    func declineIncoming() async {
+    func declineIncoming(fromSystem: Bool = false) async {
         guard let incoming else { return }
         let call = incoming.call
         dismissedIncomingId = call.id
         self.incoming = nil
+        systemRinging = false
+        useInAppRing = false
+        ringingCallId = nil
+        if !fromSystem { alerts.end(callId: call.id, reason: .declinedElsewhere) }
         switch incoming.kind {
         case .customer, .directTranslator:
             _ = try? await api.updateCallState(id: call.id, state: "declined")
@@ -130,6 +197,13 @@ final class AppModel: ObservableObject {
     }
 
     func finishCall() {
+        if let id = ringingCallId ?? answeringCallId ?? callSession?.id {
+            alerts.end(callId: id, reason: .remoteEnded)
+        }
+        ringingCallId = nil
+        answeringCallId = nil
+        systemRinging = false
+        useInAppRing = false
         callSession = nil
         Task { history = (try? await api.sessions()) ?? history }
     }
@@ -154,6 +228,7 @@ final class AppModel: ObservableObject {
         inviteTask = Task { [weak self] in
             while let self, !Task.isCancelled {
                 await self.refreshIncoming()
+                await self.noticeNewMessages()
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
             }
         }
@@ -181,6 +256,12 @@ final class AppModel: ObservableObject {
             resolved = nil
         }
         guard let resolved else {
+            if answeringCallId == nil, let ringingCallId {
+                alerts.end(callId: ringingCallId, reason: .remoteEnded)
+                self.ringingCallId = nil
+                systemRinging = false
+                useInAppRing = false
+            }
             incoming = nil
             return
         }
@@ -189,6 +270,34 @@ final class AppModel: ObservableObject {
             return
         }
         incoming = resolved
+        guard ringingCallId != resolved.id else { return }
+        ringingCallId = resolved.id
+        useInAppRing = false
+        let caller = resolved.call.callerName ?? "FiniSpeak"
+        alerts.ring(callId: resolved.id, caller: caller) { [weak self] showed in
+            self?.systemRinging = showed
+            self?.useInAppRing = !showed
+        }
+    }
+
+    private func noticeNewMessages() async {
+        guard account != nil, let conversations = try? await api.conversations() else { return }
+        unreadChats = conversations.reduce(0) { $0 + max($1.unreadCount ?? 0, 0) }
+        alerts.setBadge(unreadChats)
+        var next: [String: String] = [:]
+        for conversation in conversations {
+            let preview = conversation.lastMessage
+            let fingerprint = [preview?.createdAt, preview?.senderName, preview?.body].compactMap { $0 }.joined(separator: "|")
+            next[conversation.id] = fingerprint
+            let key = conversation.id + "\n" + fingerprint
+            let isNew = messagesReady && knownMessages[conversation.id] != fingerprint && !fingerprint.isEmpty
+            if isNew, preview?.mine == false, !announcedMessages.contains(key) {
+                announcedMessages.insert(key)
+                alerts.ding(from: preview?.senderName ?? conversation.name, text: preview?.body ?? "New message")
+            }
+        }
+        knownMessages = next
+        messagesReady = true
     }
 
     private func classifyTranslator(_ call: CallRecord, user: Account) -> IncomingCall? {
@@ -203,7 +312,16 @@ final class AppModel: ObservableObject {
         inviteTask?.cancel()
         Task { await callSession?.hangUp() }
         callSession = nil
+        if let ringingCallId { alerts.end(callId: ringingCallId, reason: .remoteEnded) }
         incoming = nil
+        systemRinging = false
+        useInAppRing = false
+        ringingCallId = nil
+        answeringCallId = nil
+        knownMessages = [:]
+        announcedMessages = []
+        messagesReady = false
+        alerts.setBadge(0)
         account = nil
         history = []
         unreadChats = 0
