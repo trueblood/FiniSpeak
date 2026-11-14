@@ -191,8 +191,10 @@ struct CallRecord: Decodable, Identifiable, Equatable {
     var language: String?
     var specialty: String?
     var createdAt: String?
+    var startedAt: String?
     var guestIds: [String]?
     var transcriptConsent: TranscriptConsent?
+    var callNotes: String?
 
     var isLive: Bool {
         guard let status else { return false }
@@ -222,14 +224,16 @@ struct CallRecord: Decodable, Identifiable, Equatable {
         language = container.flexString(.language)
         specialty = container.flexString(.specialty)
         createdAt = container.flexString(.createdAt)
+        startedAt = container.flexString(.startedAt)
         guestIds = container.flexStrings(.guestIds)
         transcriptConsent = try? container.decode(TranscriptConsent.self, forKey: .transcriptConsent)
+        callNotes = container.flexString(.callNotes)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, callerId, callerName, receiverId, receiverName, translatorId, translatorName
         case invitedTranslatorId, invitedTranslatorName, status, translationStatus, purpose
-        case language, specialty, createdAt, guestIds, transcriptConsent
+        case language, specialty, createdAt, startedAt, guestIds, transcriptConsent, callNotes
     }
 }
 

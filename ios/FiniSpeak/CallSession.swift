@@ -30,8 +30,16 @@ final class CallSession: ObservableObject, Identifiable {
     private var pollTask: Task<Void, Never>?
     private var leaving = false
     private var unsavedSpeech: [TranscriptLine] = []
-    private let startedAt = Date()
+    let connectedAt = Date()
     @Published var momentFlagged = false
+
+    var selfName: String { user.name }
+    var userId: String { user.uid }
+
+    var elapsedStart: Date {
+        if let raw = call.startedAt, let date = Self.clockDate(raw) { return date }
+        return connectedAt
+    }
 
     init(call: CallRecord, user: Account, api: APIClient) {
         id = call.id
@@ -148,7 +156,7 @@ final class CallSession: ObservableObject, Identifiable {
 
     func flagMoment() async {
         let latest = transcripts.last
-        let elapsed = Int(Date().timeIntervalSince(startedAt))
+        let elapsed = Int(Date().timeIntervalSince(elapsedStart))
         let label = String(format: "%d:%02d", elapsed / 60, elapsed % 60)
         do {
             call = try await api.callExperience(id: call.id, action: "flag-moment", extra: [
@@ -159,7 +167,6 @@ final class CallSession: ObservableObject, Identifiable {
                 "text": latest?.text ?? "",
             ])
             momentFlagged = true
-            banner = "Flagged for follow-up."
         } catch {
             banner = error.localizedDescription
         }
@@ -178,6 +185,14 @@ final class CallSession: ObservableObject, Identifiable {
             if let saved = try await api.saveTranscript(callId: call.id, id: line.id, text: line.text) {
                 if let index = transcripts.firstIndex(where: { $0.id == line.id }) { transcripts[index] = saved }
             }
+        } catch {
+            banner = error.localizedDescription
+        }
+    }
+
+    func saveNote(_ text: String) async {
+        do {
+            call = try await api.callExperience(id: call.id, action: "save-notes", extra: ["text": text])
         } catch {
             banner = error.localizedDescription
         }
@@ -206,12 +221,14 @@ final class CallSession: ObservableObject, Identifiable {
             let latest = try await api.call(id: call.id)
             call = latest
             consent = latest.transcriptConsent?.granted == true
-            if !latest.isLive {
+            let roster = (try? await api.participants(callId: call.id)) ?? []
+            let stillHere = roster.filter { ($0.leftAt ?? "").isEmpty }
+            if roster.contains(where: { $0.uid == user.uid && !($0.leftAt ?? "").isEmpty }) || !latest.isLive {
                 status = latest.status == "declined" ? "Declined" : "Call ended"
                 await hangUp(tellServer: false)
                 return
             }
-            let ids = remoteIds(in: latest)
+            let ids = stillHere.isEmpty ? remoteIds(in: latest) : stillHere.compactMap(\.uid).filter { !$0.isEmpty && $0 != user.uid }
             media.sync(remoteIds: ids)
             media.publishRemoteVideo()
             let serverLines = try await api.transcripts(callId: call.id)
@@ -221,7 +238,13 @@ final class CallSession: ObservableObject, Identifiable {
             }
             transcripts = merged.sorted { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
             people = ids.map { id in
-                CallPerson(id: id, name: name(for: id, in: latest), role: role(for: id, in: latest), state: media.peerState[id] ?? "Waiting")
+                let listed = stillHere.first { $0.uid == id }
+                CallPerson(
+                    id: id,
+                    name: listed?.displayName?.isEmpty == false ? listed!.displayName! : name(for: id, in: latest),
+                    role: role(for: id, in: latest),
+                    state: media.peerState[id] ?? "Waiting"
+                )
             }
             if people.contains(where: { $0.state == "Connected" }) { status = "Connected" }
             else if latest.status == "ringing" { status = "Ringing" }
@@ -246,6 +269,14 @@ final class CallSession: ObservableObject, Identifiable {
         if id == call.receiverId { return call.receiverName ?? "Receiver" }
         if id == call.translatorId { return call.translatorName ?? "Interpreter" }
         return "Guest"
+    }
+
+    private static func clockDate(_ raw: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: raw) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: raw)
     }
 
     private func role(for id: String, in call: CallRecord) -> String {

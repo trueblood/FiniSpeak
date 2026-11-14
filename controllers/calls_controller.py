@@ -146,8 +146,8 @@ def detail(call_id):
 def leave(call_id):
     """Hang up for the person who pressed End Call.
 
-    Every participant leaves independently. The stored call is ended only
-    after the final active participant has left.
+    With three or more people still in the call, only that person leaves.
+    With two people, or the last person, End Call ends it for everyone left.
     """
     identity, error = identity_or_response()
     if error:
@@ -161,11 +161,16 @@ def leave(call_id):
     ParticipantModel.mark_left(call_id, uid)
     try:
         updated = CallModel.release_member(call_id, uid) or call
-        active_participants = [
-            participant for participant in ParticipantModel.for_call(call_id)
-            if participant.get("uid") != uid and not participant.get("leftAt")
-        ]
-        if not active_participants:
+        still_here = []
+        for participant in ParticipantModel.for_call(call_id):
+            if not isinstance(participant, dict) or participant.get("leftAt"):
+                continue
+            person = str(participant.get("uid") or participant.get("id") or "").strip()
+            if person and person != uid:
+                still_here.append(person)
+        if len(still_here) <= 1:
+            for person in still_here:
+                ParticipantModel.mark_left(call_id, person)
             updated = CallModel.transition(call_id, "ended")
         return jsonify({"call": updated or call, "left": True})
     except ValueError as exc:

@@ -414,6 +414,32 @@ class MvcRouteTests(unittest.TestCase):
     @patch("controllers.calls_controller.CallModel.release_member")
     @patch("controllers.calls_controller.CallModel.transition")
     @patch("controllers.calls_controller.ParticipantModel.mark_left")
+    @patch("controllers.calls_controller.ParticipantModel.for_call")
+    @patch("controllers.calls_controller.CallModel.is_participant", return_value=True)
+    @patch("controllers.calls_controller.CallModel.get")
+    @patch("controllers.calls_controller.identity_or_response")
+    def test_two_person_end_call_ends_it_for_both(self, identity, get_call, _participant, for_call, mark_left, transition, release_member):
+        identity.return_value = ({"uid": "customer-2", "role": "customer"}, None)
+        get_call.return_value = {
+            "id": "call-1", "callerId": "customer-1", "receiverId": "customer-2",
+            "translatorId": None, "status": "connected",
+        }
+        for_call.return_value = [
+            {"uid": "customer-1", "leftAt": None},
+            {"uid": "customer-2", "leftAt": "now"},
+        ]
+        release_member.return_value = get_call.return_value
+        transition.return_value = {"id": "call-1", "status": "ended"}
+        response = self.client.post("/api/calls/call-1/leave")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["call"]["status"], "ended")
+        mark_left.assert_any_call("call-1", "customer-2")
+        mark_left.assert_any_call("call-1", "customer-1")
+        transition.assert_called_once_with("call-1", "ended")
+
+    @patch("controllers.calls_controller.CallModel.release_member")
+    @patch("controllers.calls_controller.CallModel.transition")
+    @patch("controllers.calls_controller.ParticipantModel.mark_left")
     @patch("controllers.calls_controller.ParticipantModel.for_call", return_value=[
         {"uid": "customer-1", "leftAt": "now"},
         {"uid": "customer-2", "leftAt": "earlier"},
