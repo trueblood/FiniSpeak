@@ -47,6 +47,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSContactsUsageDescription</key>
+	<string>FiniSpeak uses your contacts so you can message people you already know.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>FiniSpeak uses the microphone so the other people on the call can hear you.</string>
 	<key>NSCameraUsageDescription</key>

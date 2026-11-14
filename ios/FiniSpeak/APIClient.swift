@@ -159,8 +159,10 @@ final class APIClient {
         try await decode(FriendList.self, "GET", "/api/friends").friends
     }
 
-    func addFriend(email: String, nickname: String) async throws -> Friend {
-        var body: [String: Any] = ["email": email]
+    func addFriend(email: String, phone: String = "", nickname: String) async throws -> Friend {
+        var body: [String: Any] = [:]
+        if !email.isEmpty { body["email"] = email }
+        if !phone.isEmpty { body["phone"] = phone }
         if !nickname.isEmpty { body["nickname"] = nickname }
         return try await decode(FriendEnvelope.self, "POST", "/api/friends", body: body).friend
     }
@@ -177,11 +179,16 @@ final class APIClient {
         try await decode(ConversationList.self, "GET", "/api/messages/conversations").conversations
     }
 
-    func openDirect(email: String? = nil, userId: String? = nil) async throws -> Conversation {
+    func openDirect(email: String? = nil, phone: String? = nil, userId: String? = nil) async throws -> Conversation {
         var body: [String: Any] = ["kind": "direct"]
         if let email, !email.isEmpty { body["email"] = email }
+        if let phone, !phone.isEmpty { body["phone"] = phone }
         if let userId, !userId.isEmpty { body["userId"] = userId }
         return try await decode(ConversationEnvelope.self, "POST", "/api/messages/conversations", body: body).conversation
+    }
+
+    func createGroup(title: String, memberIds: [String]) async throws -> Conversation {
+        try await decode(ConversationEnvelope.self, "POST", "/api/messages/conversations", body: ["kind": "group", "title": title, "memberIds": memberIds]).conversation
     }
 
     func conversation(id: String) async throws -> ConversationDetail {
