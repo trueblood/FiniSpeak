@@ -29,6 +29,7 @@ final class CallSession: ObservableObject, Identifiable {
     private let signaling: SignalingClient
     private let transcription = CallTranscription()
     private var pollTask: Task<Void, Never>?
+    private var flagReset: Task<Void, Never>?
     private var leaving = false
     private var unsavedSpeech: [TranscriptLine] = []
     let connectedAt = Date()
@@ -133,10 +134,12 @@ final class CallSession: ObservableObject, Identifiable {
         onEnded?()
     }
 
-    var canRate: Bool {
-        guard let translatorId = call.translatorId, !translatorId.isEmpty else { return false }
-        return translatorId != user.uid
+    var hasTranslator: Bool {
+        guard let translatorId = call.translatorId else { return false }
+        return !translatorId.isEmpty
     }
+
+    var canRate: Bool { hasTranslator && call.translatorId != user.uid }
 
     func rateSession(quality: Int, logging: Int) async {
         var extra: [String: Any] = [:]
@@ -206,8 +209,14 @@ final class CallSession: ObservableObject, Identifiable {
                 "speakerName": latest?.speakerName ?? "",
                 "text": latest?.text ?? "",
             ])
-            momentFlagged = true
             if let id = latest?.id { flaggedLineIds.insert(id) }
+            momentFlagged = true
+            flagReset?.cancel()
+            flagReset = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                guard !Task.isCancelled else { return }
+                self?.momentFlagged = false
+            }
         } catch {
             banner = error.localizedDescription
         }

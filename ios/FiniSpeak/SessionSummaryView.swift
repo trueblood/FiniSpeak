@@ -95,13 +95,15 @@ struct SessionSummaryView: View {
                             Task { await session.rateSession(quality: quality, logging: logging) }
                         }
                     }
-                    Button("Book Again") { leave(to: .discover) }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 17, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(FiniTheme.blue, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .padding(.top, 16)
+                    if session.hasTranslator {
+                        Button("Book Again") { leave(to: .discover) }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(FiniTheme.blue, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .padding(.top, 16)
+                    }
                     Text("Flagged moments")
                         .font(.title3.weight(.bold))
                         .foregroundStyle(FiniTheme.ink)
