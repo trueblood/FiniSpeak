@@ -33,6 +33,7 @@ final class CallSession: ObservableObject, Identifiable {
     private var unsavedSpeech: [TranscriptLine] = []
     let connectedAt = Date()
     @Published var momentFlagged = false
+    @Published var flaggedLineIds: Set<String> = []
 
     var selfName: String { user.name }
     var userId: String { user.uid }
@@ -198,6 +199,7 @@ final class CallSession: ObservableObject, Identifiable {
                 "text": latest?.text ?? "",
             ])
             momentFlagged = true
+            if let id = latest?.id { flaggedLineIds.insert(id) }
         } catch {
             banner = error.localizedDescription
         }
@@ -252,6 +254,9 @@ final class CallSession: ObservableObject, Identifiable {
             let latest = try await api.call(id: call.id)
             call = latest
             consent = latest.transcriptConsent?.granted == true
+            for moment in latest.keyMoments ?? [] where moment.followUp != false {
+                if let id = moment.transcriptId, !id.isEmpty { flaggedLineIds.insert(id) }
+            }
             let roster = (try? await api.participants(callId: call.id)) ?? []
             let stillHere = roster.filter { ($0.leftAt ?? "").isEmpty }
             if roster.contains(where: { $0.uid == user.uid && !($0.leftAt ?? "").isEmpty }) || !latest.isLive {

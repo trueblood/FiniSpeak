@@ -51,54 +51,65 @@ struct CallView: View {
             }
             .padding(.top, 14)
             .padding(.bottom, 6)
+            audioControls
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 12)
+            Text("Live transcription")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(FiniTheme.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    audioControls
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 16)
-                    Text("Live transcription")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(FiniTheme.ink)
-                        .padding(.bottom, 10)
+                VStack(alignment: .leading, spacing: 10) {
                     if session.transcripts.isEmpty {
                         Text("Live transcription appears here as people speak.")
                             .font(.subheadline)
                             .foregroundStyle(FiniTheme.muted)
-                    } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(session.transcripts) { line in
-                                audioLine(line)
-                            }
-                        }
                     }
-                    if !session.banner.isEmpty {
-                        Text(session.banner).font(.footnote).foregroundStyle(FiniTheme.muted).padding(.top, 8)
+                    ForEach(Array(session.transcripts.reversed())) { line in
+                        audioLine(line)
                     }
-                    HStack(spacing: 8) {
-                        TextField("Add a note...", text: $note)
-                            .textFieldStyle(.plain)
-                            .foregroundStyle(FiniTheme.ink)
-                        Button("Flag Key Moment") { Task { await session.flagMoment() } }
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(session.momentFlagged ? Color(red: 180 / 255, green: 83 / 255, blue: 9 / 255) : FiniTheme.blue)
-                            .layoutPriority(1)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(FiniTheme.line, lineWidth: 1))
-                    .padding(.top, 14)
-                    Button("Book Now") { booking = true }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 17, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(FiniTheme.blue, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .padding(.top, 12)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 18)
-                .padding(.bottom, 12)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
+            if !session.banner.isEmpty {
+                Text(session.banner).font(.footnote).foregroundStyle(FiniTheme.muted).padding(.horizontal, 18).padding(.top, 8)
+            }
+            HStack(spacing: 8) {
+                TextField("Add a note...", text: $note)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(FiniTheme.ink)
+                Button { Task { await session.flagMoment() } } label: {
+                    HStack(spacing: 4) {
+                        if session.momentFlagged {
+                            Image(systemName: "flag.fill")
+                        }
+                        Text("Flag Key Moment")
+                    }
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(session.momentFlagged ? Color.red : FiniTheme.blue)
+                }
+                .buttonStyle(.plain)
+                .layoutPriority(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(session.momentFlagged ? Color.red : FiniTheme.line, lineWidth: 1))
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            Button("Book Now") { booking = true }
+                .buttonStyle(.plain)
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(FiniTheme.blue, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
             HStack(spacing: 8) {
                 ForEach(["Business", "Education", "Personal"], id: \.self) { name in
                     Button(name) { category = name }
@@ -205,6 +216,12 @@ struct CallView: View {
                 .font(.subheadline)
                 .foregroundStyle(Color(red: 51 / 255, green: 65 / 255, blue: 85 / 255))
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if session.flaggedLineIds.contains(line.id) {
+                Image(systemName: "flag.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("Flagged")
+            }
         }
     }
 
@@ -277,7 +294,7 @@ struct CallView: View {
             callButton(media.cameraOn ? "video.fill" : "video.slash.fill", label: "Camera") {
                 media.setCamera(on: !media.cameraOn)
             }
-            callButton(session.momentFlagged ? "flag.fill" : "flag", label: "Flag", tint: session.momentFlagged ? .orange : .white) {
+            callButton(session.momentFlagged ? "flag.fill" : "flag", label: "Flag", tint: session.momentFlagged ? .red : .white) {
                 Task { await session.flagMoment() }
             }
             callButton("person.badge.plus", label: "Interpreter") { inviting = true }

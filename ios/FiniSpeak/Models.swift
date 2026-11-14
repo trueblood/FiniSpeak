@@ -242,6 +242,7 @@ struct CallRecord: Decodable, Identifiable, Equatable {
 struct KeyMoment: Decodable, Identifiable, Equatable {
     var id: String
     var elapsedLabel: String?
+    var transcriptId: String?
     var speakerName: String?
     var text: String?
     var followUp: Bool?
@@ -251,6 +252,7 @@ struct KeyMoment: Decodable, Identifiable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = container.flexString(.id) ?? UUID().uuidString
         elapsedLabel = container.flexString(.elapsedLabel)
+        transcriptId = container.flexString(.transcriptId)
         speakerName = container.flexString(.speakerName)
         text = container.flexString(.text)
         followUp = container.flexBool(.followUp)
@@ -258,7 +260,7 @@ struct KeyMoment: Decodable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, elapsedLabel, speakerName, text, followUp, createdAt
+        case id, elapsedLabel, transcriptId, speakerName, text, followUp, createdAt
     }
 }
 
