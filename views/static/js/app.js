@@ -295,6 +295,16 @@ function bindUI() {
     $("closeReviewModal").onclick = () => closeModal("reviewModal");
     $("reviewForm").onsubmit = submitInterpreterReview;
     document.addEventListener("keydown", handleModalKeyboard);
+    document.querySelectorAll("[data-app-tab]").forEach(button => button.addEventListener("click", () => openAppTab(button.dataset.appTab)));
+    $("conceptHomeButton").onclick = goToAppHome;
+    $("landingHomeButton").onclick = goToAppHome;
+    $("profileHomeButton").onclick = goToAppHome;
+    $("careersBrowseBusiness").onclick = () => {
+        setConceptCategory("Business");
+        openDashboardPanel("directory");
+        if ($("directorySearch")) $("directorySearch").value = "Business";
+        filterInterpreterDirectory();
+    };
     document.querySelectorAll("[data-dashboard-panel]").forEach(button => button.addEventListener("click", () => openDashboardPanel(button.dataset.dashboardPanel)));
     document.querySelectorAll("[data-open-panel]").forEach(button => button.addEventListener("click", () => openDashboardPanel(button.dataset.openPanel)));
     $("profileForm").onsubmit = saveProfile;
@@ -733,7 +743,7 @@ function goDashboardBack() {
 }
 
 function openDashboardPanel(panel, historyMode = "push") {
-    const ids = { home: "dashboardHome", dial: "dashboardDial", directory: "dashboardDirectory", classroom: "dashboardClassroom", friends: "dashboardFriends", messages: "dashboardMessages", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
+    const ids = { home: "dashboardHome", dial: "dashboardDial", directory: "dashboardDirectory", classroom: "dashboardClassroom", careers: "dashboardCareers", friends: "dashboardFriends", messages: "dashboardMessages", profile: "dashboardProfile", interpreter: "dashboardInterpreter", admin: "dashboardAdmin", settings: "dashboardSettings", lesson: "dashboardLesson", schedule: "conceptSchedulePanel", goal: "dashboardGoal", live: "dashboardLive", match: "dashboardMatch", summary: "dashboardSummary", transcript: "dashboardTranscript", intelligence: "dashboardIntelligence" };
     if (!ids[panel]) return;
     if (historyMode !== "back") dashboardHistory = nextDashboardHistory(dashboardHistory, panel, historyMode);
     updateDashboardBackButton();
@@ -759,6 +769,90 @@ function openDashboardPanel(panel, historyMode = "push") {
     if (panel === "live") renderLiveScreen();
     if (panel === "summary") renderSummaryScreen();
     if (panel === "classroom") renderEducationScreen();
+    if (panel === "careers") renderCareersScreen();
+    const tabForPanel = { directory: "translate", dial: "calls", messages: "chats", classroom: "education", careers: "careers" };
+    setAppTab(tabForPanel[panel] || "");
+}
+
+function setAppTab(tab) {
+    document.querySelectorAll("[data-app-tab]").forEach(button => {
+        const active = Boolean(tab) && button.dataset.appTab === tab;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+    });
+}
+
+function goToAppHome() {
+    if (!currentUser) {
+        show("heroView");
+        return;
+    }
+    show("dashboardView");
+    openDashboardPanel("home", "reset");
+}
+
+function openAppTab(tab) {
+    const panels = { translate: "directory", calls: "dial", chats: "messages", education: "classroom", careers: "careers" };
+    const panel = panels[tab];
+    if (!panel) return;
+    if (!currentUser) {
+        if (tab === "translate") {
+            show("heroView");
+            return;
+        }
+        openAuth(false, tab === "careers" ? "translator" : "customer");
+        $("authStatus").textContent = tab === "careers" ? "Sign in to join as an interpreter." : "Sign in to continue.";
+        return;
+    }
+    show("dashboardView");
+    openDashboardPanel(panel);
+}
+
+function setChatBadge(count) {
+    const value = Math.max(0, Number(count) || 0);
+    document.querySelectorAll("[data-chat-badge]").forEach(badge => {
+        badge.textContent = value > 99 ? "99+" : String(value);
+        badge.classList.toggle("hidden", value < 1);
+    });
+}
+
+async function refreshChatBadge() {
+    if (!currentUser) return;
+    try {
+        const result = await apiFetch("/api/messages/conversations");
+        const total = (result.conversations || []).reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0);
+        setChatBadge(total);
+    } catch (_) { /* The badge stays at its last count. */ }
+}
+
+function renderCareersScreen() {
+    const button = $("careersInterpreter");
+    if (!button) return;
+    const interpreter = isInterpreterRole(currentProfile?.role);
+    button.textContent = interpreter ? "Your interpreter profile" : "Join as an interpreter";
+    button.onclick = () => {
+        if (interpreter) openDashboardPanel("interpreter");
+        else joinAsInterpreter();
+    };
+}
+
+async function joinAsInterpreter() {
+    const status = $("careersStatus");
+    if (status) status.textContent = "Starting…";
+    try {
+        await apiFetch("/api/translators/enroll", { method: "POST", body: JSON.stringify({ phone: currentProfile?.phone || "" }) });
+        const accountPayload = await apiFetch("/api/accounts/me");
+        currentProfile = { ...(currentProfile || {}), ...(accountPayload.account || {}) };
+        const isTranslator = isInterpreterRole(currentProfile.role);
+        $("interpreterProfileNav")?.classList.toggle("hidden", !isTranslator);
+        setLanguageLessonAction(isTranslator);
+        setTranslatorDiscoveryVisible(!isTranslator);
+        $("translatorTools")?.classList.toggle("hidden", !isTranslator);
+        if (status) status.textContent = "Interpreter profile started. Finish credentials in your interpreter profile.";
+        renderCareersScreen();
+    } catch (error) {
+        if (status) status.textContent = error.message;
+    }
 }
 
 async function apiFetch(path, options = {}) {
@@ -1065,8 +1159,10 @@ function renderConversationList(conversations) {
     if (!container) return;
     if (!conversations.length) {
         container.innerHTML = '<p class="transcript-empty">No chats yet. Message a friend or create a group.</p>';
+        setChatBadge(0);
         return;
     }
+    let chatUnreadTotal = 0;
     container.innerHTML = conversations.map(conversation => {
         const preview = conversation.lastMessage
             ? `${conversation.lastMessage.mine ? "You: " : ""}${conversation.lastMessage.body}`
@@ -1075,8 +1171,10 @@ function renderConversationList(conversations) {
         const unread = Number(conversation.unreadCount) || 0;
         const current = conversation.id === openConversationId ? ' aria-current="true"' : "";
         const badge = unread ? `<span class="status-badge">${unread > 99 ? "99+" : unread} unread</span>` : "";
+        chatUnreadTotal += unread;
         return `<div class="conversation-row"><button type="button" class="conversation-item" data-conversation-id="${escapeHtml(conversation.id)}"${current}><strong>${escapeHtml(conversation.title || "Chat")}</strong><span class="conversation-meta">${escapeHtml(preview)}${when ? ` · ${escapeHtml(when)}` : ""}</span></button>${badge}</div>`;
     }).join("");
+    setChatBadge(chatUnreadTotal);
     container.querySelectorAll("[data-conversation-id]").forEach(button => {
         button.onclick = () => openConversation(button.dataset.conversationId);
     });
@@ -4571,6 +4669,7 @@ function startDashboardListeners() {
     const refresh = async () => {
       const profile = currentProfile;
       if (!currentUser || !profile) return;
+      if ($("dashboardMessages")?.classList.contains("hidden")) refreshChatBadge();
       try {
         let sessions = [];
         let pending = null;

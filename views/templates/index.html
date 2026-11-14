@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261103-call-followup">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261113-home-cleanup">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/concept.css') }}?v=20261114-app-tabs">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/call.css') }}?v=20261113-mobile-fit">
 </head>
 <body class="landing-mode">
@@ -27,7 +27,7 @@
         <div class="landing-phone">
         <div class="dashboard-content">
         <header class="mobile-app-header">
-            <div class="mobile-app-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
+            <button id="landingHomeButton" class="mobile-app-brand" type="button" aria-label="FiniSpeak home"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></button>
             <div class="concept-header-actions">
                 <button id="landingSearch" class="mobile-settings-button" type="button" aria-label="Find an interpreter"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button>
                 <button id="landingLogin" class="mobile-settings-button" type="button" aria-label="Log in"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 19.2c.8-3.2 3-4.8 7-4.8s6.2 1.6 7 4.8"/></svg></button>
@@ -103,10 +103,12 @@
         </div>
         <div class="landing-cta concept-screen"><span class="concept-kicker">Ready when language gets in the way</span><h2>Make your next conversation easier.</h2><button id="landingCta" type="button">Create your account</button></div>
         </div>
-        <nav class="concept-tabbar" aria-label="Browse common needs">
-            <button type="button" data-landing-category="Business" aria-pressed="false">Business</button>
-            <button type="button" data-landing-category="Education" class="active" aria-pressed="true">Education</button>
-            <button type="button" data-landing-category="Personal" aria-pressed="false">Personal</button>
+        <nav class="app-tabbar" aria-label="FiniSpeak">
+            <button type="button" data-app-tab="translate"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h8.5v6.2H7.4L4 16.2z"/><path d="M11 9.2H20v6.2h-2.4L15 18.2v-2.8H11z"/></svg></span><span>Translate</span></button>
+            <button type="button" data-app-tab="calls"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h2.2l1.2 3-1.7 1a11 11 0 0 0 5.8 5.8l1-1.7 3 1.2V15a1.5 1.5 0 0 1-1.5 1.5A13.5 13.5 0 0 1 5.5 5 1.5 1.5 0 0 1 7 3.5z"/></svg></span><span>Calls</span></button>
+            <button type="button" data-app-tab="chats"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 6.5h11a2 2 0 0 1 2 2V15l-3.2 2.4H7a2 2 0 0 1-2-2z"/></svg><span class="app-tab-badge hidden" data-chat-badge>0</span></span><span>Chats</span></button>
+            <button type="button" data-app-tab="education"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 9.5 12 5l9 4.5-9 4.5L3 9.5z"/><path d="M7 12.2V16c0 .8 2.2 2.5 5 2.5s5-1.7 5-2.5v-3.8"/></svg></span><span>Education</span></button>
+            <button type="button" data-app-tab="careers"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6.5A1.5 1.5 0 0 1 10.5 5h3A1.5 1.5 0 0 1 15 6.5V8"/></svg></span><span>Careers</span></button>
         </nav>
         </div>
         </div>
@@ -154,7 +156,7 @@
 
             <div class="dashboard-content">
                 <header class="mobile-app-header">
-                    <div class="mobile-app-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></div>
+                    <button id="conceptHomeButton" class="mobile-app-brand" type="button" aria-label="FiniSpeak home"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></button>
                     <div class="concept-header-actions">
                         <button id="returnToCall" class="hidden" type="button">Return to call</button>
                         <button id="conceptSearchButton" class="mobile-settings-button" type="button" aria-label="Search translators"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button>
@@ -545,6 +547,18 @@
                     </section>
                 </div>
 
+                <div id="dashboardCareers" class="dashboard-panel hidden">
+                    <section class="concept-screen" aria-labelledby="careersTitle">
+                        <span class="eyebrow">Careers</span>
+                        <h2 id="careersTitle">Interpret with FiniSpeak</h2>
+                        <p>Use a language you speak to help people in business, school, and everyday conversations.</p>
+                        <button id="careersBrowseBusiness" class="concept-primary-block" type="button">Browse business sessions</button>
+                        <button id="careersInterpreter" class="concept-soft" type="button">Join as an interpreter</button>
+                        <p class="field-help">Credential documents and the full onboarding form stay in your interpreter profile. This uses the same account.</p>
+                        <p id="careersStatus" class="status" role="status" aria-live="polite"></p>
+                    </section>
+                </div>
+
                 <div id="dashboardSettings" class="dashboard-panel hidden">
                     <div class="dashboard-heading"><div><span class="eyebrow">Preferences</span><h2>Settings</h2><p>Manage your FiniSpeak account experience.</p></div></div>
                     <div class="settings-grid">
@@ -663,10 +677,12 @@
                         <div id="historyTranscriptList" class="app-transcript-list" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Previous call transcript"></div>
                     </section>
                 </div>
-                <nav class="concept-tabbar" aria-label="Session category">
-                    <button type="button" data-concept-category="Business">Business</button>
-                    <button type="button" data-concept-category="Education" class="active" aria-pressed="true">Education</button>
-                    <button type="button" data-concept-category="Personal">Personal</button>
+                <nav class="app-tabbar" aria-label="FiniSpeak">
+                    <button type="button" data-app-tab="translate"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h8.5v6.2H7.4L4 16.2z"/><path d="M11 9.2H20v6.2h-2.4L15 18.2v-2.8H11z"/></svg></span><span>Translate</span></button>
+                    <button type="button" data-app-tab="calls"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h2.2l1.2 3-1.7 1a11 11 0 0 0 5.8 5.8l1-1.7 3 1.2V15a1.5 1.5 0 0 1-1.5 1.5A13.5 13.5 0 0 1 5.5 5 1.5 1.5 0 0 1 7 3.5z"/></svg></span><span>Calls</span></button>
+                    <button type="button" data-app-tab="chats"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 6.5h11a2 2 0 0 1 2 2V15l-3.2 2.4H7a2 2 0 0 1-2-2z"/></svg><span class="app-tab-badge hidden" data-chat-badge>0</span></span><span>Chats</span></button>
+                    <button type="button" data-app-tab="education"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 9.5 12 5l9 4.5-9 4.5L3 9.5z"/><path d="M7 12.2V16c0 .8 2.2 2.5 5 2.5s5-1.7 5-2.5v-3.8"/></svg></span><span>Education</span></button>
+                    <button type="button" data-app-tab="careers"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6.5A1.5 1.5 0 0 1 10.5 5h3A1.5 1.5 0 0 1 15 6.5V8"/></svg></span><span>Careers</span></button>
                 </nav>
             </div>
         </div>
@@ -674,7 +690,7 @@
 
     <section id="profileView" class="panel profile-detail-view hidden">
         <div class="profile-detail-shell">
-            <div class="concept-profile-brand"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong><button id="profileSearchButton" class="mobile-settings-button" type="button" aria-label="Search translators"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button></div>
+            <div class="concept-profile-brand"><button id="profileHomeButton" class="mobile-app-brand" type="button" aria-label="FiniSpeak home"><span class="concept-globe" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z"/></svg></span><strong>FiniSpeak</strong></button><button id="profileSearchButton" class="mobile-settings-button" type="button" aria-label="Search translators"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button></div>
             <button id="backToDirectory" class="screen-back profile-back" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg><span>Back to interpreters</span></button>
             <article class="profile-detail-card">
                 <div class="profile-overview">
@@ -711,10 +727,12 @@
                     <aside class="profile-facts card"><h3>Profile details</h3><dl><div><dt>Experience</dt><dd id="publicProfileExperience">—</dd></div><div><dt>Credentials</dt><dd id="publicProfileCredentials">—</dd></div><div><dt>Service location</dt><dd id="publicProfileLocation">Remote only</dd></div><div><dt>Schedule</dt><dd id="publicProfileSchedule">—</dd></div><div><dt>Verification</dt><dd id="publicProfileVerification">—</dd></div></dl></aside>
                 </div>
             </article>
-            <nav class="concept-tabbar concept-tabbar-profile" aria-label="Session category">
-                <button type="button" data-concept-category="Business">Business</button>
-                <button type="button" data-concept-category="Education" class="active" aria-pressed="true">Education</button>
-                <button type="button" data-concept-category="Personal">Personal</button>
+            <nav class="app-tabbar concept-tabbar-profile" aria-label="FiniSpeak">
+                <button type="button" data-app-tab="translate"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h8.5v6.2H7.4L4 16.2z"/><path d="M11 9.2H20v6.2h-2.4L15 18.2v-2.8H11z"/></svg></span><span>Translate</span></button>
+                <button type="button" data-app-tab="calls"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h2.2l1.2 3-1.7 1a11 11 0 0 0 5.8 5.8l1-1.7 3 1.2V15a1.5 1.5 0 0 1-1.5 1.5A13.5 13.5 0 0 1 5.5 5 1.5 1.5 0 0 1 7 3.5z"/></svg></span><span>Calls</span></button>
+                <button type="button" data-app-tab="chats"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 6.5h11a2 2 0 0 1 2 2V15l-3.2 2.4H7a2 2 0 0 1-2-2z"/></svg><span class="app-tab-badge hidden" data-chat-badge>0</span></span><span>Chats</span></button>
+                <button type="button" data-app-tab="education"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 9.5 12 5l9 4.5-9 4.5L3 9.5z"/><path d="M7 12.2V16c0 .8 2.2 2.5 5 2.5s5-1.7 5-2.5v-3.8"/></svg></span><span>Education</span></button>
+                <button type="button" data-app-tab="careers"><span class="app-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6.5A1.5 1.5 0 0 1 10.5 5h3A1.5 1.5 0 0 1 15 6.5V8"/></svg></span><span>Careers</span></button>
             </nav>
         </div>
     </section>
@@ -1110,6 +1128,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261113-home-cleanup"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=20261114-app-tabs"></script>
 </body>
 </html>

@@ -74,6 +74,75 @@ body.dashboard-mode .sidebar-user { display:flex; }
 body.dashboard-mode .dashboard-nav { display:grid; }
 body.dashboard-mode .dashboard-nav-item { display:flex; min-height:44px; justify-content:flex-start; text-align:left; font-size:.92rem; }
 
+button.mobile-app-brand {
+  border:0;
+  padding:0;
+  background:transparent;
+  color:#111827;
+  font:inherit;
+  font-weight:800;
+  letter-spacing:-.03em;
+  cursor:pointer;
+}
+button.mobile-app-brand:hover { background:transparent; color:#111827; }
+.app-tabbar {
+  display:flex;
+  gap:2px;
+  flex:none;
+  margin:0 0 8px;
+  padding:5px;
+  border:1px solid #e6ebf1;
+  border-radius:999px;
+  background:#fff;
+  box-shadow:0 3px 10px rgba(15,23,42,.08);
+}
+.app-tabbar button {
+  position:relative;
+  flex:1 1 0;
+  min-width:0;
+  min-height:54px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  margin:0;
+  padding:8px 2px;
+  border:0;
+  border-radius:18px;
+  background:transparent;
+  color:#111827;
+  font-size:.72rem;
+  font-weight:650;
+  line-height:1.1;
+  box-shadow:none;
+}
+.app-tabbar button:hover { background:transparent; color:#111827; }
+.app-tab-icon { position:relative; display:grid; place-items:center; width:28px; height:22px; }
+.app-tabbar svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.app-tab-badge {
+  position:absolute;
+  top:-7px;
+  right:-12px;
+  min-width:18px;
+  height:18px;
+  padding:0 4px;
+  border-radius:999px;
+  background:#3dd65c;
+  color:#fff;
+  font-size:.68rem;
+  font-weight:800;
+  line-height:18px;
+}
+.app-tabbar button.active,
+body.dashboard-mode .app-tabbar button.active,
+body.landing-mode .app-tabbar button.active,
+body.profile-mode .app-tabbar button.active { background:#10543c; color:#fff; }
+.app-tabbar button.active:hover,
+body.dashboard-mode .app-tabbar button.active:hover { background:#10543c; color:#fff; }
+body.profile-mode .concept-profile-brand { width:100%; }
+body.profile-mode .concept-profile-brand .mobile-app-brand { min-width:0; }
+
 .concept-tabbar {
   position:static;
   flex:none;
@@ -403,7 +472,7 @@ body.profile-mode .review-summary { text-align:left; }
 body.profile-mode .profile-facts { position:static; margin-top:8px; padding:4px 14px 8px; border:1px solid #e6ebf1; border-radius:16px; box-shadow:none; background:#f8fafc; }
 body.profile-mode .profile-facts h3 { margin-bottom:0; font-size:1rem; }
 body.profile-mode .review-card { padding:12px; }
-body.profile-mode .concept-tabbar-profile { flex:none; padding:8px 18px 16px; }
+body.profile-mode .concept-tabbar-profile { flex:none; padding:5px; margin:0 18px 12px; }
 
 .dial-pad-form { display:grid; justify-items:center; gap:10px; width:100%; }
 .dial-readout { width:100%; display:grid; gap:4px; }
