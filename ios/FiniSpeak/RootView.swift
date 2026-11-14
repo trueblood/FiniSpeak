@@ -3,23 +3,25 @@ import SwiftUI
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var app: AppModel
+    @State private var splashHold = true
 
     var body: some View {
         Group {
-            if app.restoring {
-                VStack(spacing: 16) {
-                    ConceptGlobe(size: 48)
-                    ProgressView("Opening FiniSpeak")
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.white)
+            if app.restoring || splashHold {
+                SplashView()
             } else if app.account == nil {
                 WelcomeView()
             } else {
                 MainTabView()
             }
         }
-        .task { await app.restoreIfNeeded() }
+        .task {
+            let started = ContinuousClock.now
+            await app.restoreIfNeeded()
+            let remaining = Duration.milliseconds(1700) - started.duration(to: .now)
+            if remaining > .zero { try? await Task.sleep(for: remaining) }
+            splashHold = false
+        }
         .fullScreenCover(item: $app.callSession) { session in
             CallView(session: session)
                 .environmentObject(app)
@@ -45,6 +47,31 @@ struct RootView: View {
                 }
             }
         }
+    }
+}
+
+private struct SplashView: View {
+    var body: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            ConceptGlobe(size: 84)
+            Text("FiniSpeak")
+                .font(.system(size: 40, weight: .bold))
+                .foregroundStyle(FiniTheme.ink)
+            VStack(spacing: 4) {
+                Text("Live translators on demand")
+                Text("and your everyday global secure chat")
+            }
+            .font(.body.weight(.medium))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(FiniTheme.muted)
+            .padding(.horizontal, 36)
+            Spacer()
+            ProgressView()
+                .padding(.bottom, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white)
     }
 }
 
