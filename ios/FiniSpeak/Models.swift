@@ -195,6 +195,7 @@ struct CallRecord: Decodable, Identifiable, Equatable {
     var guestIds: [String]?
     var transcriptConsent: TranscriptConsent?
     var callNotes: String?
+    var keyMoments: [KeyMoment]?
 
     var isLive: Bool {
         guard let status else { return false }
@@ -228,12 +229,36 @@ struct CallRecord: Decodable, Identifiable, Equatable {
         guestIds = container.flexStrings(.guestIds)
         transcriptConsent = try? container.decode(TranscriptConsent.self, forKey: .transcriptConsent)
         callNotes = container.flexString(.callNotes)
+        keyMoments = try? container.decode([KeyMoment].self, forKey: .keyMoments)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, callerId, callerName, receiverId, receiverName, translatorId, translatorName
         case invitedTranslatorId, invitedTranslatorName, status, translationStatus, purpose
-        case language, specialty, createdAt, startedAt, guestIds, transcriptConsent, callNotes
+        case language, specialty, createdAt, startedAt, guestIds, transcriptConsent, callNotes, keyMoments
+    }
+}
+
+struct KeyMoment: Decodable, Identifiable, Equatable {
+    var id: String
+    var elapsedLabel: String?
+    var speakerName: String?
+    var text: String?
+    var followUp: Bool?
+    var createdAt: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.flexString(.id) ?? UUID().uuidString
+        elapsedLabel = container.flexString(.elapsedLabel)
+        speakerName = container.flexString(.speakerName)
+        text = container.flexString(.text)
+        followUp = container.flexBool(.followUp)
+        createdAt = container.flexString(.createdAt)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, elapsedLabel, speakerName, text, followUp, createdAt
     }
 }
 

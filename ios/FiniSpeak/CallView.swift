@@ -21,7 +21,9 @@ struct CallView: View {
 
     var body: some View {
         Group {
-            if showVideo {
+            if session.ended {
+                SessionSummaryView(session: session)
+            } else if showVideo {
                 videoCall
             } else {
                 audioCall

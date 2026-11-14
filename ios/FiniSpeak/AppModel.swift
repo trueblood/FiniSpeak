@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     @Published var systemRinging = false
     @Published var useInAppRing = false
     @Published var openChats = false
+    @Published var pendingSection: FiniSection?
     @Published var callSession: CallSession?
     @Published var history: [CallRecord] = []
     @Published var unreadChats = 0

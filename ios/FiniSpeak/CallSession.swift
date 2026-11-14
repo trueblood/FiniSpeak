@@ -18,6 +18,7 @@ final class CallSession: ObservableObject, Identifiable {
     @Published var consent: Bool
     @Published var banner = ""
     @Published var ended = false
+    private(set) var endedAt: Date?
     let media: CallMedia
 
     nonisolated let id: String
@@ -122,8 +123,36 @@ final class CallSession: ObservableObject, Identifiable {
             if finishForEveryone { _ = try? await api.updateCallState(id: call.id, state: "ended") }
             try? await api.leaveCall(id: call.id)
         }
+        if let latest = try? await api.call(id: call.id) { call = latest }
+        endedAt = Date()
         ended = true
+    }
+
+    func closeSummary() {
         onEnded?()
+    }
+
+    var canRate: Bool {
+        guard let translatorId = call.translatorId, !translatorId.isEmpty else { return false }
+        return translatorId != user.uid
+    }
+
+    func rate(_ stars: Int) async -> String {
+        guard canRate, let translatorId = call.translatorId else { return "" }
+        do {
+            try await api.reviewInterpreter(id: translatorId, callId: call.id, rating: stars)
+            return "Thank you. Your review is now visible."
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func resolveMoment(_ id: String) async {
+        do {
+            call = try await api.callExperience(id: call.id, action: "resolve-moment", extra: ["id": id])
+        } catch {
+            banner = error.localizedDescription
+        }
     }
 
     func setConsent(_ granted: Bool) async {

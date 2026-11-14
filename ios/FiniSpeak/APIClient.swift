@@ -224,6 +224,10 @@ final class APIClient {
         _ = try await send("POST", "/api/calls/\(path(id))/leave", body: [:])
     }
 
+    func reviewInterpreter(id: String, callId: String, rating: Int) async throws {
+        _ = try await send("POST", "/api/reviews/interpreters/\(path(id))", body: ["callId": callId, "rating": rating, "text": ""])
+    }
+
     func claimTranslator(id: String) async throws -> CallRecord {
         try await decode(CallEnvelope.self, "POST", "/api/calls/\(path(id))/translator-claim", body: [:]).call
     }

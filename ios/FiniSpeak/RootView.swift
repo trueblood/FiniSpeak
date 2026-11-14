@@ -80,6 +80,12 @@ struct MainTabView: View {
                     app.openChats = false
                 }
             }
+            .onChange(of: app.pendingSection) { _, next in
+                if let next {
+                    section = next
+                    app.pendingSection = nil
+                }
+            }
         }
         .environment(\.goHome) {
             menu = false
