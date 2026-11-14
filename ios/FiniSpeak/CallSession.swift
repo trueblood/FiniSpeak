@@ -116,10 +116,14 @@ final class CallSession: ObservableObject, Identifiable {
         guard !leaving else { return }
         leaving = true
         pollTask?.cancel()
+        let finishForEveryone = people.count <= 1
         transcription.stop()
         media.stop()
         signaling.close()
-        if tellServer { try? await api.leaveCall(id: call.id) }
+        if tellServer {
+            if finishForEveryone { _ = try? await api.updateCallState(id: call.id, state: "ended") }
+            try? await api.leaveCall(id: call.id)
+        }
         ended = true
         onEnded?()
     }
