@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
     private var dismissedIncomingId: String?
     private var inviteTask: Task<Void, Never>?
     private var backgroundAlertTask: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundHold: BackgroundHold?
     private var ringingCallId: String?
     private var answeringCallId: String?
     private var knownMessages: [String: String] = [:]
@@ -113,24 +114,21 @@ final class AppModel: ObservableObject {
     func holdAlertsInBackground() {
         let application = UIApplication.shared
         if backgroundAlertTask != .invalid { return }
-        backgroundAlertTask = application.beginBackgroundTask { [weak self] in
-            Task { @MainActor in self?.endBackgroundAlerts() }
-        }
+        let hold = BackgroundHold()
+        hold.begin(application)
+        backgroundAlertTask = hold.taskIdentifier
+        backgroundHold = hold
         Task {
             for _ in 0..<8 {
-                if account == nil || backgroundAlertTask == .invalid { break }
+                if account == nil || !hold.isRunning { break }
                 await refreshIncoming()
                 await noticeNewMessages()
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
-            endBackgroundAlerts()
+            hold.finish()
+            backgroundAlertTask = .invalid
+            backgroundHold = nil
         }
-    }
-
-    private func endBackgroundAlerts() {
-        guard backgroundAlertTask != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(backgroundAlertTask)
-        backgroundAlertTask = .invalid
     }
 
     func signOut() async {
@@ -327,5 +325,39 @@ final class AppModel: ObservableObject {
         unreadChats = 0
         api.token = nil
         KeychainStore.clear()
+        backgroundHold?.finish()
+        backgroundHold = nil
+        backgroundAlertTask = .invalid
+    }
+}
+
+private final class BackgroundHold: @unchecked Sendable {
+    private let lock = NSLock()
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    var taskIdentifier: UIBackgroundTaskIdentifier {
+        lock.lock()
+        defer { lock.unlock() }
+        return identifier
+    }
+
+    var isRunning: Bool { taskIdentifier != .invalid }
+
+    func begin(_ application: UIApplication) {
+        let task = application.beginBackgroundTask { [weak self] in
+            self?.finish()
+        }
+        lock.lock()
+        identifier = task
+        lock.unlock()
+    }
+
+    func finish() {
+        lock.lock()
+        let task = identifier
+        identifier = .invalid
+        lock.unlock()
+        guard task != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(task)
     }
 }

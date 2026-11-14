@@ -30,7 +30,8 @@ final class CallTranscription: NSObject, URLSessionWebSocketDelegate {
         ready = false
         generation = Int(Date().timeIntervalSince1970 * 1000)
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-        components?.scheme = components?.scheme == "https" ? "wss" : "ws"
+        let scheme = components?.scheme == "https" ? "wss" : "ws"
+        components?.scheme = scheme
         components?.path = "/ws/transcription"
         components?.query = nil
         guard let url = components?.url else { return }

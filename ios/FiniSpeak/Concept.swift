@@ -344,7 +344,7 @@ struct ConceptMenu: View {
     @Binding var section: FiniSection
 
     private var rows: [(FiniSection, String, String)] {
-        var items: [(FiniSection, String, String)] = [
+        let items: [(FiniSection, String, String)] = [
             (.home, "Home", "house"),
             (.discover, "Translate", "bubble.left.and.bubble.right"),
             (.calls, "Calls", "phone"),
