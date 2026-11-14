@@ -24,6 +24,7 @@ final class CallMedia: NSObject, ObservableObject {
     private let sendSignal: (String, String, [String: Any]) -> Void
     private let lock = NSLock()
     private var chains: [String: Task<Void, Never>] = [:]
+    private var videoProbes: [String: VideoActivityProbe] = [:]
     private var stopped = false
 
     init(send: @escaping (String, String, [String: Any]) -> Void) {
@@ -88,6 +89,8 @@ final class CallMedia: NSObject, ObservableObject {
         audioTrack?.isEnabled = false
         RTCAudioSession.sharedInstance().isAudioEnabled = false
         DispatchQueue.main.async {
+            for probe in self.videoProbes.values { probe.track?.remove(probe) }
+            self.videoProbes = [:]
             self.remoteVideo = [:]
             self.localVideo = nil
             self.cameraOn = false
@@ -138,6 +141,7 @@ final class CallMedia: NSObject, ObservableObject {
         if notify { sendSignal("hangup", remoteId, [:]) }
         peer.connection.close()
         DispatchQueue.main.async {
+            if let probe = self.videoProbes.removeValue(forKey: remoteId) { probe.track?.remove(probe) }
             self.remoteVideo.removeValue(forKey: remoteId)
             self.peerState.removeValue(forKey: remoteId)
         }
@@ -247,15 +251,24 @@ final class CallMedia: NSObject, ObservableObject {
         guard track !== videoTrack else { return }
         track.isEnabled = true
         DispatchQueue.main.async {
-            if self.remoteVideo[peerId] !== track {
-                self.remoteVideo[peerId] = track
+            if let existing = self.videoProbes[peerId], existing.track === track { return }
+            if let existing = self.videoProbes.removeValue(forKey: peerId) { existing.track?.remove(existing) }
+            let probe = VideoActivityProbe(track: track) { [weak self] live in
+                guard let self else { return }
+                if live {
+                    if self.remoteVideo[peerId] !== track { self.remoteVideo[peerId] = track }
+                } else if self.remoteVideo[peerId] === track {
+                    self.remoteVideo.removeValue(forKey: peerId)
+                }
             }
+            self.videoProbes[peerId] = probe
+            track.add(probe)
         }
     }
 
     private func publishVideo(_ peer: PeerLink) {
         let tracks = peer.connection.transceivers.compactMap { $0.receiver.track as? RTCVideoTrack }
-        guard let track = tracks.last(where: { $0 !== self.videoTrack }) ?? tracks.last else { return }
+        guard let track = tracks.last(where: { $0 !== self.videoTrack }) else { return }
         attachRemoteVideo(track, peerId: peer.remoteId)
     }
 
@@ -423,6 +436,35 @@ final class CallMedia: NSObject, ObservableObject {
         }
         chains[peerId] = task
         lock.unlock()
+    }
+}
+
+private final class VideoActivityProbe: NSObject, RTCVideoRenderer {
+    weak var track: RTCVideoTrack?
+    private let onLive: (Bool) -> Void
+    private var expiry: DispatchWorkItem?
+    private var lastNote = Date.distantPast
+
+    init(track: RTCVideoTrack, onLive: @escaping (Bool) -> Void) {
+        self.track = track
+        self.onLive = onLive
+    }
+
+    func setSize(_ size: CGSize) {}
+
+    func renderFrame(_ frame: RTCVideoFrame?) {
+        guard let frame, frame.width > 0, frame.height > 0 else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastNote) > 0.3 else { return }
+        lastNote = now
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.expiry?.cancel()
+            self.onLive(true)
+            let work = DispatchWorkItem { [weak self] in self?.onLive(false) }
+            self.expiry = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+        }
     }
 }
 
