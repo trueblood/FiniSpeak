@@ -113,6 +113,7 @@ struct DiscoverView: View {
                 .background(Color.white)
             }
         }
+        .ignoresSafeArea(edges: embedded ? Edge.Set() : .bottom)
         .navigationTitle(embedded ? "" : "Find a Translator")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $selection) { profile in
@@ -574,6 +575,7 @@ struct InterpreterDetailView: View {
             .background(Color.white)
         }
         .background(Color.white)
+        .ignoresSafeArea(edges: .bottom)
         .task { detail = try? await app.api.interpreter(id: profile.id) }
         .sheet(item: $chat) { conversation in
             NavigationStack {

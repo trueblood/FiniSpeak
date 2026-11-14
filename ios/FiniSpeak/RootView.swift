@@ -92,6 +92,7 @@ struct MainTabView: View {
                 AppTabBar(selection: AppTab.matching(section), unreadCount: app.unreadChats) { open($0) }
             }
             .background(Color.white)
+            .ignoresSafeArea(edges: .bottom)
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $menu) { ConceptMenu(section: $section) }
             .task { await app.refreshUnread() }
@@ -227,6 +228,7 @@ struct WelcomeView: View {
                 }
             }
             .background(Color.white)
+            .ignoresSafeArea(edges: .bottom)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $discoverPresented) { DiscoverView() }
             .sheet(isPresented: $authPresented) { AuthView(creating: creating, interpreter: interpreterSignup) }
