@@ -5,14 +5,21 @@ struct HomeView: View {
     var onFind: () -> Void
     var onLesson: () -> Void
     var onCall: () -> Void
+    var onProfile: () -> Void
     @Binding var category: String
     var onCategory: (String) -> Void
     @State private var selectedCall: CallRecord?
 
+    private var translator: Bool { app.account?.isInterpreter == true }
+
     var body: some View {
         ScrollView {
         VStack(alignment: .leading, spacing: 0) {
-            ConceptHub(category: $category, onCategory: onCategory, onFind: onFind, onLesson: onLesson, onCall: onCall, joinTitle: nil, onJoin: nil)
+            ConceptHub(interpreter: translator, category: $category, onCategory: onCategory, onFind: onFind, onLesson: onLesson, onCall: onCall, joinTitle: nil, onJoin: nil)
+            if translator {
+                TranslatorDashboard(onEdit: onProfile)
+                    .padding(.top, 18)
+            }
             DisclosureGroup("Review recent conversations") {
                 if app.history.isEmpty {
                     Text("Calls you join will show up here.").foregroundStyle(.secondary).padding(.top, 8)
@@ -50,6 +57,238 @@ struct HomeView: View {
                 Spacer()
             }
         }
+    }
+}
+
+private struct TranslatorDashboard: View {
+    @EnvironmentObject private var app: AppModel
+    var onEdit: () -> Void
+    @State private var profile: Interpreter?
+    @State private var documents = 0
+    @State private var available = false
+    @State private var loaded = false
+    @State private var status = "Waiting for interpretation requests..."
+
+    private var scheduled: [CallRecord] {
+        let uid = app.account?.uid
+        return app.history.filter { call in
+            guard call.translatorId == uid, FiniTime.date(call.scheduledAt) != nil else { return false }
+            return !["ended", "declined", "cancelled"].contains(call.status ?? "")
+        }
+        .sorted { (FiniTime.date($0.scheduledAt) ?? .distantFuture) < (FiniTime.date($1.scheduledAt) ?? .distantFuture) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Interpreter workspace")
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(FiniTheme.muted)
+                    Text("Your interpreter dashboard")
+                        .font(.title3.weight(.heavy))
+                        .foregroundStyle(FiniTheme.ink)
+                    Text("Manage your availability, profile, verification, and interpretation sessions from one place.")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(FiniTheme.blurb)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    available.toggle()
+                    Task { await saveAvailability() }
+                } label: {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: available ? "checkmark.square.fill" : "square")
+                            .font(.title3)
+                            .foregroundStyle(FiniTheme.blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(available ? "Available now" : "Unavailable")
+                                .font(.subheadline.weight(.heavy))
+                                .foregroundStyle(FiniTheme.ink)
+                            Text("Accept new requests")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(FiniTheme.muted)
+                        }
+                    }
+                    .padding(12)
+                    .background(FiniTheme.field, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(FiniTheme.line))
+                }
+                .buttonStyle(.plain)
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                stat("Profile", "\(completion)%", completion == 100 ? "Profile complete" : "Finish onboarding")
+                stat("Verification", verification, "Credential review status")
+                stat("Rating", (profile?.rating ?? 0) > 0 ? String(format: "%.1f", profile?.rating ?? 0) : "New", reviewLine)
+                stat("Experience", "\(profile?.yearsExperience ?? 0) Yrs", "Interpreter experience")
+            }
+            summary("Languages & dialects", languageLine)
+            summary("Specialties", specialtyLine)
+            summary("Schedule", scheduleLine)
+            Button("Edit interpreter profile", action: onEdit)
+                .font(.body.weight(.heavy))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(FiniTheme.avatarInk, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            Text(app.incoming == nil ? status : "New interpretation request waiting — accept the call to join.")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(FiniTheme.ink)
+            if let incoming = app.incoming {
+                Button("Accept call") { Task { await app.acceptIncoming() } }
+                    .buttonStyle(ConceptFilledButtonStyle())
+                Button("Decline") { Task { await app.declineIncoming() } }
+                    .buttonStyle(ConceptSoftButtonStyle())
+                Text(incoming.title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(FiniTheme.muted)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Scheduled sessions")
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(FiniTheme.muted)
+                if scheduled.isEmpty {
+                    Text("No sessions are scheduled yet.")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(FiniTheme.ink)
+                } else {
+                    ForEach(scheduled) { call in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(call.callerName?.isEmpty == false ? call.callerName! : "Customer")
+                                .font(.subheadline.weight(.heavy))
+                                .foregroundStyle(FiniTheme.ink)
+                            Text(FiniTime.label(call.scheduledAt))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(FiniTheme.muted)
+                            let detail = [call.purpose, call.language, call.specialty].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                            if !detail.isEmpty {
+                                Text(detail)
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(FiniTheme.ink)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(FiniTheme.line))
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(FiniTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
+        }
+        .task { await load() }
+    }
+
+    private var completion: Int {
+        let profile = profile
+        let days = profile?.availability.days.filter { !$0.isEmpty } ?? []
+        let steps = [
+            !(profile?.displayName.isEmpty ?? true) && !(profile?.bio.isEmpty ?? true),
+            !(profile?.languages.isEmpty ?? true) && !(profile?.specialties.isEmpty ?? true),
+            (profile?.yearsExperience ?? -1) >= 0 && (profile?.yearsExperience ?? 0) <= 80 && !(profile?.credentials.isEmpty ?? true) && documents > 0,
+            profile?.serviceOptions.remote == true || (profile?.serviceOptions.inPerson == true && !(profile?.serviceLocation?.label.isEmpty ?? true)),
+            !days.isEmpty && !(profile?.availability.start.isEmpty ?? true) && !(profile?.availability.end.isEmpty ?? true) && (profile?.availability.start ?? "") < (profile?.availability.end ?? "")
+        ]
+        let done = steps.filter { $0 }.count
+        return Int((Double(done) / Double(steps.count) * 100).rounded())
+    }
+
+    private var verification: String {
+        switch profile?.verificationStatus {
+        case "verified": return "Verified"
+        case "needs_changes": return "Needs changes"
+        case "rejected": return "Rejected"
+        case nil, "", "unverified": return "Unverified"
+        default: return (profile?.verificationStatus ?? "Unverified").replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    private var reviewLine: String {
+        let count = profile?.ratingCount ?? 0
+        if count == 0 { return "No reviews yet" }
+        return count == 1 ? "1 review" : "\(count) reviews"
+    }
+
+    private var languageLine: String {
+        let items = ((profile?.languages ?? []) + (profile?.dialects ?? [])).filter { !$0.isEmpty }
+        return items.isEmpty ? "Add your languages and dialects." : items.joined(separator: " · ")
+    }
+
+    private var specialtyLine: String {
+        let items = (profile?.specialties ?? []).filter { !$0.isEmpty }
+        return items.isEmpty ? "Add your specialties." : items.joined(separator: " · ")
+    }
+
+    private var scheduleLine: String {
+        let days = (profile?.availability.days ?? []).filter { !$0.isEmpty }
+        guard !days.isEmpty else { return "Add your availability schedule." }
+        let labels = days.map { $0.prefix(3).capitalized }.joined(separator: ", ")
+        let start = clock(profile?.availability.start ?? "")
+        let end = clock(profile?.availability.end ?? "")
+        if start.isEmpty || end.isEmpty { return labels }
+        return "\(labels) · \(start)–\(end)"
+    }
+
+    private func stat(_ title: String, _ value: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(FiniTheme.muted)
+            Text(value).font(.title2.weight(.heavy)).foregroundStyle(FiniTheme.ink)
+            Text(detail).font(.caption.weight(.semibold)).foregroundStyle(FiniTheme.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(FiniTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
+    }
+
+    private func summary(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption.weight(.heavy)).foregroundStyle(FiniTheme.muted)
+            Text(value).font(.body.weight(.semibold)).foregroundStyle(FiniTheme.ink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(FiniTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FiniTheme.line))
+    }
+
+    private func load() async {
+        do {
+            let workspace = try await app.api.myInterpreterWorkspace()
+            profile = workspace.profile
+            documents = workspace.credentialDocuments
+            available = workspace.profile.availableNow
+            status = available ? "Ready for interpretation requests." : "Waiting for interpretation requests..."
+        } catch {
+            status = error.localizedDescription
+        }
+        loaded = true
+        await app.refreshHistory()
+    }
+
+    private func saveAvailability() async {
+        guard loaded else { return }
+        let days = profile?.availability.days ?? []
+        let start = profile?.availability.start ?? ""
+        let end = profile?.availability.end ?? ""
+        do {
+            try await app.api.updateAvailability(availableNow: available, days: days, start: start, end: end)
+            status = available ? "Ready for interpretation requests." : "You will not be shown as available for new requests."
+        } catch {
+            available.toggle()
+            status = error.localizedDescription
+        }
+    }
+
+    private func clock(_ value: String) -> String {
+        let parts = value.split(separator: ":")
+        guard parts.count >= 2, let hour = Int(parts[0]), (0...23).contains(hour) else { return value }
+        let minute = String(parts[1].prefix(2))
+        guard minute.count == 2, Int(minute) != nil else { return value }
+        let suffix = hour >= 12 ? "PM" : "AM"
+        return "\(hour % 12 == 0 ? 12 : hour % 12):\(minute) \(suffix)"
     }
 }
 

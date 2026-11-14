@@ -113,7 +113,6 @@ class MvcRouteTests(unittest.TestCase):
         script = (Path(__file__).parents[1] / "views/static/js/app.js").read_text()
         self.assertIn('purpose: "translator_chat"', script)
         self.assertIn('$("profileChatTranslator").onclick = startDirectTranslatorChat', script)
-        self.assertIn("Translators cannot call other translators.", script)
         self.assertIn("isInterpreterRole(currentProfile?.role)", script)
         self.assertIn('$("openDirectCall").onclick = openDirectCall', script)
         self.assertIn('openDashboardPanel("dial")', script)
@@ -241,13 +240,20 @@ class MvcRouteTests(unittest.TestCase):
     @patch("controllers.calls_controller.TranslatorModel.get")
     @patch("controllers.calls_controller.identity_or_response")
     def test_translator_cannot_call_another_translator(self, identity, get_translator, get_account, create_call):
-        identity.return_value = ({"uid": "translator-1", "role": "translator"}, None)
+        identity.return_value = ({"uid": "translator-1", "role": "translator", "displayName": "Translator One"}, None)
+        get_translator.side_effect = [
+            {"id": "translator-9", "displayName": "Interpreter Nine"},
+            {"id": "translator-9", "uid": "translator-9", "displayName": "Interpreter Nine"},
+        ]
+        get_account.return_value = {"uid": "translator-9", "role": "translator", "status": "active", "displayName": "Interpreter Nine"}
+        create_call.return_value = {"id": "call-direct", "status": "ringing", "purpose": "translator_chat"}
         direct = self.client.post("/api/calls/", json={
             "receiverId": "translator-9", "purpose": "translator_chat",
         })
-        self.assertEqual(direct.status_code, 403)
-        self.assertEqual(direct.get_json()["error"], "Translators cannot call other translators.")
-        get_translator.assert_not_called()
+        self.assertEqual(direct.status_code, 201)
+        self.assertEqual(direct.get_json()["callId"], "call-direct")
+        create_call.assert_called_once()
+        create_call.reset_mock()
 
         get_account.return_value = {"uid": "translator-9", "role": "translator", "status": "active"}
         addressed = self.client.post("/api/calls/", json={"receiverId": "translator-9"})

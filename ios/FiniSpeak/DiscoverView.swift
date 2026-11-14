@@ -723,8 +723,8 @@ struct InterpreterDetailView: View {
     private var actions: some View {
         if app.account == nil {
             Text("Sign in to call this interpreter.").foregroundStyle(.secondary)
-        } else if app.account?.isInterpreter == true {
-            Text("Translators cannot call other translators.").foregroundStyle(.secondary)
+        } else if app.account?.uid == shown.id {
+            Text("This is your interpreter profile.").foregroundStyle(.secondary)
         } else {
             Button(busy ? "Calling…" : "Request Instant Call") { Task { await call() } }
                 .buttonStyle(ConceptFilledButtonStyle())

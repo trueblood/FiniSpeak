@@ -418,10 +418,6 @@ function bindUI() {
     };
     bindConceptScreens();
     $("profileStartCall").onclick = () => {
-        if (isInterpreterRole(currentProfile?.role)) {
-            $("profileCallStatus").textContent = "Translators cannot call other translators.";
-            return;
-        }
         if (!currentUser) {
             selectInterpreterForCall(activeDirectoryProfile);
             openAuth(false, "customer");
@@ -1909,7 +1905,7 @@ async function openPublicProfile(profile) {
     ["conceptRequestCall", "profileChatTranslator", "profileStartCall"].forEach(id => {
         $(id)?.classList.toggle("hidden", viewerIsInterpreter);
     });
-    if ($("profileCallStatus")) $("profileCallStatus").textContent = viewerIsInterpreter ? "Translators cannot call other translators." : "";
+    if ($("profileCallStatus") && !viewerIsInterpreter) $("profileCallStatus").textContent = "";
     show("profileView");
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -2469,6 +2465,27 @@ async function loadInterpreterProfile() {
     hydrateInterpreterProfile(currentInterpreterProfile);
 }
 
+function renderScheduledSessionList(sessions) {
+    const box = $("dashboardScheduledSessions");
+    if (!box || !currentUser) return;
+    const upcoming = (sessions || []).filter(call => {
+        if (call.translatorId !== currentUser.uid || !call.scheduledAt) return false;
+        if (["ended", "declined", "cancelled"].includes(call.status)) return false;
+        const when = timestampDate(call.scheduledAt);
+        return !when || when.getTime() > Date.now() - 60 * 60 * 1000;
+    }).sort((left, right) => (timestampDate(left.scheduledAt)?.getTime() || 0) - (timestampDate(right.scheduledAt)?.getTime() || 0));
+    if (!upcoming.length) {
+        box.innerHTML = "<p>No sessions are scheduled yet.</p>";
+        return;
+    }
+    box.innerHTML = upcoming.map(call => {
+        const when = timestampDate(call.scheduledAt);
+        const label = when ? when.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : String(call.scheduledAt);
+        const detail = [call.purpose, call.language, call.specialty].filter(Boolean).join(" · ");
+        return `<article><strong>${escapeHtml(call.callerName || "Customer")}</strong><small>${escapeHtml(label)}</small>${detail ? `<p>${escapeHtml(detail)}</p>` : ""}</article>`;
+    }).join("");
+}
+
 function renderTranslatorDashboard() {
     if (!isInterpreterRole(currentProfile?.role)) return;
     const p = currentInterpreterProfile || {};
@@ -2815,8 +2832,8 @@ async function createCall(e) {
             receiverHasUid: Boolean(receiver?.uid)
         });
         if (!receiver) throw new Error(`No FiniSpeak account was found with that ${receiverEmail ? "email" : "number"}. Ask them to save it in their profile, then try again.`);
-        if (isInterpreterRole(currentProfile?.role) && isInterpreterRole(receiver.role)) throw new Error("Translators cannot call other translators.");
-        if (!["customer", "admin"].includes(receiver.role)) throw new Error("That contact belongs to an account that cannot receive customer calls.");
+        const callingTranslator = isInterpreterRole(receiver.role);
+        if (!callingTranslator && !["customer", "admin"].includes(receiver.role)) throw new Error("That contact belongs to an account that cannot receive customer calls.");
         if (receiver.uid === currentUser.uid) throw new Error("You cannot call yourself.");
         const selectedInterpreter = selectedInterpreterProfile?.id ? selectedInterpreterProfile : null;
         if (!preserveDialButton) submitButton.textContent = "Starting call…";
@@ -2829,7 +2846,8 @@ async function createCall(e) {
             method: "POST", headers: { "Idempotency-Key": attemptId },
             body: JSON.stringify({
                 receiverId: receiver.uid,
-                translatorId: selectedInterpreter?.id || null,
+                translatorId: callingTranslator ? null : (selectedInterpreter?.id || null),
+                purpose: callingTranslator ? "translator_chat" : "",
                 processingMode: selectedProcessingMode
             })
         });
@@ -2853,10 +2871,6 @@ async function startDirectTranslatorChat() {
     const profile = activeDirectoryProfile;
     const button = $("profileChatTranslator");
     const status = $("profileCallStatus");
-    if (isInterpreterRole(currentProfile?.role)) {
-        if (status) status.textContent = "Translators cannot call other translators.";
-        return;
-    }
     if (!profile?.id) return;
     if (!currentUser) {
         selectInterpreterForCall(profile);
@@ -2897,7 +2911,8 @@ async function joinCall(callId, attemptId = `join-${Date.now().toString(36)}`) {
         const result = await apiFetch(`/api/calls/${encodeURIComponent(callId)}`);
         const call = result.call;
         if (!call) throw new Error("Call not found.");
-        const role = currentProfile.role;
+        const role = currentProfile?.role;
+        if (!role) throw new Error("Sign in again to join this call.");
         const guest = Array.isArray(call.guestIds) && call.guestIds.includes(currentUser.uid);
         const allowedCustomer = [call.callerId, call.receiverId].includes(currentUser.uid) || guest;
         const directTranslatorChat = call.purpose === "translator_chat";
@@ -4554,13 +4569,26 @@ function startDashboardListeners() {
     if (!currentUser || !currentProfile) return;
 
     const refresh = async () => {
+      const profile = currentProfile;
+      if (!currentUser || !profile) return;
       try {
-        const rows = currentProfile.role === "translator"
-          ? (await apiFetch("/api/calls/pending")).calls || []
-          : (await apiFetch("/api/sessions")).sessions || [];
-        const pending = currentProfile.role === "translator"
-          ? rows[0]
-          : rows.filter(call => call.receiverId === currentUser.uid && call.status === "ringing").sort((a,b) => callMillis(b) - callMillis(a))[0];
+        let sessions = [];
+        let pending = null;
+        if (profile.role === "translator") {
+          try {
+            const rows = (await apiFetch("/api/calls/pending")).calls || [];
+            pending = rows.find(call => call.purpose === "translator_chat" && call.receiverId === currentUser.uid && call.status === "ringing")
+              || rows.find(call => call.invitedTranslatorId === currentUser.uid)
+              || null;
+          } catch (error) {
+            console.warn("Pending interpreter calls unavailable", error);
+          }
+        }
+        sessions = (await apiFetch("/api/sessions")).sessions || [];
+        if (profile.role === "translator") renderScheduledSessionList(sessions);
+        if (!pending) {
+          pending = sessions.filter(call => call.receiverId === currentUser.uid && call.status === "ringing").sort((a, b) => callMillis(b) - callMillis(a))[0] || null;
+        }
         if (!pending || activeCallId) {
                 if (!activeCallId) {
                     try {
@@ -4579,21 +4607,21 @@ function startDashboardListeners() {
                 clearPendingIncomingCall();
                 return;
             }
-        if (["customer", "admin"].includes(currentProfile.role)) {
+        if (["customer", "admin"].includes(profile.role)) {
             pendingIncomingCall = { ...pending, kind: "customer" };
             $("incomingCallEyebrow").textContent = "Incoming FiniSpeak call";
             $("incomingCallTitle").textContent = `${pendingIncomingCall.callerName || "A participant"} is calling you`;
             $("incomingCallDetails").textContent = "Accept to connect. Live transcription starts after you join the call.";
-            $("acceptIncomingCall").textContent = "Accept";
+            $("acceptIncomingCall").textContent = "Accept call";
             openModal("incomingCallModal");
-        } else if (currentProfile.role === "translator") {
+        } else if (profile.role === "translator") {
             const directChat = pending.purpose === "translator_chat" && pending.receiverId === currentUser.uid;
             if (directChat) {
                 pendingIncomingCall = { ...pending, kind: "direct-translator" };
                 $("incomingCallEyebrow").textContent = "Incoming translator chat";
                 $("incomingCallTitle").textContent = `${pending.callerName || "Someone"} is calling you`;
                 $("incomingCallDetails").textContent = "Accept to chat directly. No other customer is included in this call.";
-                $("acceptIncomingCall").textContent = "Accept";
+                $("acceptIncomingCall").textContent = "Accept call";
                 openModal("incomingCallModal");
                 return;
             }
@@ -5411,11 +5439,6 @@ function bindConceptScreens() {
     $("conceptTutorProfile").onclick = () => { if (conceptMatchedProfile || activeDirectoryProfile) openPublicProfile(conceptMatchedProfile || activeDirectoryProfile); };
     $("conceptBookLesson").onclick = () => openDashboardPanel("schedule");
     $("conceptRequestInstant").onclick = () => {
-        if (isInterpreterRole(currentProfile?.role) && activeDirectoryProfile) {
-            if ($("conceptScheduleStatus")) $("conceptScheduleStatus").textContent = "Translators cannot call other translators.";
-            if ($("profileCallStatus")) $("profileCallStatus").textContent = "Translators cannot call other translators.";
-            return;
-        }
         if (activeDirectoryProfile) startDirectTranslatorChat();
         else showCallDialPad();
     };

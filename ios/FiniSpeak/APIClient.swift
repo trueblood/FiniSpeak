@@ -152,8 +152,11 @@ final class APIClient {
     }
 
     func myInterpreterProfile() async throws -> Interpreter {
-        struct Envelope: Decodable { var profile: Interpreter }
-        return try await decode(Envelope.self, "GET", "/api/translators/me/profile").profile
+        try await myInterpreterWorkspace().profile
+    }
+
+    func myInterpreterWorkspace() async throws -> InterpreterWorkspace {
+        try await decode(InterpreterWorkspace.self, "GET", "/api/translators/me/profile")
     }
 
     func enrollInterpreter(phone: String) async throws -> Interpreter {
@@ -161,8 +164,13 @@ final class APIClient {
         return try await decode(Envelope.self, "POST", "/api/translators/enroll", body: ["phone": phone]).profile
     }
 
-    func updateAvailability(availableNow: Bool) async throws {
-        _ = try await send("PATCH", "/api/availability", body: ["availableNow": availableNow, "days": [String](), "start": "", "end": ""])
+    func updateAvailability(availableNow: Bool, days: [String], start: String, end: String) async throws {
+        _ = try await send("PATCH", "/api/availability", body: [
+            "availableNow": availableNow,
+            "days": days,
+            "start": start,
+            "end": end
+        ])
     }
 
     func friends() async throws -> [Friend] {

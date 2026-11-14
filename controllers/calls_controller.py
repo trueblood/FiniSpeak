@@ -54,8 +54,6 @@ def create():
         return error
     if identity["uid"] == receiver_id:
         return jsonify({"error": "You cannot call yourself."}), 400
-    if direct_translator_chat and _is_interpreter(identity):
-        return jsonify({"error": TRANSLATOR_CALL_BLOCKED}), 403
     if direct_translator_chat:
         public_translator = TranslatorModel.get(receiver_id)
         translator_record = TranslatorModel.get(receiver_id, public=False) if public_translator else None

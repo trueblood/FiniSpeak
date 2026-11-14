@@ -79,7 +79,11 @@ struct ProfileView: View {
     }
 
     private func setAvailable(_ value: Bool) async {
-        do { try await app.api.updateAvailability(availableNow: value); status = value ? "You are available now." : "You are not available right now." }
+        let availability = interpreter?.availability
+        do {
+            try await app.api.updateAvailability(availableNow: value, days: availability?.days ?? [], start: availability?.start ?? "", end: availability?.end ?? "")
+            status = value ? "You are available now." : "You are not available right now."
+        }
         catch { status = error.localizedDescription }
     }
 

@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     @Published var callSession: CallSession?
     @Published var history: [CallRecord] = []
     @Published var unreadChats = 0
+    @Published var isActive = true
 
     let api: APIClient
     private var didRestore = false
@@ -251,16 +252,20 @@ final class AppModel: ObservableObject {
         guard let account, callSession == nil else { return }
         let sessions = (try? await api.sessions()) ?? []
         alerts.syncScheduledSessions(sessions, translatorId: account.uid)
-        let next: IncomingCall?
+        var next: IncomingCall?
+        let ringingToMe = sessions
+            .filter { $0.receiverId == account.uid && $0.status == "ringing" }
+            .sorted { ($0.createdAt ?? "") > ($1.createdAt ?? "") }
         if account.role == "translator" {
-            next = (try? await api.pendingCalls())?.first.flatMap { classifyTranslator($0, user: account) }
-        } else {
-            let ringing = sessions.filter { $0.receiverId == account.uid && $0.status == "ringing" }
-            if let call = ringing.sorted(by: { ($0.createdAt ?? "") > ($1.createdAt ?? "") }).first {
-                next = IncomingCall(call: call, kind: .customer, title: "\(call.callerName ?? "Someone") is calling", detail: "Accept to connect. The live transcript appears after you join.")
-            } else {
-                next = nil
+            let pending = (try? await api.pendingCalls()) ?? []
+            next = pending.compactMap { classifyTranslator($0, user: account) }.first
+            if next == nil, let call = ringingToMe.first {
+                next = incomingCall(for: call, user: account)
             }
+        } else if let call = ringingToMe.first {
+            next = incomingCall(for: call, user: account)
+        } else {
+            next = nil
         }
         let resolved: IncomingCall?
         if let next {
@@ -285,14 +290,25 @@ final class AppModel: ObservableObject {
             return
         }
         incoming = resolved
+        if isActive {
+            useInAppRing = true
+        }
         guard ringingCallId != resolved.id else { return }
         ringingCallId = resolved.id
-        useInAppRing = false
         let caller = resolved.call.callerName ?? "FiniSpeak"
+        guard !isActive else { return }
+        useInAppRing = false
         alerts.ring(callId: resolved.id, caller: caller) { [weak self] showed in
             self?.systemRinging = showed
             self?.useInAppRing = !showed
         }
+    }
+
+    private func incomingCall(for call: CallRecord, user: Account) -> IncomingCall {
+        if call.purpose == "translator_chat" || user.role == "translator" {
+            return IncomingCall(call: call, kind: .directTranslator, title: "\(call.callerName ?? "Someone") is calling you", detail: "Accept to talk with them directly.")
+        }
+        return IncomingCall(call: call, kind: .customer, title: "\(call.callerName ?? "Someone") is calling", detail: "Accept to connect. The live transcript appears after you join.")
     }
 
     private func noticeNewMessages() async {

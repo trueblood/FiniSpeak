@@ -40,6 +40,7 @@ struct Interpreter: Decodable, Identifiable, Equatable {
     var languages: [String]
     var dialects: [String]
     var specialties: [String]
+    var credentials: [String]
     var yearsExperience: Int
     var rating: Double
     var ratingCount: Int
@@ -68,6 +69,7 @@ struct Interpreter: Decodable, Identifiable, Equatable {
         languages = container.flexStrings(.languages)
         dialects = container.flexStrings(.dialects)
         specialties = container.flexStrings(.specialties)
+        credentials = container.flexStrings(.credentials)
         yearsExperience = container.flexInt(.yearsExperience) ?? 0
         rating = container.flexDouble(.rating) ?? 0
         ratingCount = container.flexInt(.ratingCount) ?? 0
@@ -80,7 +82,7 @@ struct Interpreter: Decodable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, uid, displayName, bio, languages, dialects, specialties, yearsExperience, rating, ratingCount
+        case id, uid, displayName, bio, languages, dialects, specialties, credentials, yearsExperience, rating, ratingCount
         case verificationStatus, photoUrl, availability, serviceOptions, serviceLocation, recentReviews
     }
 }
@@ -150,6 +152,23 @@ struct ServiceLocation: Decodable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey { case city, state, country, latitude, longitude, showOnMap }
+}
+
+struct InterpreterWorkspace: Decodable {
+    var profile: Interpreter
+    var credentialDocuments: Int
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profile = try container.decode(Interpreter.self, forKey: .profile)
+        let privateRecord = try? container.nestedContainer(keyedBy: PrivateKeys.self, forKey: .private)
+        let documents = (try? privateRecord?.decode([CredentialFile].self, forKey: .credentialDocuments)) ?? []
+        credentialDocuments = documents.count
+    }
+
+    private struct CredentialFile: Decodable { var path: String? }
+    private enum CodingKeys: String, CodingKey { case profile, `private` }
+    private enum PrivateKeys: String, CodingKey { case credentialDocuments }
 }
 
 struct InterpreterReview: Decodable, Identifiable, Equatable {

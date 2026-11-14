@@ -27,6 +27,7 @@ struct RootView: View {
                 .environmentObject(app)
         }
         .onChange(of: scenePhase) { _, phase in
+            app.isActive = phase == .active
             if phase == .active { Task { await app.refreshUnread() } }
             if phase == .background { app.holdAlertsInBackground() }
         }
@@ -38,7 +39,7 @@ struct RootView: View {
                         Text("Incoming call").font(.caption.weight(.semibold)).foregroundStyle(FiniTheme.blue)
                         Text(incoming.title).font(.title3.weight(.bold))
                         Text(incoming.detail).foregroundStyle(.secondary)
-                        FiniButton(title: "Accept", systemImage: "phone.fill") { Task { await app.acceptIncoming() } }
+                        FiniButton(title: "Accept call", systemImage: "phone.fill") { Task { await app.acceptIncoming() } }
                         FiniButton(title: "Decline", systemImage: "phone.down.fill", filled: false) { Task { await app.declineIncoming() } }
                     }
                     .padding(20)
@@ -133,7 +134,7 @@ struct MainTabView: View {
     private var screen: some View {
         switch section {
         case .home:
-            HomeView(onFind: { section = .discover }, onLesson: { section = .classroom }, onCall: { section = .calls }, category: $category) { chosen in
+            HomeView(onFind: { section = .discover }, onLesson: { section = .classroom }, onCall: { section = .calls }, onProfile: { section = .profile }, category: $category) { chosen in
                 discoverPreset = chosen
                 section = .discover
             }
@@ -252,6 +253,7 @@ struct WelcomeView: View {
 struct ConceptHub: View {
     @Binding var category: String
     var onCategory: (String) -> Void
+    var interpreter = false
     var onFind: () -> Void
     var onLesson: () -> Void
     var onCall: () -> Void
@@ -267,8 +269,12 @@ struct ConceptHub: View {
                 .frame(maxWidth: 220, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 6)
-            ConceptActionButton(title: "Find a Translator", systemImage: "arrow.triangle.2.circlepath", action: onFind)
-            ConceptActionButton(title: "Book a Language Lesson", systemImage: "graduationcap", action: onLesson)
+            if interpreter {
+                ConceptActionButton(title: "Host a Language Session", systemImage: "graduationcap", action: onLesson)
+            } else {
+                ConceptActionButton(title: "Find a Translator", systemImage: "arrow.triangle.2.circlepath", action: onFind)
+                ConceptActionButton(title: "Book a Language Lesson", systemImage: "graduationcap", action: onLesson)
+            }
             ConceptActionButton(title: "Call Another User", systemImage: "phone", action: onCall)
             ConceptCategoryBar(selection: $category, onSelect: onCategory)
                 .padding(.top, 4)
