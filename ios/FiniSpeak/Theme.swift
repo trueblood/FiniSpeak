@@ -10,6 +10,7 @@ enum FiniTheme {
     static let field = Color(red: 248 / 255, green: 250 / 255, blue: 252 / 255)
     static let search = Color(red: 242 / 255, green: 244 / 255, blue: 247 / 255)
     static let blurb = Color(red: 36 / 255, green: 82 / 255, blue: 122 / 255)
+    static let muted = Color(red: 71 / 255, green: 85 / 255, blue: 105 / 255)
     static let avatarFill = Color(red: 219 / 255, green: 231 / 255, blue: 245 / 255)
     static let avatarInk = Color(red: 18 / 255, green: 60 / 255, blue: 105 / 255)
     static let star = Color(red: 245 / 255, green: 180 / 255, blue: 0)

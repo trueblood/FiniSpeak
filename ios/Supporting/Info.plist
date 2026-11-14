@@ -29,6 +29,8 @@
 		<key>UISceneConfigurations</key>
 		<dict/>
 	</dict>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

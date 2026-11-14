@@ -9,6 +9,7 @@ struct FiniSpeakApp: App {
             RootView()
                 .environmentObject(app)
                 .tint(FiniTheme.blue)
+                .preferredColorScheme(.light)
         }
     }
 }

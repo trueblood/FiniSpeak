@@ -151,13 +151,13 @@ struct WelcomeView: View {
                             authPresented = true
                         }
                         if !featured.isEmpty {
-                            Text("Interpreter network").font(.headline).padding(.top, 8)
+                            Text("Interpreter network").font(.headline).foregroundStyle(FiniTheme.ink).padding(.top, 8)
                             ForEach(featured.prefix(2)) { profile in
                                 HStack(spacing: 12) {
                                     AvatarView(name: profile.name, size: 64)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(profile.name).font(.headline)
-                                        Text(profile.headline.isEmpty ? "Interpreter" : profile.headline).font(.subheadline).foregroundStyle(.secondary)
+                                        Text(profile.name).font(.headline).foregroundStyle(FiniTheme.ink)
+                                        Text(profile.headline.isEmpty ? "Interpreter" : profile.headline).font(.subheadline).foregroundStyle(FiniTheme.muted)
                                     }
                                     Spacer()
                                     if profile.verificationStatus == "verified" {
@@ -176,7 +176,7 @@ struct WelcomeView: View {
                         NavigationLink {
                             ServerSettings()
                         } label: {
-                            Text("Server").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                            Text("Server").font(.footnote.weight(.semibold)).foregroundStyle(FiniTheme.muted)
                         }
                         .padding(.top, 8)
                     }
@@ -292,11 +292,11 @@ struct AuthView: View {
                     ConceptField(title: "Password", text: $password, secure: true, contentType: .password)
                     Text("Signing in to \(app.serverURL)")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(FiniTheme.muted)
                     if creating {
                         Text("Use at least 12 characters with letters and numbers.")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(FiniTheme.muted)
                     }
                     if !status.isEmpty { Text(status).font(.footnote).foregroundStyle(FiniTheme.ink) }
                     Button(busy ? "Please wait…" : (creating ? "Create account" : "Sign in")) { Task { await submit() } }

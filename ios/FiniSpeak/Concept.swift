@@ -332,6 +332,7 @@ struct ConceptField: View {
             .textInputAutocapitalization(keyboard == .emailAddress ? .never : .sentences)
             .autocorrectionDisabled(keyboard == .emailAddress)
             .padding(13)
+            .foregroundStyle(FiniTheme.ink)
             .background(FiniTheme.field, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
