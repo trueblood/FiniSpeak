@@ -14,7 +14,9 @@ struct DiscoverView: View {
     @State private var profiles: [Interpreter] = []
     @State private var status = ""
     @State private var selection: Interpreter?
+    @State private var highlighted: Interpreter?
     private let chips = ["Spanish", "Medellín", "Legal", "Medical"]
+    private let categories = ["Business", "Education", "Personal"]
 
     private var note: String {
         if !status.isEmpty { return status }
@@ -24,6 +26,22 @@ struct DiscoverView: View {
             return "No matching interpreters have shared a public area yet."
         }
         return ""
+    }
+
+    private var mapped: [Interpreter] {
+        visible.filter { $0.serviceLocation?.coordinate != nil }
+    }
+
+    private var sheetProfile: Interpreter? {
+        if let highlighted, mapped.contains(where: { $0.id == highlighted.id }) { return highlighted }
+        return mapped.first
+    }
+
+    private var categorySelection: Binding<String> {
+        Binding(
+            get: { categories.contains(search) ? search : "" },
+            set: { search = $0 }
+        )
     }
 
     private var visible: [Interpreter] {
@@ -50,6 +68,11 @@ struct DiscoverView: View {
                     .background(FiniTheme.soft, in: Capsule())
             }
             .buttonStyle(.plain)
+            TextField("Find a Translator by Language/Dialect", text: $search)
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 46)
+                .background(FiniTheme.search, in: Capsule())
             HStack(spacing: 8) {
                 ForEach(chips, id: \.self) { chip in
                     Button {
@@ -80,11 +103,6 @@ struct DiscoverView: View {
             }
             .buttonStyle(.plain)
             if moreFilters {
-                TextField("Find a Translator by Language/Dialect", text: $search)
-                    .textInputAutocapitalization(.never)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 46)
-                    .background(FiniTheme.search, in: Capsule())
                 Toggle("Available now", isOn: $availableOnly)
                     .font(.subheadline.weight(.semibold))
                     .tint(FiniTheme.blue)
@@ -94,17 +112,24 @@ struct DiscoverView: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            InterpreterMap(profiles: visible, baseURL: app.api.baseURL) { profile in
-                selection = profile
+            ZStack(alignment: .bottom) {
+                InterpreterMap(profiles: visible, baseURL: app.api.baseURL) { profile in
+                    highlighted = profile
+                }
+                if let profile = sheetProfile {
+                    mapSheet(profile)
+                        .padding(10)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(FiniTheme.line))
+            ConceptCategoryBar(selection: categorySelection) { _ in }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .background(Color.white)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .safeAreaInset(edge: .bottom, spacing: 8) {
             if !embedded {
                 AppTabBar(selection: .translate, unreadCount: app.unreadChats) { tab in
                     openTab(tab)
@@ -113,7 +138,6 @@ struct DiscoverView: View {
                 .background(Color.white)
             }
         }
-        .ignoresSafeArea(edges: embedded ? Edge.Set() : .bottom)
         .navigationTitle(embedded ? "" : "Find a Translator")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $selection) { profile in
@@ -127,6 +151,45 @@ struct DiscoverView: View {
             guard !preset.isEmpty, preset != search else { return }
             search = preset
         }
+    }
+
+    private func mapSheet(_ profile: Interpreter) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ProfilePhoto(name: profile.name, url: photoURL(profile), size: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(profile.name)
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(FiniTheme.ink)
+                        .lineLimit(1)
+                    Text(stars(profile.rating))
+                        .font(.subheadline)
+                        .foregroundStyle(FiniTheme.star)
+                    Text(profile.headline.isEmpty ? "Verified interpreter" : profile.headline)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(FiniTheme.muted)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            Button("View Profile") { selection = profile }
+                .buttonStyle(ConceptFilledButtonStyle())
+        }
+        .padding(12)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(color: Color.black.opacity(0.16), radius: 16, y: 8)
+    }
+
+    private func stars(_ rating: Double) -> String {
+        let filled = rating > 0 ? max(1, min(5, Int(rating.rounded()))) : 5
+        return String(repeating: "★", count: filled) + String(repeating: "☆", count: 5 - filled)
+    }
+
+    private func photoURL(_ profile: Interpreter) -> URL? {
+        guard let raw = profile.photoUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") { return URL(string: raw) }
+        if raw.hasPrefix("/") { return URL(string: raw, relativeTo: app.api.baseURL)?.absoluteURL }
+        return nil
     }
 
     private func load() async {
@@ -176,7 +239,42 @@ private struct InterpreterMap: UIViewRepresentable {
         context.coordinator.signature = signature
         let current = map.annotations.compactMap { $0 as? InterpreterPin }
         map.removeAnnotations(current)
+        spreadSharedLocations(pins)
         map.addAnnotations(pins)
+        fit(pins, on: map)
+    }
+
+    private func spreadSharedLocations(_ pins: [InterpreterPin]) {
+        let groups = Dictionary(grouping: pins) { pin in
+            String(format: "%.4f:%.4f", pin.coordinate.latitude, pin.coordinate.longitude)
+        }
+        for group in groups.values where group.count > 1 {
+            for (index, pin) in group.enumerated() {
+                let angle = (Double(index) / Double(group.count)) * 2 * .pi
+                pin.coordinate.latitude += 0.015 * cos(angle)
+                pin.coordinate.longitude += 0.015 * sin(angle)
+            }
+        }
+    }
+
+    private func fit(_ pins: [InterpreterPin], on map: MKMapView) {
+        guard let first = pins.first else { return }
+        var minLat = first.coordinate.latitude
+        var maxLat = first.coordinate.latitude
+        var minLon = first.coordinate.longitude
+        var maxLon = first.coordinate.longitude
+        for pin in pins {
+            minLat = min(minLat, pin.coordinate.latitude)
+            maxLat = max(maxLat, pin.coordinate.latitude)
+            minLon = min(minLon, pin.coordinate.longitude)
+            maxLon = max(maxLon, pin.coordinate.longitude)
+        }
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
+        let span = MKCoordinateSpan(
+            latitudeDelta: min(max(maxLat - minLat, 0.45) * 1.6, 40),
+            longitudeDelta: min(max(maxLon - minLon, 0.45) * 1.6, 50)
+        )
+        map.setRegion(MKCoordinateRegion(center: center, span: span), animated: false)
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
@@ -313,9 +411,9 @@ private final class PhotoPinView: MKAnnotationView {
         centerOffset = CGPoint(x: 0, y: -24)
         backgroundColor = .clear
         canShowCallout = false
-        collisionMode = .circle
-        clusteringIdentifier = "interpreters"
-        displayPriority = .defaultLow
+        collisionMode = .none
+        clusteringIdentifier = nil
+        displayPriority = .required
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.28
         layer.shadowRadius = 3
@@ -347,8 +445,8 @@ private final class PhotoPinView: MKAnnotationView {
     }
 
     func apply(pin: InterpreterPin, baseURL: URL) {
-        clusteringIdentifier = "interpreters"
-        displayPriority = .defaultLow
+        clusteringIdentifier = nil
+        displayPriority = .required
         let green = UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1)
         let gray = UIColor(red: 148 / 255, green: 163 / 255, blue: 184 / 255, alpha: 1)
         shape.fillColor = (pin.available ? green : gray).cgColor
@@ -575,7 +673,6 @@ struct InterpreterDetailView: View {
             .background(Color.white)
         }
         .background(Color.white)
-        .ignoresSafeArea(edges: .bottom)
         .task { detail = try? await app.api.interpreter(id: profile.id) }
         .sheet(item: $chat) { conversation in
             NavigationStack {

@@ -203,7 +203,8 @@ struct AppTabBar: View {
         .overlay(Capsule().stroke(FiniTheme.line, lineWidth: 1))
         .shadow(color: Color.black.opacity(0.08), radius: 10, y: 3)
         .padding(.horizontal, 12)
-        .padding(.bottom, 16)
+        .padding(.bottom, 8)
+        .background(Color.white.ignoresSafeArea(edges: .bottom))
         .accessibilityElement(children: .contain)
     }
 
