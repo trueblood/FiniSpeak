@@ -71,9 +71,7 @@ final class CallSession: ObservableObject, Identifiable {
     }
 
     func start() async {
-        let allowed = await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { continuation.resume(returning: $0) }
-        }
+        let allowed = await AVAudioApplication.requestRecordPermission()
         if !allowed { banner = "The microphone is off, so other people will not hear you." }
         do {
             if participantRole == "translator" && call.translatorId != user.uid {
@@ -243,9 +241,10 @@ final class CallSession: ObservableObject, Identifiable {
             transcripts = merged.sorted { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
             people = ids.map { id in
                 let listed = stillHere.first { $0.uid == id }
-                CallPerson(
+                let displayName = listed?.displayName ?? ""
+                return CallPerson(
                     id: id,
-                    name: listed?.displayName?.isEmpty == false ? listed!.displayName! : name(for: id, in: latest),
+                    name: displayName.isEmpty ? name(for: id, in: latest) : displayName,
                     role: role(for: id, in: latest),
                     state: media.peerState[id] ?? "Waiting"
                 )

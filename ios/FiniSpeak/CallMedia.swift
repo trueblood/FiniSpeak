@@ -162,7 +162,7 @@ final class CallMedia: NSObject, ObservableObject {
             await answer(payload, peer: peer)
         case "answer":
             guard peer.connection.signalingState == .haveLocalOffer, let description = sessionDescription(payload) else { return }
-            await setRemote(description, on: peer)
+            guard await setRemote(description, on: peer) else { return }
         case "ice":
             await addIce(payload, peer: peer)
         case "hangup":
