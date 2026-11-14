@@ -226,26 +226,25 @@ struct CallView: View {
     }
 
     private var videoCall: some View {
-        ZStack {
-            Color(red: 17 / 255, green: 24 / 255, blue: 39 / 255).ignoresSafeArea()
-            VStack(spacing: 16) {
-                VStack(spacing: 4) {
-                    Text(session.status).font(.headline).foregroundStyle(.white)
-                    Text(session.people.map(\.name).joined(separator: ", "))
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, 12)
-                videoStage
-                if !session.banner.isEmpty {
-                    Text(session.banner).font(.footnote).foregroundStyle(.white).padding(.horizontal)
-                }
-                videoControls
+        VStack(spacing: 16) {
+            VStack(spacing: 4) {
+                Text(session.status).font(.headline).foregroundStyle(FiniTheme.ink)
+                Text(session.people.map(\.name).joined(separator: ", "))
+                    .font(.subheadline)
+                    .foregroundStyle(FiniTheme.muted)
+                    .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(.top, 12)
+            videoStage
+            if !session.banner.isEmpty {
+                Text(session.banner).font(.footnote).foregroundStyle(FiniTheme.muted).padding(.horizontal)
+            }
+            videoControls
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.white)
     }
 
     private var videoStage: some View {
@@ -253,10 +252,10 @@ struct CallView: View {
             let remotes = Array(media.remoteVideo)
             if remotes.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: "person.wave.2").font(.system(size: 42)).foregroundStyle(.white)
+                    Image(systemName: "person.wave.2").font(.system(size: 42)).foregroundStyle(FiniTheme.blue)
                     Text(session.people.first?.name ?? "Waiting")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(FiniTheme.ink)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if remotes.count == 1, let track = remotes.first?.value {
@@ -289,7 +288,7 @@ struct CallView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(FiniTheme.mist, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
@@ -340,7 +339,7 @@ struct CallView: View {
             callButton(media.cameraOn ? "video.fill" : "video.slash.fill", label: "Camera") {
                 media.setCamera(on: !media.cameraOn)
             }
-            callButton(session.momentFlagged ? "flag.fill" : "flag", label: "Flag", tint: session.momentFlagged ? .red : .white) {
+            callButton(session.momentFlagged ? "flag.fill" : "flag", label: "Flag", tint: session.momentFlagged ? .red : FiniTheme.ink) {
                 Task { await session.flagMoment() }
             }
             callButton("person.badge.plus", label: "Interpreter") { inviting = true }
@@ -348,12 +347,12 @@ struct CallView: View {
         }
     }
 
-    private func callButton(_ system: String, label: String, danger: Bool = false, tint: Color = .white, action: @escaping () -> Void) -> some View {
+    private func callButton(_ system: String, label: String, danger: Bool = false, tint: Color = FiniTheme.ink, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: system).font(.title3)
                     .frame(width: 52, height: 52)
-                    .background(danger ? Color.red : Color.white.opacity(0.14), in: Circle())
+                    .background(danger ? Color.red : FiniTheme.soft, in: Circle())
                 Text(label).font(.caption2)
             }
             .foregroundStyle(danger ? Color.white : tint)
