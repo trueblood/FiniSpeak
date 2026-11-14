@@ -4,7 +4,6 @@ import WebRTC
 struct CallView: View {
     @ObservedObject var session: CallSession
     @ObservedObject var media: CallMedia
-    @State private var line = ""
     @State private var inviting = false
     @State private var interpreters: [Interpreter] = []
 
@@ -41,7 +40,8 @@ struct CallView: View {
 
     private var videoStage: some View {
         ZStack(alignment: .bottomTrailing) {
-            if media.remoteVideo.isEmpty {
+            let remotes = Array(media.remoteVideo)
+            if remotes.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "person.wave.2").font(.system(size: 42)).foregroundStyle(.white)
                     Text(session.people.first?.name ?? "Waiting")
@@ -53,42 +53,42 @@ struct CallView: View {
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if remotes.count == 1, let track = remotes.first?.value {
+                VideoScreen(track: track)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             } else {
-                GeometryReader { proxy in
-                    let tracks = Array(media.remoteVideo)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(tracks, id: \.key) { item in
-                            VideoScreen(track: item.value)
-                                .frame(height: tracks.count == 1 ? proxy.size.height : proxy.size.height / 2)
-                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        }
+                HStack(spacing: 8) {
+                    ForEach(remotes, id: \.key) { item in
+                        VideoScreen(track: item.value)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                 }
             }
             if let local = media.localVideo, media.cameraOn {
                 VideoScreen(track: local)
-                    .frame(width: 110, height: 150)
+                    .frame(width: 104, height: 146)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .padding(8)
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.85), lineWidth: 1))
+                    .scaleEffect(x: -1, y: 1)
+                    .padding(10)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var transcript: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: Binding(get: { session.consent }, set: { value in Task { await session.setConsent(value) } })) {
-                Text("Save transcript").foregroundStyle(.white)
-            }
-            .tint(FiniTheme.blue)
             if !session.transcriptStatus.isEmpty {
                 Text(session.transcriptStatus).font(.caption).foregroundStyle(.white.opacity(0.75))
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if session.transcripts.isEmpty {
-                        Text("Transcript lines appear here as they are saved.").font(.footnote).foregroundStyle(.white.opacity(0.7))
+                        Text("Transcript lines appear here as people speak.").font(.footnote).foregroundStyle(.white.opacity(0.7))
                     }
                     ForEach(session.transcripts) { line in
                         VStack(alignment: .leading, spacing: 2) {
@@ -100,16 +100,6 @@ struct CallView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(height: 140)
-            HStack {
-                TextField("Add a transcript line", text: $line)
-                    .textFieldStyle(.roundedBorder)
-                Button("Add") {
-                    let text = line
-                    line = ""
-                    Task { await session.addLine(text) }
-                }
-                .foregroundStyle(.white)
-            }
         }
     }
 
@@ -121,20 +111,23 @@ struct CallView: View {
             callButton(media.cameraOn ? "video.fill" : "video.slash.fill", label: "Camera") {
                 media.setCamera(on: !media.cameraOn)
             }
+            callButton(session.momentFlagged ? "flag.fill" : "flag", label: "Flag", tint: session.momentFlagged ? .orange : .white) {
+                Task { await session.flagMoment() }
+            }
             callButton("person.badge.plus", label: "Interpreter") { inviting = true }
             callButton("phone.down.fill", label: "End", danger: true) { Task { await session.hangUp() } }
         }
     }
 
-    private func callButton(_ system: String, label: String, danger: Bool = false, action: @escaping () -> Void) -> some View {
+    private func callButton(_ system: String, label: String, danger: Bool = false, tint: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: system).font(.title3)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 52, height: 52)
                     .background(danger ? Color.red : Color.white.opacity(0.14), in: Circle())
                 Text(label).font(.caption2)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(danger ? Color.white : tint)
         }
         .buttonStyle(.plain)
     }

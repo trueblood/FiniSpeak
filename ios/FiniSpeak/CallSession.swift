@@ -30,6 +30,8 @@ final class CallSession: ObservableObject, Identifiable {
     private var pollTask: Task<Void, Never>?
     private var leaving = false
     private var unsavedSpeech: [TranscriptLine] = []
+    private let startedAt = Date()
+    @Published var momentFlagged = false
 
     init(call: CallRecord, user: Account, api: APIClient) {
         id = call.id
@@ -118,7 +120,6 @@ final class CallSession: ObservableObject, Identifiable {
         do {
             call = try await api.callExperience(id: call.id, action: "set-transcript-consent", extra: ["granted": granted])
             consent = call.transcriptConsent?.granted == true
-            banner = consent ? "Transcript text from this call will be saved for 90 days. Audio is not stored." : "New transcript lines stay on this phone."
             if consent { await flushSpeech() }
         } catch {
             banner = error.localizedDescription
@@ -142,7 +143,25 @@ final class CallSession: ObservableObject, Identifiable {
             await store(line)
         } else {
             unsavedSpeech.append(line)
-            banner = "Speech was recognized. Turn on Save transcript to keep it."
+        }
+    }
+
+    func flagMoment() async {
+        let latest = transcripts.last
+        let elapsed = Int(Date().timeIntervalSince(startedAt))
+        let label = String(format: "%d:%02d", elapsed / 60, elapsed % 60)
+        do {
+            call = try await api.callExperience(id: call.id, action: "flag-moment", extra: [
+                "id": "moment-\(Int(Date().timeIntervalSince1970 * 1000))",
+                "elapsedLabel": label,
+                "transcriptId": latest?.id ?? "",
+                "speakerName": latest?.speakerName ?? "",
+                "text": latest?.text ?? "",
+            ])
+            momentFlagged = true
+            banner = "Flagged for follow-up."
+        } catch {
+            banner = error.localizedDescription
         }
     }
 
@@ -158,24 +177,6 @@ final class CallSession: ObservableObject, Identifiable {
         do {
             if let saved = try await api.saveTranscript(callId: call.id, id: line.id, text: line.text) {
                 if let index = transcripts.firstIndex(where: { $0.id == line.id }) { transcripts[index] = saved }
-            }
-        } catch {
-            banner = error.localizedDescription
-        }
-    }
-
-    func addLine(_ text: String) async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard consent else {
-            banner = "Turn on transcript saving before adding a line."
-            return
-        }
-        let lineId = "\(user.uid)-\(UUID().uuidString)"
-        transcripts.append(TranscriptLine(id: lineId, text: trimmed, speakerId: user.uid, speakerName: user.name, speakerRole: participantRole, createdAt: ISO8601DateFormatter().string(from: Date())))
-        do {
-            if let saved = try await api.saveTranscript(callId: call.id, id: lineId, text: trimmed) {
-                if let index = transcripts.firstIndex(where: { $0.id == lineId }) { transcripts[index] = saved }
             }
         } catch {
             banner = error.localizedDescription
