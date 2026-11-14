@@ -5284,12 +5284,36 @@ function renderScheduleScreen() {
         if (day === now.getDate()) button.className = "active";
         button.onclick = () => {
             grid.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
-            $("conceptSlotLabel").textContent = `${button.textContent} · 11:00 AM – 12:00 PM`;
+            refreshScheduleSlot();
         };
         grid.appendChild(button);
     }
     const profile = activeDirectoryProfile || selectedInterpreterProfile;
     $("conceptSlotMeta").textContent = profile ? [...(profile.specialties || []), ...(profile.languages || [])].filter(Boolean).slice(0, 2).join(", ") || "Live session" : "Legal, Business";
+}
+
+function utcSessionTimestamp(date) {
+    const pad = value => String(value).padStart(2, "0");
+    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+}
+
+function scheduleSelection() {
+    const minutes = Number(document.querySelector("#conceptSchedulePanel [data-duration].active")?.dataset.duration || 60);
+    const dayText = document.querySelector("#conceptScheduleGrid button.active")?.textContent;
+    const start = new Date();
+    if (dayText) start.setDate(Number(dayText));
+    start.setHours(11, 0, 0, 0);
+    return { start, minutes };
+}
+
+function refreshScheduleSlot() {
+    const label = $("conceptSlotLabel");
+    if (!label || !$("conceptSchedulePanel")) return;
+    const { start, minutes } = scheduleSelection();
+    const end = new Date(start.getTime() + minutes * 60000);
+    const fmt = value => value.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const prefix = start.toDateString() === new Date().toDateString() ? "" : `${start.getDate()} · `;
+    label.textContent = `${prefix}${fmt(start)} – ${fmt(end)}`;
 }
 
 function renderGoalScreen() {
@@ -5376,6 +5400,7 @@ function bindConceptScreens() {
                     item.classList.toggle("active", active);
                     item.setAttribute("aria-pressed", String(active));
                 });
+                if (button.closest("#conceptSchedulePanel")) refreshScheduleSlot();
             };
         });
     };
@@ -5394,8 +5419,32 @@ function bindConceptScreens() {
         if (activeDirectoryProfile) startDirectTranslatorChat();
         else showCallDialPad();
     };
-    $("conceptConfirmSchedule").onclick = () => {
-        $("conceptScheduleStatus").textContent = `Session held for ${$("conceptSlotLabel").textContent}. Request an instant call when everyone is ready.`;
+    $("conceptConfirmSchedule").onclick = async () => {
+        const status = $("conceptScheduleStatus");
+        const profile = activeDirectoryProfile || selectedInterpreterProfile;
+        if (!currentUser) { status.textContent = "Sign in to schedule a session."; return; }
+        if (!profile?.id) { status.textContent = "Choose an interpreter first."; return; }
+        const kind = $("conceptSessionType")?.value || "Audio";
+        const { start, minutes } = scheduleSelection();
+        if (start.getTime() <= Date.now()) { status.textContent = "That time has already passed. Choose a later day."; return; }
+        status.textContent = "Scheduling…";
+        try {
+            await apiFetch("/api/sessions", {
+                method: "POST",
+                body: JSON.stringify({
+                    translatorId: profile.id,
+                    language: (profile.languages || [])[0] || "Spanish",
+                    dialect: (profile.dialects || [])[0] || "",
+                    specialty: (profile.specialties || [])[0] || "",
+                    purpose: `${kind} session, ${minutes} min`,
+                    scheduledAt: utcSessionTimestamp(start)
+                })
+            });
+            refreshScheduleSlot();
+            status.textContent = `Session scheduled for ${$("conceptSlotLabel").textContent}. ${profile.displayName || "The interpreter"} will be notified.`;
+        } catch (error) {
+            status.textContent = error.message || "Could not schedule the session.";
+        }
     };
     $("conceptGoalBook").onclick = () => {
         if ($("conceptMatchGoal")) $("conceptMatchGoal").value = $("conceptGoalInput").value;

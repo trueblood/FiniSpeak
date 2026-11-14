@@ -3,6 +3,7 @@ from flask import jsonify, request
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
 from services.call_access import is_call_participant
+from services.session_alerts import deliver_due_alerts, notify_session_booked, parse_scheduled_at
 
 SessionModel = repository_proxy("sessions")
 
@@ -11,7 +12,12 @@ def index():
     identity, error = identity_or_response()
     if error:
         return error
-    return jsonify({"sessions": SessionModel.for_user(identity["uid"])})
+    sessions = SessionModel.for_user(identity["uid"])
+    try:
+        deliver_due_alerts(sessions)
+    except Exception:
+        pass
+    return jsonify({"sessions": sessions})
 
 
 def create():
@@ -21,11 +27,19 @@ def create():
     data = json_body()
     if not data.get("receiverId") and not data.get("language"):
         return jsonify({"error": "receiverId or language is required"}), 400
+    raw_when = data.get("scheduledAt")
+    scheduled = parse_scheduled_at(raw_when)
+    if raw_when not in (None, "") and scheduled is None:
+        return jsonify({"error": "scheduledAt must be a valid date and time."}), 400
     session = SessionModel.create(
         identity, receiver_id=data.get("receiverId"), language=data.get("language"), dialect=data.get("dialect"),
         specialty=data.get("specialty"), purpose=str(data.get("purpose") or "").strip(),
-        scheduled_at=data.get("scheduledAt"), translator_id=data.get("translatorId"),
+        scheduled_at=scheduled, translator_id=data.get("translatorId"),
     )
+    try:
+        notify_session_booked(session)
+    except Exception:
+        pass
     return jsonify({"session": session}), 201
 
 

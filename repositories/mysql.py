@@ -902,6 +902,8 @@ class MySqlSessionRepository:
         receiver = self.session.get(SqlUser, receiver_id) if receiver_id else None
         translator = self.session.get(SqlTranslator, translator_id) if translator_id else None
         now, call_id = _now(), _new_id()
+        when = _as_datetime(scheduled_at)
+        future = bool(when and when > now)
         data = {
             "callerId": requester["uid"],
             "callerName": requester.get("displayName") or requester.get("email"),
@@ -909,10 +911,10 @@ class MySqlSessionRepository:
             "receiverName": receiver.display_name if receiver else None,
             "translatorId": translator_id,
             "translatorName": translator.display_name if translator else None,
-            "status": "ringing" if receiver_id else "connected",
+            "status": "ringing" if receiver_id and not future else "connected",
             "translationStatus": "requested" if translator_id else "not_requested",
             "language": language, "dialect": dialect, "specialty": specialty,
-            "purpose": purpose, "scheduledAt": scheduled_at, "createdAt": now,
+            "purpose": purpose, "scheduledAt": when, "createdAt": now,
             "updatedAt": now, "startedAt": None, "endedAt": None,
         }
         row = SqlCall(id=call_id, raw_document=_json_safe(data), migrated_at=now, mutation_version=1,

@@ -1,8 +1,11 @@
+import re
+
 from flask import jsonify, request
 
 from controllers.controller_utils import identity_or_response, json_body
 from repositories.provider import repository_proxy
 from services.geo_service import encode_geohash, validate_coordinates
+from services.session_alerts import save_push_token
 
 AccountModel = repository_proxy("accounts")
 
@@ -69,6 +72,22 @@ def update_current():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return (jsonify({"account": account}), 200) if account else (jsonify({"error": "Account not found"}), 404)
+
+
+def register_device():
+    identity, error = identity_or_response()
+    if error:
+        return error
+    token = str(json_body().get("token") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32,200}", token):
+        return jsonify({"error": "A device token is required."}), 400
+    try:
+        saved = save_push_token(identity["uid"], token)
+    except Exception:
+        return jsonify({"error": "The device could not be saved."}), 400
+    if not saved:
+        return jsonify({"error": "Account not found"}), 404
+    return jsonify({"ok": True})
 
 
 def list_accounts():

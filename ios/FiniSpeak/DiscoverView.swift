@@ -113,7 +113,7 @@ struct DiscoverView: View {
                     .foregroundStyle(.secondary)
             }
             ZStack(alignment: .bottom) {
-                InterpreterMap(profiles: visible, baseURL: app.api.baseURL) { profile in
+                InterpreterMap(profiles: visible, baseURL: app.api.baseURL, authToken: app.api.token) { profile in
                     highlighted = profile
                 }
                 if let profile = sheetProfile {
@@ -186,10 +186,7 @@ struct DiscoverView: View {
     }
 
     private func photoURL(_ profile: Interpreter) -> URL? {
-        guard let raw = profile.photoUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
-        if raw.hasPrefix("http://") || raw.hasPrefix("https://") { return URL(string: raw) }
-        if raw.hasPrefix("/") { return URL(string: raw, relativeTo: app.api.baseURL)?.absoluteURL }
-        return nil
+        APIClient.photoURL(raw: profile.photoUrl, baseURL: app.api.baseURL)
     }
 
     private func load() async {
@@ -206,6 +203,7 @@ struct DiscoverView: View {
 private struct InterpreterMap: UIViewRepresentable {
     var profiles: [Interpreter]
     var baseURL: URL
+    var authToken: String?
     var onSelect: (Interpreter) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -230,12 +228,17 @@ private struct InterpreterMap: UIViewRepresentable {
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.onSelect = onSelect
         context.coordinator.baseURL = baseURL
+        let tokenChanged = context.coordinator.authToken != authToken
+        context.coordinator.authToken = authToken
         let pins = profiles.compactMap { profile -> InterpreterPin? in
             guard let point = profile.serviceLocation?.coordinate else { return nil }
             return InterpreterPin(profile: profile, coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude))
         }
         let signature = pins.map { "\($0.id):\($0.coordinate.latitude):\($0.coordinate.longitude):\($0.profile.photoUrl ?? "")" }.sorted().joined(separator: "|")
-        guard signature != context.coordinator.signature else { return }
+        guard signature != context.coordinator.signature else {
+            if tokenChanged { context.coordinator.reloadPhotos(on: map) }
+            return
+        }
         context.coordinator.signature = signature
         let current = map.annotations.compactMap { $0 as? InterpreterPin }
         map.removeAnnotations(current)
@@ -280,6 +283,7 @@ private struct InterpreterMap: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate {
         var onSelect: (Interpreter) -> Void
         var baseURL = URL(string: "https://finispeak.com")!
+        var authToken: String?
         var signature = ""
         private weak var map: MKMapView?
 
@@ -328,8 +332,16 @@ private struct InterpreterMap: UIViewRepresentable {
             let marker = mapView.dequeueReusableAnnotationView(withIdentifier: "pin") as? PhotoPinView
                 ?? PhotoPinView(annotation: annotation, reuseIdentifier: "pin")
             marker.annotation = pin
-            marker.apply(pin: pin, baseURL: baseURL)
+            marker.apply(pin: pin, baseURL: baseURL, token: authToken)
             return marker
+        }
+
+        func reloadPhotos(on map: MKMapView) {
+            for annotation in map.annotations {
+                guard let pin = annotation as? InterpreterPin,
+                      let marker = map.view(for: pin) as? PhotoPinView else { continue }
+                marker.apply(pin: pin, baseURL: baseURL, token: authToken)
+            }
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
@@ -403,7 +415,7 @@ private final class PhotoPinView: MKAnnotationView {
     private let imageView = UIImageView()
     private let initialsLabel = UILabel()
     private let shape = CAShapeLayer()
-    private var loadToken = 0
+    private var requestID = 0
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -421,14 +433,19 @@ private final class PhotoPinView: MKAnnotationView {
         shape.fillColor = UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1).cgColor
         shape.strokeColor = UIColor.white.cgColor
         shape.lineWidth = 3
+        shape.zPosition = 0
         layer.addSublayer(shape)
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.backgroundColor = UIColor(red: 219 / 255, green: 231 / 255, blue: 245 / 255, alpha: 1)
+        imageView.layer.borderWidth = 2
+        imageView.layer.borderColor = UIColor.white.cgColor
+        imageView.layer.zPosition = 1
         addSubview(imageView)
         initialsLabel.textAlignment = .center
         initialsLabel.font = .systemFont(ofSize: 11, weight: .heavy)
         initialsLabel.textColor = UIColor(red: 18 / 255, green: 60 / 255, blue: 105 / 255, alpha: 1)
+        initialsLabel.layer.zPosition = 2
         addSubview(initialsLabel)
     }
 
@@ -438,13 +455,13 @@ private final class PhotoPinView: MKAnnotationView {
         super.layoutSubviews()
         shape.frame = bounds
         shape.path = pinPath().cgPath
-        let head = CGRect(x: bounds.midX - 12, y: 6, width: 24, height: 24)
+        let head = CGRect(x: bounds.midX - 16, y: 2, width: 32, height: 32).insetBy(dx: 3, dy: 3)
         imageView.frame = head
-        imageView.layer.cornerRadius = 12
+        imageView.layer.cornerRadius = head.width / 2
         initialsLabel.frame = head
     }
 
-    func apply(pin: InterpreterPin, baseURL: URL) {
+    func apply(pin: InterpreterPin, baseURL: URL, token: String?) {
         clusteringIdentifier = nil
         displayPriority = .required
         let green = UIColor(red: 34 / 255, green: 197 / 255, blue: 94 / 255, alpha: 1)
@@ -453,18 +470,15 @@ private final class PhotoPinView: MKAnnotationView {
         initialsLabel.text = Self.initials(pin.profile.name)
         imageView.image = nil
         initialsLabel.isHidden = false
-        loadToken += 1
-        let token = loadToken
-        guard let url = Self.photoURL(pin.profile, baseURL: baseURL) else { return }
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
-            guard let data, let image = UIImage(data: data) else { return }
-            if let status = (response as? HTTPURLResponse)?.statusCode, status >= 400 { return }
-            DispatchQueue.main.async {
-                guard let self, self.loadToken == token else { return }
-                self.imageView.image = image
-                self.initialsLabel.isHidden = true
-            }
-        }.resume()
+        requestID += 1
+        let request = requestID
+        guard let url = APIClient.photoURL(raw: pin.profile.photoUrl, baseURL: baseURL) else { return }
+        Task { @MainActor [weak self] in
+            let image = await APIClient.loadImage(url, token: token)
+            guard let self, self.requestID == request, let image else { return }
+            self.imageView.image = image
+            self.initialsLabel.isHidden = true
+        }
     }
 
     private func pinPath() -> UIBezierPath {
@@ -485,12 +499,6 @@ private final class PhotoPinView: MKAnnotationView {
         return letters.isEmpty ? "FS" : letters.uppercased()
     }
 
-    private static func photoURL(_ profile: Interpreter, baseURL: URL) -> URL? {
-        guard let raw = profile.photoUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
-        if raw.hasPrefix("http://") || raw.hasPrefix("https://") { return URL(string: raw) }
-        if raw.hasPrefix("/") { return URL(string: raw, relativeTo: baseURL)?.absoluteURL }
-        return nil
-    }
 }
 
 private final class ClusterCountView: MKAnnotationView {
@@ -533,6 +541,7 @@ struct InterpreterDetailView: View {
     @State private var busy = false
     @State private var chat: Conversation?
     @State private var dial = false
+    @State private var scheduling = false
 
     private var shown: Interpreter { detail ?? profile }
     private var languageBadges: [String] { Array((shown.languages + shown.dialects).filter { !$0.isEmpty }.prefix(3)) }
@@ -681,6 +690,14 @@ struct InterpreterDetailView: View {
             }
         }
         .sheet(isPresented: $dial) { DialView() }
+        .sheet(isPresented: $scheduling) {
+            ScheduleSessionView(profile: shown, onInstant: {
+                scheduling = false
+                Task { await call() }
+            }, onScheduled: { message in
+                status = message
+            })
+        }
     }
 
     private var weekRow: some View {
@@ -712,7 +729,7 @@ struct InterpreterDetailView: View {
             Button(busy ? "Calling…" : "Request Instant Call") { Task { await call() } }
                 .buttonStyle(ConceptFilledButtonStyle())
                 .disabled(busy)
-            Button("Schedule a Session") { status = "Scheduling stays on finispeak.com." }
+            Button("Schedule a Session") { scheduling = true }
                 .buttonStyle(ConceptFilledButtonStyle())
             Button("Chat with translator") { Task { await openChat() } }
                 .font(.body.weight(.bold))
@@ -753,10 +770,7 @@ struct InterpreterDetailView: View {
     }
 
     private var photoURL: URL? {
-        guard let raw = shown.photoUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
-        if raw.hasPrefix("http://") || raw.hasPrefix("https://") { return URL(string: raw) }
-        if raw.hasPrefix("/") { return URL(string: raw, relativeTo: app.api.baseURL)?.absoluteURL }
-        return nil
+        APIClient.photoURL(raw: shown.photoUrl, baseURL: app.api.baseURL)
     }
 
     private func sectionTitle(_ kicker: String, _ title: String) -> some View {
@@ -827,24 +841,29 @@ struct InterpreterDetailView: View {
 }
 
 private struct ProfilePhoto: View {
+    @EnvironmentObject private var app: AppModel
     let name: String
     let url: URL?
     var size: CGFloat
+    @State private var image: UIImage?
 
     var body: some View {
         ZStack {
             AvatarView(name: name, size: size)
-            if let url {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    }
-                }
-                .frame(width: size, height: size)
-                .clipShape(Circle())
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
             }
         }
         .frame(width: size, height: size)
+        .task(id: url?.absoluteString) {
+            image = nil
+            guard let url else { return }
+            image = await app.api.fetchImage(url)
+        }
     }
 }
 

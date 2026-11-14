@@ -112,6 +112,69 @@ final class PhoneAlerts: NSObject, CXProviderDelegate, UNUserNotificationCenterD
         Task { try? await UNUserNotificationCenter.current().setBadgeCount(value) }
     }
 
+    /// Banners for a translator: when a session is booked, five minutes before it starts, and at the start time.
+    func syncScheduledSessions(_ calls: [CallRecord], translatorId: String) {
+        let center = UNUserNotificationCenter.current()
+        let defaults = UserDefaults.standard
+        var announced = Set(defaults.stringArray(forKey: Self.announcedKey) ?? [])
+        for call in calls where call.translatorId == translatorId {
+            let bookedId = "session-\(call.id)-booked"
+            let soonId = "session-\(call.id)-soon"
+            let startId = "session-\(call.id)-start"
+            let closed = ["ended", "declined", "cancelled"].contains(call.status ?? "")
+            guard !closed, let start = FiniTime.date(call.scheduledAt), start.timeIntervalSinceNow > -90 else {
+                center.removePendingNotificationRequests(withIdentifiers: [bookedId, soonId, startId])
+                continue
+            }
+            let who = call.callerName?.isEmpty == false ? call.callerName! : "A customer"
+            let when = FiniTime.label(call.scheduledAt)
+            let bookedBody = when.isEmpty ? "\(who) booked a session." : "\(who) booked a session for \(when)."
+            let soon = start.addingTimeInterval(-5 * 60)
+            if !announced.contains(bookedId), start.timeIntervalSinceNow > 5 * 60 {
+                postNow(id: bookedId, title: "Session scheduled", body: bookedBody)
+                announced.insert(bookedId)
+            }
+            if soon.timeIntervalSinceNow > 20 {
+                schedule(id: soonId, title: "Session in 5 minutes", body: "Your session with \(who) starts in 5 minutes.", at: soon)
+            } else if !announced.contains(soonId), start.timeIntervalSinceNow > 20 {
+                postNow(id: soonId, title: "Session in 5 minutes", body: "Your session with \(who) starts in 5 minutes.")
+                announced.insert(soonId)
+            }
+            if start.timeIntervalSinceNow > 20 {
+                schedule(id: startId, title: "Session starting", body: "Your session with \(who) is starting now.", at: start)
+            }
+        }
+        if announced.count > 240 {
+            announced = Set(Array(announced).suffix(180))
+        }
+        defaults.set(Array(announced), forKey: Self.announcedKey)
+    }
+
+    private static let announcedKey = "finispeak.sessionAlerts"
+
+    private func postNow(id: String, title: String, body: String) {
+        let content = sessionContent(title: title, body: body)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private func schedule(id: String, title: String, body: String, at date: Date) {
+        let content = sessionContent(title: title, body: body)
+        let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private func sessionContent(title: String, body: String) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.threadIdentifier = "finispeak-sessions"
+        return content
+    }
+
     func providerDidReset(_ provider: CXProvider) {
         callUUIDs.removeAll()
         callIDs.removeAll()

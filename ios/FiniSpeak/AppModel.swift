@@ -35,6 +35,7 @@ final class AppModel: ObservableObject {
     private var knownMessages: [String: String] = [:]
     private var announcedMessages: Set<String> = []
     private var messagesReady = false
+    private var pendingPushToken: String?
     private let alerts = PhoneAlerts.shared
 
     init() {
@@ -66,6 +67,10 @@ final class AppModel: ObservableObject {
         alerts.onOpenMessages = { [weak self] in
             Task { @MainActor in self?.openChats = true }
         }
+        NotificationCenter.default.addObserver(forName: .finiDeviceToken, object: nil, queue: .main) { [weak self] note in
+            guard let token = note.object as? String else { return }
+            Task { @MainActor in await self?.registerDeviceToken(token) }
+        }
     }
 
     func restoreIfNeeded() async {
@@ -79,6 +84,7 @@ final class AppModel: ObservableObject {
             alerts.requestPermission()
             startIncomingPolling()
             history = (try? await api.sessions()) ?? []
+            await registerDeviceToken(pendingPushToken)
         } catch {
             signOutLocal()
         }
@@ -95,6 +101,7 @@ final class AppModel: ObservableObject {
         alerts.requestPermission()
         startIncomingPolling()
         history = (try? await api.sessions()) ?? []
+        await registerDeviceToken(pendingPushToken)
     }
 
     func register(name: String, email: String, password: String, phone: String, role: String) async throws -> String {
@@ -233,13 +240,22 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func registerDeviceToken(_ token: String?) async {
+        guard let token, !token.isEmpty else { return }
+        pendingPushToken = token
+        guard account != nil else { return }
+        await api.registerDevice(token: token)
+    }
+
     private func refreshIncoming() async {
         guard let account, callSession == nil else { return }
+        let sessions = (try? await api.sessions()) ?? []
+        alerts.syncScheduledSessions(sessions, translatorId: account.uid)
         let next: IncomingCall?
         if account.role == "translator" {
             next = (try? await api.pendingCalls())?.first.flatMap { classifyTranslator($0, user: account) }
         } else {
-            let ringing = ((try? await api.sessions()) ?? []).filter { $0.receiverId == account.uid && $0.status == "ringing" }
+            let ringing = sessions.filter { $0.receiverId == account.uid && $0.status == "ringing" }
             if let call = ringing.sorted(by: { ($0.createdAt ?? "") > ($1.createdAt ?? "") }).first {
                 next = IncomingCall(call: call, kind: .customer, title: "\(call.callerName ?? "Someone") is calling", detail: "Accept to connect. The live transcript appears after you join.")
             } else {

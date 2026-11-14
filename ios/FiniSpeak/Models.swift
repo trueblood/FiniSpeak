@@ -192,6 +192,7 @@ struct CallRecord: Decodable, Identifiable, Equatable {
     var specialty: String?
     var createdAt: String?
     var startedAt: String?
+    var scheduledAt: String?
     var guestIds: [String]?
     var transcriptConsent: TranscriptConsent?
     var callNotes: String?
@@ -226,6 +227,7 @@ struct CallRecord: Decodable, Identifiable, Equatable {
         specialty = container.flexString(.specialty)
         createdAt = container.flexString(.createdAt)
         startedAt = container.flexString(.startedAt)
+        scheduledAt = container.flexString(.scheduledAt)
         guestIds = container.flexStrings(.guestIds)
         transcriptConsent = try? container.decode(TranscriptConsent.self, forKey: .transcriptConsent)
         callNotes = container.flexString(.callNotes)
@@ -235,7 +237,7 @@ struct CallRecord: Decodable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, callerId, callerName, receiverId, receiverName, translatorId, translatorName
         case invitedTranslatorId, invitedTranslatorName, status, translationStatus, purpose
-        case language, specialty, createdAt, startedAt, guestIds, transcriptConsent, callNotes, keyMoments
+        case language, specialty, createdAt, startedAt, scheduledAt, guestIds, transcriptConsent, callNotes, keyMoments
     }
 }
 
@@ -282,6 +284,10 @@ struct CallCreated: Decodable {
 
 struct CallEnvelope: Decodable {
     var call: CallRecord
+}
+
+struct SessionEnvelope: Decodable {
+    var session: CallRecord
 }
 
 struct CallList: Decodable {
@@ -482,6 +488,11 @@ extension KeyedDecodingContainer {
 }
 
 enum FiniTime {
+    static func date(_ value: String?) -> Date? {
+        guard let value, !value.isEmpty else { return nil }
+        return parse(value)
+    }
+
     static func label(_ value: String?) -> String {
         guard let value, !value.isEmpty else { return "" }
         let parsed = parse(value)
@@ -501,6 +512,20 @@ enum FiniTime {
         let basic = ISO8601DateFormatter()
         basic.formatOptions = [.withInternetDateTime]
         if let date = basic.date(from: value) { return date }
+        let formats = [
+            "EEE, dd MMM yyyy HH:mm:ss zzz",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXXXX",
+            "yyyy-MM-dd'T'HH:mm:ssXXXXX",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss"
+        ]
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        for format in formats {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) { return date }
+        }
         return nil
     }
 }

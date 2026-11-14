@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 struct APIError: LocalizedError {
     var status: Int
@@ -15,6 +16,15 @@ final class APIClient {
     var onUnauthorized: (() -> Void)?
     private let session: URLSession
     private let decoder = JSONDecoder()
+    private static let imageCache = NSCache<NSString, UIImage>()
+    private static let imageSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpCookieStorage = nil
+        configuration.timeoutIntervalForRequest = 20
+        return URLSession(configuration: configuration)
+    }()
 
     init(baseURL: URL) {
         self.baseURL = baseURL
@@ -201,6 +211,54 @@ final class APIClient {
 
     func sessions() async throws -> [CallRecord] {
         try await decode(CallList.self, "GET", "/api/sessions").records
+    }
+
+    func createSession(translatorId: String, language: String, dialect: String?, specialty: String?, purpose: String, scheduledAt: String) async throws -> CallRecord {
+        var body: [String: Any] = [
+            "translatorId": translatorId,
+            "language": language,
+            "purpose": purpose,
+            "scheduledAt": scheduledAt
+        ]
+        if let dialect, !dialect.isEmpty { body["dialect"] = dialect }
+        if let specialty, !specialty.isEmpty { body["specialty"] = specialty }
+        return try await decode(SessionEnvelope.self, "POST", "/api/sessions", body: body).session
+    }
+
+    func registerDevice(token: String) async {
+        _ = try? await send("POST", "/api/accounts/me/device", body: ["token": token])
+    }
+
+    func fetchImage(_ url: URL) async -> UIImage? {
+        await Self.loadImage(url, token: token)
+    }
+
+    static func photoURL(raw: String?, baseURL: URL) -> URL? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") { return URL(string: raw) }
+        if raw.hasPrefix("/") { return URL(string: raw, relativeTo: baseURL)?.absoluteURL }
+        return nil
+    }
+
+    static func loadImage(_ url: URL, token: String?) async -> UIImage? {
+        let key = url.absoluteString as NSString
+        if let cached = imageCache.object(forKey: key) { return cached }
+        var request = URLRequest(url: url)
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        if let token, !token.isEmpty, shouldAuthorize(url) {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (data, response) = try? await imageSession.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status),
+              let image = UIImage(data: data) else { return nil }
+        imageCache.setObject(image, forKey: key)
+        return image
+    }
+
+    private static func shouldAuthorize(_ url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        if host == "finispeak.com" || host.hasSuffix(".finispeak.com") { return true }
+        return url.path.contains("/api/files/")
     }
 
     func pendingCalls() async throws -> [CallRecord] {
