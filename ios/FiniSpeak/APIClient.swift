@@ -281,10 +281,15 @@ final class APIClient {
     }
 
     private func query(_ items: [URLQueryItem]) -> String {
-        var components = URLComponents()
-        components.queryItems = items
-        guard let encoded = components.percentEncodedQuery, !encoded.isEmpty else { return "" }
-        return "?\(encoded)"
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=?")
+        let encoded = items.compactMap { item -> String? in
+            guard let value = item.value, !value.isEmpty else { return nil }
+            let name = item.name.addingPercentEncoding(withAllowedCharacters: allowed) ?? item.name
+            let encodedValue = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+            return "\(name)=\(encodedValue)"
+        }.joined(separator: "&")
+        return encoded.isEmpty ? "" : "?\(encoded)"
     }
 
     private func path(_ value: String) -> String {

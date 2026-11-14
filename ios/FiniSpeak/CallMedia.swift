@@ -40,7 +40,12 @@ final class CallMedia: NSObject, ObservableObject {
         let source = Self.factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
         let track = Self.factory.audioTrack(with: source, trackId: "audio0")
         audioTrack = track
+        prepareVideoTrack()
         audio.isAudioEnabled = true
+    }
+
+    func publishRemoteVideo() {
+        for peer in allPeers() { publishVideo(peer) }
     }
 
     func sync(remoteIds: [String]) {
@@ -91,6 +96,7 @@ final class CallMedia: NSObject, ObservableObject {
     }
 
     private func openPeer(_ remoteId: String) {
+        prepareVideoTrack()
         guard peer(remoteId) == nil, let audioTrack else { return }
         let configuration = RTCConfiguration()
         configuration.sdpSemantics = .unifiedPlan
@@ -237,10 +243,20 @@ final class CallMedia: NSObject, ObservableObject {
         }
     }
 
+    fileprivate func attachRemoteVideo(_ track: RTCVideoTrack, peerId: String) {
+        guard track !== videoTrack else { return }
+        track.isEnabled = true
+        DispatchQueue.main.async {
+            if self.remoteVideo[peerId] !== track {
+                self.remoteVideo[peerId] = track
+            }
+        }
+    }
+
     private func publishVideo(_ peer: PeerLink) {
-        let track = peer.connection.transceivers.compactMap { $0.receiver.track as? RTCVideoTrack }.first
-        guard let track else { return }
-        DispatchQueue.main.async { self.remoteVideo[peer.remoteId] = track }
+        let tracks = peer.connection.transceivers.compactMap { $0.receiver.track as? RTCVideoTrack }
+        guard let track = tracks.last(where: { $0 !== self.videoTrack }) ?? tracks.last else { return }
+        attachRemoteVideo(track, peerId: peer.remoteId)
     }
 
     fileprivate func noteIce(_ peer: PeerLink, state: RTCIceConnectionState) {
@@ -266,18 +282,7 @@ final class CallMedia: NSObject, ObservableObject {
 #if targetEnvironment(simulator)
         DispatchQueue.main.async { self.cameraMessage = "The simulator has no camera. The microphone still connects." }
 #else
-        if videoTrack == nil {
-            let source = Self.factory.videoSource()
-            let capturer = RTCCameraVideoCapturer(delegate: source)
-            videoCapturer = capturer
-            let track = Self.factory.videoTrack(with: source, trackId: "video0")
-            track.isEnabled = false
-            videoTrack = track
-            for peer in allPeers() {
-                peer.connection.add(track, streamIds: ["finispeak"])
-                sendOffer(peer)
-            }
-        }
+        prepareVideoTrack()
         guard let capturer = videoCapturer, let device = RTCCameraVideoCapturer.captureDevices().first(where: { $0.position == .front }) ?? RTCCameraVideoCapturer.captureDevices().first else {
             DispatchQueue.main.async { self.cameraMessage = "This iPhone has no available camera." }
             return
@@ -288,6 +293,7 @@ final class CallMedia: NSObject, ObservableObject {
         guard let format = formats.last, let fps = format.videoSupportedFrameRateRanges.max(by: { $0.maxFrameRate < $1.maxFrameRate }) else { return }
         capturer.startCapture(with: device, format: format, fps: min(30, Int(fps.maxFrameRate)))
         videoTrack?.isEnabled = true
+        for peer in allPeers() { sendOffer(peer) }
         DispatchQueue.main.async {
             self.localVideo = self.videoTrack
             self.cameraOn = true
@@ -303,6 +309,15 @@ final class CallMedia: NSObject, ObservableObject {
             self.cameraOn = false
             self.localVideo = nil
         }
+    }
+
+    private func prepareVideoTrack() {
+        guard videoTrack == nil else { return }
+        let source = Self.factory.videoSource()
+        videoCapturer = RTCCameraVideoCapturer(delegate: source)
+        let track = Self.factory.videoTrack(with: source, trackId: "video0")
+        track.isEnabled = false
+        videoTrack = track
     }
 
     private func configureAudioSession() {
@@ -427,8 +442,20 @@ private final class PeerLink: NSObject, RTCPeerConnectionDelegate {
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+        for track in stream.videoTracks {
+            media?.attachRemoteVideo(track, peerId: remoteId)
+        }
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {
+        guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
+        media?.attachRemoteVideo(track, peerId: remoteId)
+    }
+    func peerConnection(_ peerConnection: RTCPeerConnection, didStartReceivingOn transceiver: RTCRtpTransceiver) {
+        guard let track = transceiver.receiver.track as? RTCVideoTrack else { return }
+        media?.attachRemoteVideo(track, peerId: remoteId)
+    }
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
         guard !suppressOffer, offerer else { return }
         media?.sendOffer(self)

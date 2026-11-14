@@ -60,6 +60,7 @@ struct DialView: View {
     var onManageFriends: (() -> Void)?
     @State private var digits = ""
     @State private var friendEmail = ""
+    @State private var friendId = ""
     @State private var targetName = ""
     @State private var friends: [Friend] = []
     @State private var status = ""
@@ -264,18 +265,21 @@ struct DialView: View {
     private func press(_ key: String) {
         guard key.count == 1, key >= "0", key <= "9", digits.count < 15 else { return }
         friendEmail = ""
+        friendId = ""
         targetName = ""
         digits.append(key)
     }
 
     private func backspace() {
         friendEmail = ""
+        friendId = ""
         targetName = ""
         if !digits.isEmpty { digits.removeLast() }
     }
 
     private func select(_ friend: Friend) {
         friendEmail = ""
+        friendId = friend.uid
         targetName = friend.name
         let raw = friend.savedPhone ?? friend.phone ?? ""
         let numbers = raw.filter(\.isNumber)
@@ -306,13 +310,27 @@ struct DialView: View {
         busy = true
         defer { busy = false }
         do {
+            if !friendId.isEmpty {
+                guard friendId != app.account?.uid else { status = "You cannot call yourself."; return }
+                try await app.placeCall(receiverId: friendId)
+                status = ""
+                if onBack == nil { dismiss() }
+                return
+            }
             let email = friendEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-            let phone = dialedPhone
-            guard !email.isEmpty || !phone.isEmpty else {
+            guard !email.isEmpty || !phoneCandidates.isEmpty else {
                 status = "Dial a FiniSpeak number or choose a friend."
                 return
             }
-            let account = try await app.api.lookup(email: email.isEmpty ? nil : email, phone: phone.isEmpty ? nil : phone)
+            let account: Account
+            if !email.isEmpty {
+                account = try await app.api.lookup(email: email, phone: nil)
+            } else if let found = try await lookupDialedNumber() {
+                account = found
+            } else {
+                status = "No FiniSpeak account was found with that number. Ask them to save it in their profile, then try again."
+                return
+            }
             guard account.uid != app.account?.uid else { status = "You cannot call yourself."; return }
             guard ["customer", "admin"].contains(account.role ?? "") else { status = "That account cannot receive a customer call. Open their interpreter profile to call them directly."; return }
             try await app.placeCall(receiverId: account.uid)
@@ -323,12 +341,25 @@ struct DialView: View {
         }
     }
 
-    private var dialedPhone: String {
+    private var phoneCandidates: [String] {
         let numbers = digits.filter(\.isNumber)
-        guard !numbers.isEmpty else { return "" }
-        if numbers.count == 10 { return "+1" + numbers }
-        if numbers.hasPrefix("1"), numbers.count == 11 { return "+" + numbers }
-        return "+" + numbers
+        guard (7...15).contains(numbers.count) else { return [] }
+        var values = [numbers]
+        if numbers.count == 10 { values.insert("1" + numbers, at: 0) }
+        if numbers.count == 11, numbers.hasPrefix("1") { values.append(String(numbers.dropFirst())) }
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+
+    private func lookupDialedNumber() async throws -> Account? {
+        for candidate in phoneCandidates {
+            do {
+                return try await app.api.lookup(email: nil, phone: candidate)
+            } catch let error as APIError where error.status == 404 {
+                continue
+            }
+        }
+        return nil
     }
 }
 

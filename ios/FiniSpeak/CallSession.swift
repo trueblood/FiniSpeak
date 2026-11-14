@@ -13,6 +13,7 @@ final class CallSession: ObservableObject, Identifiable {
     @Published var call: CallRecord
     @Published var people: [CallPerson] = []
     @Published var transcripts: [TranscriptLine] = []
+    @Published var transcriptStatus = ""
     @Published var status: String
     @Published var consent: Bool
     @Published var banner = ""
@@ -25,8 +26,10 @@ final class CallSession: ObservableObject, Identifiable {
     private let api: APIClient
     private let user: Account
     private let signaling: SignalingClient
+    private let transcription = CallTranscription()
     private var pollTask: Task<Void, Never>?
     private var leaving = false
+    private var unsavedSpeech: [TranscriptLine] = []
 
     init(call: CallRecord, user: Account, api: APIClient) {
         id = call.id
@@ -70,6 +73,18 @@ final class CallSession: ObservableObject, Identifiable {
             let servers = try await api.iceServers()
             media.start(localId: user.uid, iceServers: servers)
             signaling.connect(baseURL: api.baseURL, token: api.token ?? "", callId: call.id)
+            transcription.onStatus = { [weak self] text in
+                Task { @MainActor in self?.transcriptStatus = text }
+            }
+            transcription.onSpeech = { [weak self] heard in
+                Task { @MainActor in await self?.rememberSpeech(heard) }
+            }
+            transcription.start(baseURL: api.baseURL, token: api.token ?? "", callId: call.id)
+            let micWarning = allowed ? "" : banner
+            if call.transcriptConsent?.granted != true {
+                await setConsent(true)
+            }
+            if !micWarning.isEmpty { banner = micWarning }
             await refresh()
             pollTask = Task { [weak self] in
                 while !Task.isCancelled {
@@ -91,6 +106,7 @@ final class CallSession: ObservableObject, Identifiable {
         guard !leaving else { return }
         leaving = true
         pollTask?.cancel()
+        transcription.stop()
         media.stop()
         signaling.close()
         if tellServer { try? await api.leaveCall(id: call.id) }
@@ -103,6 +119,46 @@ final class CallSession: ObservableObject, Identifiable {
             call = try await api.callExperience(id: call.id, action: "set-transcript-consent", extra: ["granted": granted])
             consent = call.transcriptConsent?.granted == true
             banner = consent ? "Transcript text from this call will be saved for 90 days. Audio is not stored." : "New transcript lines stay on this phone."
+            if consent { await flushSpeech() }
+        } catch {
+            banner = error.localizedDescription
+        }
+    }
+
+    private func rememberSpeech(_ heard: CallTranscription.Heard) async {
+        let lineId = "\(user.uid)-\(heard.generation)-\(heard.sequence)"
+        guard !transcripts.contains(where: { $0.id == lineId }) else { return }
+        let line = TranscriptLine(
+            id: lineId,
+            text: heard.text,
+            speakerId: user.uid,
+            speakerName: user.name,
+            speakerRole: participantRole,
+            createdAt: ISO8601DateFormatter().string(from: Date()),
+            localOnly: !consent
+        )
+        transcripts.append(line)
+        if consent {
+            await store(line)
+        } else {
+            unsavedSpeech.append(line)
+            banner = "Speech was recognized. Turn on Save transcript to keep it."
+        }
+    }
+
+    private func flushSpeech() async {
+        let waiting = unsavedSpeech
+        unsavedSpeech = []
+        for line in waiting {
+            await store(line)
+        }
+    }
+
+    private func store(_ line: TranscriptLine) async {
+        do {
+            if let saved = try await api.saveTranscript(callId: call.id, id: line.id, text: line.text) {
+                if let index = transcripts.firstIndex(where: { $0.id == line.id }) { transcripts[index] = saved }
+            }
         } catch {
             banner = error.localizedDescription
         }
@@ -156,6 +212,7 @@ final class CallSession: ObservableObject, Identifiable {
             }
             let ids = remoteIds(in: latest)
             media.sync(remoteIds: ids)
+            media.publishRemoteVideo()
             let serverLines = try await api.transcripts(callId: call.id)
             var merged = serverLines
             for line in transcripts where line.localOnly && !merged.contains(where: { $0.id == line.id }) {

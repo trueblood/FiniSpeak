@@ -82,6 +82,9 @@ struct CallView: View {
                 Text("Save transcript").foregroundStyle(.white)
             }
             .tint(FiniTheme.blue)
+            if !session.transcriptStatus.isEmpty {
+                Text(session.transcriptStatus).font(.caption).foregroundStyle(.white.opacity(0.75))
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if session.transcripts.isEmpty {
