@@ -5,6 +5,8 @@ struct SessionSummaryView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.openURL) private var openURL
     @State private var rating = 0
+    @State private var quality = 0
+    @State private var logging = 0
     @State private var ratingNote = ""
     @State private var category = "Education"
     @State private var showingTranscript = false
@@ -58,31 +60,40 @@ struct SessionSummaryView: View {
                         .foregroundStyle(FiniTheme.blue)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                    Text("Rate the translation")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(FiniTheme.ink)
-                        .frame(maxWidth: .infinity)
-                    HStack(spacing: 8) {
-                        ForEach(1...5, id: \.self) { star in
-                            Button {
-                                rating = star
-                                Task { ratingNote = await session.rate(star) }
-                            } label: {
-                                Text("★")
-                                    .font(.system(size: 38))
-                                    .foregroundStyle(star <= rating ? Color(red: 217 / 255, green: 119 / 255, blue: 6 / 255) : FiniTheme.star)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("\(star) star")
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    if !ratingNote.isEmpty {
-                        Text(ratingNote)
-                            .font(.footnote)
-                            .foregroundStyle(FiniTheme.muted)
+                    if session.canRate {
+                        Text("Rate the translation")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(FiniTheme.ink)
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 4)
+                        starRow(selected: rating) { star in
+                            rating = star
+                            Task { ratingNote = await session.rate(star) }
+                        }
+                        if !ratingNote.isEmpty {
+                            Text(ratingNote)
+                                .font(.footnote)
+                                .foregroundStyle(FiniTheme.muted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 4)
+                        }
+                    } else {
+                        Text("Rate call quality")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(FiniTheme.ink)
+                            .frame(maxWidth: .infinity)
+                        starRow(selected: quality) { star in
+                            quality = star
+                            Task { await session.rateSession(quality: quality, logging: logging) }
+                        }
+                        Text("Rate audio logging")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(FiniTheme.ink)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 14)
+                        starRow(selected: logging) { star in
+                            logging = star
+                            Task { await session.rateSession(quality: quality, logging: logging) }
+                        }
                     }
                     Button("Book Again") { leave(to: .discover) }
                         .buttonStyle(.plain)
@@ -118,6 +129,21 @@ struct SessionSummaryView: View {
         .background(Color.white)
         .environment(\.goHome) { session.closeSummary() }
         .sheet(isPresented: $showingTranscript) { transcriptSheet }
+    }
+
+    private func starRow(selected: Int, choose: @escaping (Int) -> Void) -> some View {
+        HStack(spacing: 8) {
+            ForEach(1...5, id: \.self) { star in
+                Button { choose(star) } label: {
+                    Text("★")
+                        .font(.system(size: 38))
+                        .foregroundStyle(star <= selected ? Color(red: 217 / 255, green: 119 / 255, blue: 6 / 255) : FiniTheme.star)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(star) star")
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var people: some View {

@@ -280,10 +280,56 @@ struct CallView: View {
                     .scaleEffect(x: -1, y: 1)
                     .padding(10)
             }
+            if !session.transcripts.isEmpty {
+                videoCaptions
+                    .padding(.leading, 10)
+                    .padding(.trailing, media.cameraOn ? 124 : 10)
+                    .padding(.bottom, 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    private var videoCaptions: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(session.transcripts) { line in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(firstName(line.speakerName ?? "Speaker"))
+                                .font(.caption.weight(.heavy))
+                                .foregroundStyle(.white.opacity(0.85))
+                            Text(line.text)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if session.flaggedLineIds.contains(line.id) {
+                                Image(systemName: "flag.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                                    .accessibilityLabel("Flagged")
+                            }
+                        }
+                        .id(line.id)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
+            .frame(maxHeight: 108)
+            .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .onAppear { scrollCaptions(proxy) }
+            .onChange(of: session.transcripts.count) { _, _ in scrollCaptions(proxy) }
+        }
+    }
+
+    private func scrollCaptions(_ proxy: ScrollViewProxy) {
+        if let id = session.transcripts.last?.id {
+            proxy.scrollTo(id, anchor: .bottom)
+        }
     }
 
     private var videoControls: some View {

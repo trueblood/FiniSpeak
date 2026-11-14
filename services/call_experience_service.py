@@ -219,6 +219,23 @@ def build_experience_changes(call, identity, action, data, lookup_account=None):
         saved = [item for item in (call.get("savedSummaries") or []) if isinstance(item, dict)]
         saved.append({"id": f"summary-{actor_id}-{len(saved) + 1}", "authorId": actor_id, "consent": True, "createdAt": _now(), **summary})
         return {"savedSummaries": saved[-20:]}
+    if action == "rate-call":
+        changes = {}
+        for key, field in (("callQuality", "callQualityRating"), ("audioLogging", "audioLoggingRating")):
+            if key not in data or data.get(key) in (None, ""):
+                continue
+            try:
+                value = int(data.get(key))
+            except (TypeError, ValueError):
+                raise ValueError("Choose a rating from 1 to 5.") from None
+            if value < 1 or value > 5:
+                raise ValueError("Choose a rating from 1 to 5.")
+            changes[field] = value
+        if not changes:
+            raise ValueError("Choose a rating from 1 to 5.")
+        changes["callRatingAuthorId"] = actor_id
+        changes["callRatingUpdatedAt"] = _now()
+        return changes
     if action == "save-notes":
         return {
             "callNotes": _clean_text(data.get("text"), 4000).strip(),

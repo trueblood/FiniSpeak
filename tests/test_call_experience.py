@@ -155,6 +155,12 @@ class CallExperienceTests(unittest.TestCase):
             build_experience_changes(call, actor, "set-media", {"mediaMode": "avatar", "avatarId": "made-up"})
         with self.assertRaisesRegex(ValueError, "Avatar Studio"):
             build_experience_changes(call, actor, "set-interpreter", {"interpreter": {"avatarId": "custom", "active": True}})
+        rated = build_experience_changes(call, actor, "rate-call", {"callQuality": 4, "audioLogging": "5"})
+        self.assertEqual(rated["callQualityRating"], 4)
+        self.assertEqual(rated["audioLoggingRating"], 5)
+        self.assertEqual(rated["callRatingAuthorId"], "customer-1")
+        with self.assertRaisesRegex(ValueError, "1 to 5"):
+            build_experience_changes(call, actor, "rate-call", {"callQuality": 6})
         notes = build_experience_changes(call, actor, "save-notes", {"text": "  Follow up on the meeting.\nBring the document.  "})
         self.assertEqual(notes["callNotes"], "Follow up on the meeting.\nBring the document.")
         self.assertEqual(notes["callNotesAuthorId"], "customer-1")

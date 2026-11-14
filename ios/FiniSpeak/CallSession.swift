@@ -138,6 +138,14 @@ final class CallSession: ObservableObject, Identifiable {
         return translatorId != user.uid
     }
 
+    func rateSession(quality: Int, logging: Int) async {
+        var extra: [String: Any] = [:]
+        if quality > 0 { extra["callQuality"] = quality }
+        if logging > 0 { extra["audioLogging"] = logging }
+        guard !extra.isEmpty else { return }
+        call = (try? await api.callExperience(id: call.id, action: "rate-call", extra: extra)) ?? call
+    }
+
     func rate(_ stars: Int) async -> String {
         guard canRate, let translatorId = call.translatorId else { return "" }
         do {
